@@ -246,6 +246,11 @@ class CombinedPosition(BaseModel):
         return self.status == "open"
     
     @property
+    def is_closed(self) -> bool:
+        """True if position is closed."""
+        return self.status == "closed"
+    
+    @property
     def delta(self) -> Decimal:
         """
         Calculate current delta (net exposure).
