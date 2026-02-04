@@ -1,6 +1,6 @@
 # Delta Neutral Funding Rate Arbitrage Bot
 
-**Status:** Phases 1-5.2 Complete (299 tests passing)  
+**Status:** Phases 1-9 Complete (686 tests passing)  
 **Spec Version:** 2.1
 
 A delta-neutral arbitrage strategy capturing funding rate differentials between **Asgard Finance** (Solana long positions) and **Hyperliquid** (Arbitrum short perpetuals).
@@ -70,12 +70,12 @@ A delta-neutral arbitrage strategy capturing funding rate differentials between 
 | Phase 4 | ✅ Complete | Hyperliquid integration (client, funding, signer, trader) |
 | Phase 5.1 | ✅ Complete | Opportunity detector |
 | Phase 5.2 | ✅ Complete | Price consensus & fill validator |
-| Phase 5.3 | 🔄 Next | Position manager (pending) |
-| Phase 5.4 | ⏳ Pending | Position sizer |
-| Phase 5.5 | ⏳ Pending | LST correlation monitor |
-| Phase 6 | ⏳ Pending | Risk engine & circuit breakers |
+| Phase 5.3 | ✅ Complete | Position manager |
+| Phase 5.4 | ✅ Complete | Position sizer |
+| Phase 5.5 | ✅ Complete | LST correlation monitor |
+| Phase 6 | ✅ Complete | Risk engine & circuit breakers |
 
-### Completed Work (299 tests passing)
+### Completed Work (686 tests passing)
 - ✅ **Foundation** - Directory structure, deps, config, logging, retry
 - ✅ **Models** - Enums, FundingRate, AsgardRates, ArbitrageOpportunity, Positions
 - ✅ **Chain Connection** - Solana/Arbitrum clients, outage detection
@@ -189,8 +189,8 @@ This project includes a comprehensive 299-test safety suite covering:
 - Funding rate safety checks
 - Transaction state machine recovery
 
-See [test-check.md](test-check.md) for the full test matrix.
+See [test-check.md](test-check.md) for the safety verification test matrix.
 
 ---
 
-*Last updated: 2026-02-04*
+*Last updated: 2026-02-05*
