@@ -1,0 +1,123 @@
+# ============================================
+# Delta Neutral Arb - Git Ignore
+# ============================================
+# SECURITY WARNING: This file protects sensitive credentials.
+# DO NOT modify these rules to expose secrets!
+# ============================================
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+venv.bak/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ============================================
+# SECURITY: Environment Variables & Secrets
+# ============================================
+# NEVER commit files containing actual credentials
+
+# Environment files (may contain secrets)
+.env
+.env.local
+.env.*.local
+.env.production
+.env.staging
+!.env.example
+
+# Secrets directory - contains API keys and private keys
+# Only allow: .gitkeep, README.md, *.example templates
+secrets/*
+!secrets/.gitkeep
+!secrets/README.md
+!secrets/*.example
+
+# Key files (common patterns for private keys)
+*.key
+*.pem
+*.p12
+*.pfx
+*private*
+*secret*
+*apikey*
+*api-key*
+*credential*
+
+# Wallet files
+wallet.json
+keypair.json
+id.json
+*.keystore
+
+# Backup files that might contain secrets
+*.bak
+*.backup
+*~
+*.old
+
+# ============================================
+# Testing
+# ============================================
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+
+# ============================================
+# Database (may contain sensitive data)
+# ============================================
+*.db
+*.sqlite
+*.sqlite3
+state.db
+positions.db
+history.db
+
+# ============================================
+# Logs (may contain sensitive data)
+# ============================================
+*.log
+logs/
+log/
+
+# ============================================
+# OS
+# ============================================
+.DS_Store
+Thumbs.db
+
+# ============================================
+# Temporary files
+# ============================================
+tmp/
+temp/
+.cache/
