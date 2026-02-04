@@ -1,0 +1,180 @@
+# Delta Neutral Funding Rate Arbitrage Bot
+# Docker Compose Configuration
+
+version: '3.8'
+
+services:
+  # ===========================================================================
+  # Main Bot Service
+  # ===========================================================================
+  bot:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: production
+    image: delta-neutral-bot:latest
+    container_name: delta-neutral-bot
+    restart: unless-stopped
+    
+    environment:
+      # Bot environment
+      - BOT_ENV=production
+      - PYTHONUNBUFFERED=1
+      
+      # Required: Asgard API
+      - ASGARD_API_KEY=${ASGARD_API_KEY}
+      - SOLANA_RPC_URL=${SOLANA_RPC_URL}
+      
+      # Required: Solana wallet
+      - SOLANA_PRIVATE_KEY=${SOLANA_PRIVATE_KEY}
+      
+      # Required: Hyperliquid
+      - HYPERLIQUID_WALLET_ADDRESS=${HYPERLIQUID_WALLET_ADDRESS}
+      - HYPERLIQUID_PRIVATE_KEY=${HYPERLIQUID_PRIVATE_KEY}
+      
+      # Optional: Admin controls
+      - ADMIN_API_KEY=${ADMIN_API_KEY}
+      
+      # Optional: Additional RPC
+      - ARBITRUM_RPC_URL=${ARBITRUM_RPC_URL:-https://arb1.arbitrum.io/rpc}
+      
+      # Optional: Monitoring
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    
+    volumes:
+      # Persistent state database
+      - bot-data:/app/data
+      # Logs
+      - bot-logs:/app/logs
+      # Secrets (mount as read-only)
+      - ${SECRETS_DIR:-../secrets}:/app/secrets:ro
+    
+    networks:
+      - bot-network
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service"
+        env: "BOT_ENV"
+
+  # ===========================================================================
+  # Health Monitor Sidecar
+  # ===========================================================================
+  health-monitor:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: production
+    image: delta-neutral-bot:latest
+    container_name: delta-neutral-health
+    restart: unless-stopped
+    
+    command: ["python", "-m", "scripts.health_check"]
+    
+    environment:
+      - BOT_ENV=production
+      - HEALTH_CHECK_INTERVAL=30
+      - ALERT_WEBHOOK_URL=${ALERT_WEBHOOK_URL:-}
+    
+    volumes:
+      - bot-data:/app/data:ro
+      - bot-logs:/app/logs:ro
+    
+    networks:
+      - bot-network
+    
+    depends_on:
+      bot:
+        condition: service_healthy
+    
+    profiles:
+      - monitoring
+
+  # ===========================================================================
+  # Development Service
+  # ===========================================================================
+  bot-dev:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: development
+    image: delta-neutral-bot:dev
+    container_name: delta-neutral-bot-dev
+    
+    environment:
+      - BOT_ENV=development
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=DEBUG
+    
+    volumes:
+      # Mount source for live development
+      - ../src:/app/src:ro
+      - ../tests:/app/tests:ro
+      - bot-data:/app/data
+      - bot-logs:/app/logs
+      - ${SECRETS_DIR:-../secrets}:/app/secrets:ro
+    
+    networks:
+      - bot-network
+    
+    profiles:
+      - dev
+    
+    command: ["python", "-m", "pytest", "tests/", "-v", "--tb=short"]
+
+  # ===========================================================================
+  # Shadow Trading Mode
+  # ===========================================================================
+  bot-shadow:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: production
+    image: delta-neutral-bot:latest
+    container_name: delta-neutral-bot-shadow
+    restart: "no"
+    
+    environment:
+      - BOT_ENV=production
+      - SHADOW_MODE=true
+      - LOG_LEVEL=INFO
+    
+    volumes:
+      - bot-data:/app/data
+      - bot-logs:/app/logs
+    
+    networks:
+      - bot-network
+    
+    profiles:
+      - shadow
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  bot-data:
+    driver: local
+  bot-logs:
+    driver: local
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  bot-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
