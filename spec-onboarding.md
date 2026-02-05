@@ -27,45 +27,53 @@ This specification defines a defense-in-depth onboarding system supporting both 
 
 ## Architecture Overview
 
-### Security Model: Tiered Access
+### Privy-Powered Wallet Infrastructure
 
-| Interface | Key Input Method | Use Case | Security Level |
-|-----------|------------------|----------|----------------|
-| **CLI** | User-provided private key | Power users, existing wallets | High |
-| **Web** | System-generated key only | New users, convenience-first | Medium |
-
-**Key Principle**: Private keys provided by users NEVER touch the web interface. This eliminates the browser as an attack vector for key theft.
+All wallet operations are handled by [Privy](https://privy.io) embedded wallet infrastructure. No private keys are stored locally.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                      Setup Architecture                                  │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
-│  CLI Mode (Full Control)        Web Mode (Convenience)                  │
+│  CLI Mode                       Web Mode                                 │
 │  ┌─────────────────────┐       ┌──────────────────────────┐             │
 │  │ Terminal            │       │ Browser                  │             │
-│  │ • Custom key input  │       │ • NO key input allowed   │             │
-│  │ • getpass() hidden  │       │ • System generates key   │             │
-│  │ • Direct to disk    │       │ • Display: address only  │             │
+│  │ • Direct input      │       │ • Email/OTP login        │             │
+│  │ • No browser        │       │ • Embedded wallet        │             │
+│  │ • API key auth      │       │ • Auto-created           │             │
 │  └──────────┬──────────┘       └───────────┬──────────────┘             │
 │             │                              │                             │
-│             │      Both use secure storage │                             │
 │             └──────────────┬───────────────┘                             │
 │                            │                                            │
 │              ┌─────────────▼──────────────┐                             │
-│              │    Secure Secret Storage   │                             │
+│              │      Privy API             │                             │
 │              │                            │                             │
-│              │  secrets/private_key.enc   │  Hardware-bound AES-256     │
-│              │  secrets/hyperliquid/*.enc │  Argon2 key derivation      │
+│              │  • Embedded wallets        │                             │
+│              │  • Server-side signing     │                             │
+│              │  • TEE key sharding        │                             │
+│              │  • Multi-chain support     │                             │
+│              └─────────────┬──────────────┘                             │
+│                            │                                            │
+│              ┌─────────────▼──────────────┐                             │
+│              │   Secure Enclave (TEE)     │                             │
+│              │   (Privy infrastructure)   │                             │
 │              └────────────────────────────┘                             │
 │                                                                          │
-│  Generated Key Note:                                                     │
-│  Web-generated keys are created server-side with CSPRNG, encrypted       │
-│  immediately, and shown to user as: "Address: 0x1234...  [Export PK]"   │
-│  Export requires CLI access or password-derived decryption.              │
+│  Local Storage:                                                          │
+│  • hyperliquid_api_key.txt (env or file)                                │
+│  • privy_app_id / privy_app_secret (env)                                │
+│  • NO PRIVATE KEYS stored locally                                       │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
+
+**Key Benefits:**
+- ✅ No local private key storage
+- ✅ Server-side automated signing via Privy API
+- ✅ 50K free signatures/month (sufficient for trading)
+- ✅ Multi-chain: Arbitrum, Hyperliquid, Solana, etc.
+- ✅ Keys sharded in TEEs (Trusted Execution Environments)
 
 ---
 
@@ -233,196 +241,139 @@ def secure_input(prompt: str) -> SecureBuffer:
 ```
 
 ---
+---
 
-## Phase 2: Encryption Architecture
+## Phase 2: Security Model (Privy-Based)
 
-### 2.1 Hardware-Bound Key Derivation
+### 2.1 How Privy Secures Keys
+
+Privy uses a **sharded key architecture** with Trusted Execution Environments (TEEs):
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     Privy Key Architecture                               │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│   Key Creation                                                            │
+│   ┌──────────────┐     ┌──────────────┐     ┌──────────────┐           │
+│   │   Shard 1    │     │   Shard 2    │     │   Shard 3    │           │
+│   │  (User)      │     │  (Privy)     │     │  (TEE)       │           │
+│   │  Device      │     │  Server      │     │  Enclave     │           │
+│   └──────┬───────┘     └──────┬───────┘     └──────┬───────┘           │
+│          │                    │                    │                    │
+│          └────────────────────┴────────────────────┘                    │
+│                              │                                          │
+│                    Shamir Secret Sharing                               │
+│                    (e.g., 2-of-3 threshold)                            │
+│                                                                          │
+│   Signing Transaction                                                     │
+│   ┌─────────────────────────────────────────────────────────┐          │
+│   │              TEE (Trusted Execution Environment)          │          │
+│   │  ┌─────────────────────────────────────────────────────┐  │          │
+│   │  │  • Shards reconstituted inside secure enclave       │  │          │
+│   │  │  • Private key never exists in plaintext outside    │  │          │
+│   │  │  • Signature computed, key immediately destroyed    │  │          │
+│   │  └─────────────────────────────────────────────────────┘  │          │
+│   └─────────────────────────────────────────────────────────┘          │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Security Properties:**
+- ✅ Keys are **sharded** across multiple parties
+- ✅ **TEE isolation**: Keys reconstituted only in secure hardware
+- ✅ **No plaintext exposure**: Private key never in memory/logs
+- ✅ **Non-custodial**: Privy cannot access keys without user shard
+
+### 2.2 Local Storage
+
+**What we store locally:**
+```
+.env
+├── HYPERLIQUID_API_KEY_PATH       # Encrypted API key
+├── HYPERLIQUID_API_SECRET_PATH    # Encrypted API secret
+├── PRIVY_APP_ID                   # Public app identifier
+├── PRIVY_APP_SECRET               # Server credential (not wallet key)
+├── PRIVY_AUTH_KEY_PATH            # Your server signing key
+└── WALLET_ADDRESS                 # Public address only
+
+privy_auth.pem                     # Your server's EC key for Privy API
+```
+
+**What we DON'T store:**
+- ❌ Private keys (managed by Privy)
+- ❌ Seed phrases (managed by Privy)
+- ❌ Unencrypted credentials
+
+### 2.3 API Credentials Encryption
+
+While wallet keys are managed by Privy, we still encrypt local API credentials:
 
 ```python
 # src/setup/encryption.py
 
-import hashlib
-import platform
-import uuid
-from pathlib import Path
-from typing import Optional
-import argon2
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+import os
 
-class HardwareKeyDerivation:
-    """
-    Derive encryption keys bound to hardware.
-    Keys cannot be used on different machines even if secrets/ folder is copied.
-    """
+class LocalEncryption:
+    """Encrypt local API credentials (not wallet keys)."""
     
-    SALT_FILE = Path.home() / '.basisstrategy' / '.install_salt'
+    def __init__(self, key: bytes):
+        self.key = key
     
-    @classmethod
-    def get_hardware_fingerprint(cls) -> bytes:
-        """
-        Generate hardware fingerprint from multiple sources.
-        Combines multiple identifiers for robustness.
-        """
-        components = []
-        
-        # CPU info (platform-specific)
-        try:
-            if platform.system() == 'Linux':
-                with open('/proc/cpuinfo') as f:
-                    for line in f:
-                        if line.startswith('serial') or line.startswith('Serial'):
-                            components.append(line.split(':')[1].strip())
-                            break
-        except:
-            pass
-        
-        # Machine ID (system-specific)
-        try:
-            with open('/etc/machine-id') as f:
-                components.append(f.read().strip())
-        except:
-            pass
-        
-        # MAC address (first network interface)
-        try:
-            mac = uuid.getnode()
-            if mac != 0:
-                components.append(f'{mac:012x}')
-        except:
-            pass
-        
-        # Hostname
-        components.append(platform.node())
-        
-        # Combine and hash
-        combined = '|'.join(components).encode()
-        return hashlib.sha256(combined).digest()
-    
-    @classmethod
-    def get_or_create_salt(cls) -> bytes:
-        """Get installation-specific salt, creating if necessary."""
-        if cls.SALT_FILE.exists():
-            return cls.SALT_FILE.read_bytes()
-        
-        # Generate new salt
-        salt = secrets.token_bytes(32)
-        cls.SALT_FILE.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
-        cls.SALT_FILE.write_bytes(salt)
-        cls.SALT_FILE.chmod(0o600)
-        
-        return salt
-    
-    @classmethod
-    def derive_key(cls, passphrase: Optional[str] = None) -> bytes:
-        """
-        Derive encryption key using Argon2id.
-        
-        Combines:
-        - Hardware fingerprint (machine-specific)
-        - Installation salt (installation-specific)
-        - Optional user passphrase (knowledge factor)
-        """
-        hw_key = cls.get_hardware_fingerprint()
-        salt = cls.get_or_create_salt()
-        
-        # Combine hardware key with optional passphrase
-        if passphrase:
-            password = hw_key + passphrase.encode()
-        else:
-            password = hw_key
-        
-        # Argon2id parameters (OWASP recommended)
-        # Memory: 64MB, Iterations: 3, Parallelism: 4
-        hasher = argon2.PasswordHasher(
-            memory_cost=65536,
-            time_cost=3,
-            parallelism=4,
-            hash_len=32,
-            salt_len=16
-        )
-        
-        # Argon2id binding
-        hash_result = hasher.hash(password + salt)
-        
-        # Derive final key from hash
-        return hashlib.sha256(hash_result.encode()).digest()
-
-class SecureSecretStorage:
-    """
-    Encrypted secret storage with hardware binding.
-    """
-    
-    def __init__(self):
-        self._key_cache: Optional[bytes] = None
-        self._key_cached_at: float = 0
-        self._key_ttl: float = 300  # 5 minutes
-    
-    def _get_key(self, passphrase: Optional[str] = None) -> bytes:
-        """Get encryption key, using cache if valid."""
-        import time
-        
-        now = time.time()
-        
-        if self._key_cache and (now - self._key_cached_at) < self._key_ttl:
-            return self._key_cache
-        
-        # Re-derive key
-        key = HardwareKeyDerivation.derive_key(passphrase)
-        self._key_cache = key
-        self._key_cached_at = now
-        
-        return key
-    
-    def write_secret(self, name: str, plaintext: str, passphrase: Optional[str] = None):
-        """
-        Encrypt and write secret to disk.
-        
-        Format: nonce (12 bytes) || ciphertext || tag (16 bytes)
-        """
-        key = self._get_key(passphrase)
-        aesgcm = AESGCM(key)
-        
-        nonce = secrets.token_bytes(12)
+    def encrypt(self, plaintext: str) -> bytes:
+        """Encrypt API key/secret for local storage."""
+        aesgcm = AESGCM(self.key)
+        nonce = os.urandom(12)
         ciphertext = aesgcm.encrypt(nonce, plaintext.encode(), None)
-        
-        # Write atomically
-        secrets_dir = Path('secrets')
-        secrets_dir.mkdir(mode=0o700, exist_ok=True)
-        
-        temp_file = secrets_dir / f'.{name}.enc.tmp'
-        final_file = secrets_dir / f'{name}.enc'
-        
-        try:
-            temp_file.write_bytes(nonce + ciphertext)
-            temp_file.chmod(0o600)
-            temp_file.rename(final_file)
-        except:
-            temp_file.unlink(missing_ok=True)
-            raise
+        return nonce + ciphertext
     
-    def read_secret(self, name: str, passphrase: Optional[str] = None) -> Optional[str]:
-        """Read and decrypt secret from disk."""
-        secret_file = Path('secrets') / f'{name}.enc'
-        
-        if not secret_file.exists():
-            return None
-        
-        key = self._get_key(passphrase)
-        aesgcm = AESGCM(key)
-        
-        data = secret_file.read_bytes()
-        nonce = data[:12]
-        ciphertext = data[12:]
-        
-        try:
-            plaintext = aesgcm.decrypt(nonce, ciphertext, None)
-            return plaintext.decode()
-        except Exception:
-            # Decryption failed—wrong key or corrupted
-            return None
+    def decrypt(self, ciphertext: bytes) -> str:
+        """Decrypt for use."""
+        aesgcm = AESGCM(self.key)
+        nonce = ciphertext[:12]
+        encrypted = ciphertext[12:]
+        plaintext = aesgcm.decrypt(nonce, encrypted, None)
+        return plaintext.decode()
+
+# Key derived from hardware fingerprint + env var
+encryption_key = derive_key_from_hardware()
 ```
 
----
+### 2.4 Threat Model Comparison
+
+| Threat | Self-Hosted Keys | Privy-Based |
+|--------|-----------------|-------------|
+| Server compromise | **Total loss** (keys on disk) | **Limited** (no keys stored) |
+| Backup mishandling | Keys leaked | Keys recoverable via Privy |
+| Developer error | Keys in git/logs | No local keys to leak |
+| Privy shutdown | N/A | Export keys before shutdown |
+| Insider (our team) | Full access | No access to keys |
+| Insider (Privy) | N/A | TEE prevents access |
+
+### 2.5 Migration Path
+
+Users can export keys from Privy at any time:
+
+```python
+# Export to self-custody
+from privy import PrivyClient
+
+privy = PrivyClient(...)
+
+# Get wallet's private key for export
+private_key = await privy.wallet.export_private_key(
+    wallet_address="0x..."
+)
+
+print(f"Private key: {private_key}")
+print("Store securely - this is your self-custody backup!")
+```
+
+**When to export:**
+- Migrating to different wallet infrastructure
+- Want hardware wallet custody
+- Privy service discontinuation (unlikely)
 
 ## Phase 3: CLI Implementation
 
@@ -593,16 +544,11 @@ class SecureCLIWizard:
     
     def _setup_blockchain(self):
         """
-        Configure blockchain connection and wallet.
-        
-        NOTE: This is the ONLY place where custom private key input is allowed.
-        Web setup generates keys automatically—custom key input is rejected.
+        Configure blockchain connection and Privy wallet.
         """
         print("═" * 62)
-        print("Step 2/4: Blockchain Configuration")
+        print("Step 2/4: Blockchain & Privy Configuration")
         print("═" * 62)
-        print("ℹ️  CLI mode allows custom private key input.")
-        print("   For generated wallets, use web setup instead.\n")
         
         # RPC URL
         rpc_url = input("Arbitrum RPC URL (or 'alchemy'/'infura'): ").strip()
@@ -626,34 +572,68 @@ class SecureCLIWizard:
         print(f"✓ Connected (Block: {result['block']:,})")
         self.config['arbitrum_rpc_url'] = rpc_url
         
-        # Private key (with passphrase option)
-        use_passphrase = input("\nAdd passphrase for extra security? [y/N]: ").lower() == 'y'
-        passphrase = None
-        if use_passphrase:
-            passphrase = getpass("Passphrase: ")
+        # Privy Configuration
+        print("\n" + "═" * 62)
+        print("Privy Wallet Setup")
+        print("═" * 62)
+        print("Your wallet will be created and managed by Privy.")
+        print("Keys are sharded in secure enclaves - never stored locally.\n")
         
-        print("\n⚠️  Enter your wallet private key (64 hex characters)")
-        priv_key_buf = self.prompt_secure(
-            "Private Key",
-            validator=InputValidator.validate_private_key,
-            confirm=True
-        )
+        privy_app_id = input("Privy App ID: ").strip()
+        privy_app_secret = getpass("Privy App Secret: ")
         
-        # Derive address for confirmation
-        raw_key = priv_key_buf.read().decode().rstrip('\x00')
-        from eth_account import Account
-        account = Account.from_key(raw_key)
+        # Check for authorization key
+        auth_key_path = Path("privy_auth.pem")
+        if not auth_key_path.exists():
+            print("\n⚠️  Privy authorization key not found.")
+            generate = input("Generate new authorization key? [Y/n]: ").lower() != 'n'
+            
+            if generate:
+                import subprocess
+                subprocess.run([
+                    "openssl", "ecparam", "-name", "prime256v1",
+                    "-genkey", "-noout", "-out", "privy_auth.pem"
+                ], check=True)
+                subprocess.run([
+                    "openssl", "ec", "-in", "privy_auth.pem",
+                    "-pubout", "-out", "privy_auth.pub"
+                ], check=True)
+                print("✓ Authorization key generated: privy_auth.pem")
+                print("  Register the public key (privy_auth.pub) in your Privy dashboard.")
+            else:
+                print("Please generate the key manually:")
+                print("  openssl ecparam -name prime256v1 -genkey -noout -out privy_auth.pem")
+                return self._setup_blockchain()
         
-        print(f"\nDerived address: {account.address}")
-        confirm = input("Is this correct? [Y/n]: ").lower()
+        # Create wallet via Privy
+        print("\nCreating embedded wallet via Privy...")
         
-        if confirm == 'n':
-            print("Private key may be incorrect. Please retry.")
+        try:
+            from privy import PrivyClient
+            
+            privy = PrivyClient(
+                app_id=privy_app_id,
+                app_secret=privy_app_secret,
+                authorization_private_key_path="privy_auth.pem"
+            )
+            
+            wallet = privy.wallet.create(
+                chain_type="ethereum",
+                account_type="secp256k1"
+            )
+            
+            print(f"✓ Wallet created: {wallet.address}")
+            print("  (Keys stored securely in Privy TEEs)")
+            
+            self.config['wallet_address'] = wallet.address
+            self.config['privy_app_id'] = privy_app_id
+            self.config['privy_app_secret'] = privy_app_secret
+            
+        except Exception as e:
+            print(f"❌ Failed to create wallet: {e}")
             return self._setup_blockchain()
         
-        # Encrypt with optional passphrase
-        self.storage.write_secret('arbitrum_private_key', raw_key, passphrase)
-        print("✓ Private key encrypted and stored\n")
+        print()
     
     def _setup_risk_parameters(self):
         """Configure risk management settings."""
@@ -722,12 +702,18 @@ class SecureCLIWizard:
             "# BasisStrategy Bot Configuration",
             f"# Generated: {datetime.now().isoformat()}",
             "",
-            "# Paths (encrypted secrets)",
+            "# HyperLiquid API (stored locally)",
             "HYPERLIQUID_API_KEY_PATH=secrets/hyperliquid_api_key.enc",
             "HYPERLIQUID_API_SECRET_PATH=secrets/hyperliquid_api_secret.enc",
-            "ARBITRUM_PRIVATE_KEY_PATH=secrets/arbitrum_private_key.enc",
             "",
+            "# Arbitrum RPC",
             f"ARBITRUM_RPC_URL={self.config.get('arbitrum_rpc_url', '')}",
+            "",
+            "# Privy Configuration (wallet managed by Privy)",
+            f"PRIVY_APP_ID={self.config.get('privy_app_id', '')}",
+            f"PRIVY_APP_SECRET={self.config.get('privy_app_secret', '')}",
+            "PRIVY_AUTH_KEY_PATH=privy_auth.pem",
+            f"WALLET_ADDRESS={self.config.get('wallet_address', '')}",
             "",
             "# Risk Parameters",
             f"MAX_POSITION_SIZE={self.config.get('max_position_size', 10000)}",
@@ -846,119 +832,102 @@ class AtomicConfigWriter:
 
 ---
 
-## CLI vs Web: Security Distinction
+## Privy Integration
 
-### Critical Design Decision
+### What is Privy?
 
-To eliminate browser-based private key theft vectors, **user-provided private keys are CLI-only**. The web interface uses system-generated keys.
+[Privy](https://privy.io) provides embedded wallet infrastructure with server-side signing. Private keys are sharded across secure enclaves (TEEs) and never stored locally.
+
+**Pricing:** 50,000 free signatures/month (sufficient for ~1,600 trades/day)
+
+### Server-Side Signing Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    KEY INPUT COMPARISON                              │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  CLI Setup (python setup.py)                                        │
-│  ├── Can input custom private key                                    │
-│  ├── getpass() - no terminal echo                                    │
-│  ├── Direct to encrypted storage                                     │
-│  └── For: Users with existing wallets                               │
-│                                                                      │
-│  Web Setup (http://localhost:8080/setup)                            │
-│  ├── NO custom private key input                                     │
-│  ├── System generates key via CSPRNG                                 │
-│  ├── Shows: "Address: 0x1234..."                                     │
-│  └── For: New users, convenience-first                              │
-│                                                                      │
-│  Both encrypt with:                                                  │
-│  • Argon2id + hardware-bound key derivation                         │
-│  • AES-256-GCM encryption                                           │
-│  • Atomic file writes                                                │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│  Trading Bot    │────▶│  Privy API       │────▶│  TEE Enclave    │
+│  (Your Server)  │◀────│  (Authorization) │◀────│  (Key Shards)   │
+└─────────────────┘     └──────────────────┘     └─────────────────┘
+         │
+    1. Bot decides to trade
+    2. Constructs transaction
+    3. Calls Privy API with auth key
+    4. Privy reconstitutes key in TEE
+    5. Signs transaction
+    6. Returns signed tx
+    7. Bot broadcasts to chain
 ```
 
-### Web Key Generation Flow
+### Required Credentials
 
-When users choose web setup, the system:
+Users must provide:
 
-1. **Generates** a new wallet using `secrets.token_hex(32)` (CSPRNG)
-2. **Immediately encrypts** the private key with a user-provided password
-3. **Displays only** the public address: `0xAbCd...1234`
-4. **Stores** encrypted key: `secrets/private_key.enc`
-5. **Never exposes** private key in browser or logs
+1. **Privy App ID** (from Privy Dashboard)
+2. **Privy App Secret** (from Privy Dashboard)
+3. **Authorization Private Key** (self-generated EC key for server signing)
+
+```bash
+# Generate authorization key (one-time setup)
+openssl ecparam -name prime256v1 -genkey -noout -out privy_auth.pem
+openssl ec -in privy_auth.pem -pubout -out privy_auth.pub
+
+# Register public key in Privy Dashboard
+```
+
+### Wallet Creation Flow
+
+**Both CLI and Web use Privy for wallet management:**
 
 ```python
-# Server-side generation (keys never touch browser)
-class WebKeyGenerator:
-    def generate_and_encrypt(self, user_password: str) -> Tuple[str, bytes]:
-        """
-        Generate wallet and encrypt immediately.
-        
-        Returns:
-            (address, encrypted_private_key)
-        """
-        from eth_account import Account
-        import secrets
-        
-        # Generate with CSPRNG (not pseudo-random)
-        private_key = secrets.token_hex(32)
-        account = Account.from_key(private_key)
-        
-        # Encrypt with user's password + hardware salt
-        encryption_key = self._derive_key(user_password)
-        encrypted = self._encrypt(private_key, encryption_key)
-        
-        # Securely wipe from memory
-        private_key = '0' * 64
-        del private_key
-        
-        return account.address, encrypted
+from privy import PrivyClient
+
+# Initialize with server credentials
+privy = PrivyClient(
+    app_id=os.getenv('PRIVY_APP_ID'),
+    app_secret=os.getenv('PRIVY_APP_SECRET'),
+    authorization_private_key_path='privy_auth.pem'
+)
+
+# Create embedded wallet
+wallet = await privy.wallet.create(
+    chain_type='ethereum',
+    account_type='secp256k1'
+)
+
+# Store only the address locally
+wallet_address = wallet.address
 ```
 
-### Exporting Generated Keys
+### Signing Transactions
 
-Users can export their generated private key later:
+```python
+# Trading bot signs automatically via Privy API
+signed_tx = await privy.wallet.sign_transaction(
+    wallet_address=wallet_address,
+    transaction={
+        'to': '0xvault_address...',
+        'data': deposit_calldata,
+        'value': 0,
+        'chain_id': 42161  # Arbitrum
+    }
+)
 
-**Option 1: CLI Export**
-```bash
-$ python setup.py --export-key
-Enter setup password: ••••••••
-Private Key: 0x1234... (copy this to secure storage)
-```
-
-**Option 2: Dashboard Export** (password required)
-```
-Settings → Wallet → Export Private Key
-Enter password: [________]
-[Reveal Key]  [Copy to Clipboard]
-```
-
-**Option 3: Paper Backup** (during setup)
-```
-Your wallet address: 0xAbCd...1234
-
-To backup your private key:
-1. Write down this password: [MySecurePass123!]
-2. Run: python setup.py --export-key --password "MySecurePass123!"
-3. Store the exported key in a password manager or hardware wallet
+# Broadcast to chain
+await web3.eth.send_raw_transaction(signed_tx.raw_transaction)
 ```
 
 ---
 
-## Phase 4: Web Implementation (Sandboxed - Generated Keys Only)
+## Phase 4: Web Implementation (Privy-Powered)
 
 ### 4.1 Security Model
 
-The web interface runs in a **restricted setup mode** with these constraints:
+The web interface uses Privy's hosted authentication:
 
 1. **Localhost-only**: Only accepts connections from 127.0.0.1
-2. **Time-bounded**: 30-minute window, then route 404s
-3. **Single-session**: One concurrent setup session
-4. **Setup key**: Requires terminal-displayed key for access
-5. **No custom keys**: User-provided private keys are rejected
-6. **Generated only**: System creates wallet via server-side CSPRNG
-7. **No persistence**: Secrets never touch browser storage
-
+2. **Privy managed**: All wallet operations via Privy SDK
+3. **Email/OTP auth**: Users log in via Privy's hosted UI
+4. **No local keys**: Private keys never touch local filesystem
+5. **Auto-created**: Wallet generated on first login
 ### 4.2 Frontend Implementation
 
 ```html
@@ -1077,9 +1046,39 @@ The web interface runs in a **restricted setup mode** with these constraints:
         <button onclick="nextStep()" id="step2-next" disabled>Continue</button>
     </div>
     
-    <!-- Step 3: Blockchain & Wallet Generation -->
+    <!-- Step 3: Privy Wallet Setup -->
     <div class="step" data-step="3">
-        <h1>Blockchain Configuration</h1>
+        <h1>Wallet Setup via Privy</h1>
+        
+        <div class="info-box" style="background:#001a33;padding:1rem;margin:1rem 0;">
+            <strong>ℹ️ Privy-Powered Wallets</strong>
+            <p>Your wallet will be created and managed by Privy's secure infrastructure.</p>
+            <ul>
+                <li>Keys are sharded across secure enclaves (TEEs)</li>
+                <li>Never stored on local filesystem</li>
+                <li>Server-side signing for automated trading</li>
+                <li>50,000 free signatures per month</li>
+            </ul>
+        </div>
+        
+        <h3>Connect Your Wallet</h3>
+        <p>Login with email to create or access your embedded wallet:</p>
+        
+        <!-- Privy React SDK will render here -->
+        <div id="privy-login"></div>
+        
+        <div id="wallet-info" style="display:none;margin-top:1rem;">
+            <div class="success-box" style="background:#002200;padding:1rem;">
+                <strong>✓ Wallet Connected</strong>
+                <p>Address: <code id="wallet-address"></code></p>
+                <p class="hint">Fund this address with USDC on Arbitrum to start trading.</p>
+                <p class="backup-hint" style="font-size:0.9em;color:#888;">
+                    💡 Your private key is managed securely by Privy. You can export it anytime from settings.
+                </p>
+            </div>
+        </div>
+        
+        <hr style="margin: 2rem 0; border-color: #333;">
         
         <h3>Arbitrum RPC Connection</h3>
         <select id="rpc-provider">
@@ -1093,40 +1092,6 @@ The web interface runs in a **restricted setup mode** with these constraints:
         
         <button onclick="testRPC()">Test Connection</button>
         <div id="rpc-status"></div>
-        
-        <hr style="margin: 2rem 0; border-color: #333;">
-        
-        <h3>🔐 Secure Wallet Generation</h3>
-        <p>A new wallet will be generated and encrypted. You don't need to input a private key.</p>
-        
-        <div class="info-box" style="background:#001a33;padding:1rem;margin:1rem 0;">
-            <strong>ℹ️ How it works:</strong>
-            <ul>
-                <li>System generates a cryptographically secure key</li>
-                <li>Key is encrypted immediately with your password</li>
-                <li>Only the address is shown here</li>
-                <li>You can export the private key later via CLI</li>
-            </ul>
-        </div>
-        
-        <h4>Set Wallet Encryption Password</h4>
-        <p>This password protects your generated wallet. You'll need it to export the private key later.</p>
-        
-        <input type="password" id="wallet-password" class="secure-input" 
-               placeholder="Wallet Password" autocomplete="off">
-        <input type="password" id="wallet-password-confirm" class="secure-input" 
-               placeholder="Confirm Password" autocomplete="off">
-        
-        <button onclick="generateWallet()">Generate Secure Wallet</button>
-        
-        <div id="wallet-generation-result" style="display:none;margin-top:1rem;">
-            <div class="success-box" style="background:#002200;padding:1rem;">
-                <strong>✓ Wallet Generated</strong>
-                <p>Address: <code id="generated-address"></code></p>
-                <p class="hint">Fund this address with USDC on Arbitrum to start trading.</p>
-                <p class="backup-hint" style="font-size:0.9em;color:#888;">
-                    💡 Tip: To backup, run <code>python setup.py --export-key</code> after setup.
-                </p>
             </div>
         </div>
     </div>
@@ -1263,43 +1228,36 @@ The web interface runs in a **restricted setup mode** with these constraints:
             }
         }
         
-        async function generateWallet() {
-            const password = document.getElementById('wallet-password').value;
-            const confirmPassword = document.getElementById('wallet-password-confirm').value;
-            
-            if (password !== confirmPassword) {
-                alert('Passwords do not match');
-                return;
+        // Initialize Privy SDK
+        const privy = new PrivyClient({
+            appId: 'your-privy-app-id',
+            config: {
+                embeddedWallets: {
+                    ethereum: {
+                        createOnLogin: 'all-users'
+                    }
+                }
             }
+        });
+        
+        // Handle wallet connection
+        privy.on('wallet_connected', (wallet) => {
+            document.getElementById('wallet-address').textContent = wallet.address;
+            document.getElementById('wallet-info').style.display = 'block';
             
-            if (password.length < 12) {
-                alert('Password must be at least 12 characters');
-                return;
-            }
-            
-            // Clear passwords from DOM
-            document.getElementById('wallet-password').value = '';
-            document.getElementById('wallet-password-confirm').value = '';
-            
-            // Request server-side generation
-            const response = await fetch('/api/setup/generate-wallet', {
+            // Store wallet address in session
+            fetch('/api/setup/store-wallet-address', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
                     session_id: sessionId,
-                    password: password  // Will be used for encryption
+                    address: wallet.address
                 })
             });
-            
-            const result = await response.json();
-            
-            if (result.success) {
-                document.getElementById('generated-address').textContent = result.address;
-                document.getElementById('wallet-generation-result').style.display = 'block';
-            } else {
-                alert('Wallet generation failed: ' + result.error);
-            }
-        }
+        });
+        
+        // Mount Privy login UI
+        privy.mountLoginUI('#privy-login');
         
         function showStep(n) {
             document.querySelectorAll('.step').forEach(el => {
@@ -1516,71 +1474,38 @@ async def test_hyperliquid(data: EncryptedPayload, request: Request):
     except Exception as e:
         return {"success": False, "error": "Decryption or connection failed"}
 
-@router.post("/generate-wallet")
-async def generate_wallet(data: dict, request: Request):
+@router.post("/store-wallet-address")
+async def store_wallet_address(data: dict, request: Request):
     """
-    Generate new wallet for web setup.
-    Private key is generated server-side and immediately encrypted.
+    Store wallet address from Privy connection.
+    Actual wallet is managed by Privy infrastructure.
     """
     client_ip = request.client.host
     session = setup_manager.validate_session(data.get('session_id'), client_ip)
     
-    password = data.get('password')
-    if not password or len(password) < 12:
-        return {"success": False, "error": "Password must be at least 12 characters"}
+    address = data.get('address')
+    if not address or not address.startswith('0x'):
+        return {"success": False, "error": "Invalid address"}
     
-    try:
-        from eth_account import Account
-        import secrets
-        from src.setup.encryption import SecureSecretStorage
-        
-        # Generate secure random private key
-        private_key = secrets.token_hex(32)
-        account = Account.from_key(private_key)
-        
-        # Encrypt with password-derived key
-        storage = SecureSecretStorage()
-        storage.write_secret('arbitrum_private_key', private_key, password)
-        
-        # Clear from memory
-        private_key = '0' * 64
-        del private_key
-        
-        return {
-            "success": True,
-            "address": account.address,
-            "message": "Wallet generated and encrypted"
-        }
-        
-    except Exception as e:
-        return {"success": False, "error": "Wallet generation failed"}
+    # Store just the address - keys are in Privy
+    session.wallet_address = address
+    
+    return {
+        "success": True,
+        "address": address,
+        "message": "Wallet address stored"
+    }
 
-@router.post("/export-key")
-async def export_key(data: dict, request: Request):
+@router.get("/privy-config")
+async def get_privy_config(request: Request):
     """
-    Export private key (requires password).
-    Only available after setup completion via CLI.
+    Get Privy app ID for frontend initialization.
+    App secret stays server-side only.
     """
-    # This endpoint requires completed setup + password
-    from src.setup.encryption import SecureSecretStorage
-    
-    try:
-        storage = SecureSecretStorage()
-        password = data.get('password')
-        
-        private_key = storage.read_secret('arbitrum_private_key', password)
-        
-        if not private_key:
-            return {"success": False, "error": "Invalid password or key not found"}
-        
-        return {
-            "success": True,
-            "private_key": private_key,
-            "warning": "Store this securely. Never share it."
-        }
-        
-    except Exception as e:
-        return {"success": False, "error": "Export failed"}
+    return {
+        "app_id": os.getenv('PRIVY_APP_ID'),
+        "environment": os.getenv('PRIVY_ENVIRONMENT', 'production')
+    }
 ```
 
 ---
@@ -1846,21 +1771,23 @@ for handler in logging.root.handlers:
 - [ ] Dependency audit (`pip-audit`, `safety check`)
 - [ ] Static analysis (Bandit, Semgrep)
 - [ ] Secrets detection (GitLeaks, TruffleHog)
+- [ ] Privy app security review (dashboard config)
 
 ### Testing
 
 - [ ] Unit tests for all validators
-- [ ] Integration tests for encryption/decryption
+- [ ] Integration tests for Privy API calls
 - [ ] Fuzz testing for input validation
-- [ ] Penetration testing (attempt to extract secrets)
+- [ ] Verify no local key storage
 
 ### Deployment
 
 - [ ] Non-root container user
 - [ ] Read-only root filesystem
-- [ ] Encrypted volumes for secrets
+- [ ] Privy auth key stored securely (600 permissions)
 - [ ] Network policies (localhost only for setup)
 - [ ] Audit logging enabled
+- [ ] Privy dashboard access restricted
 
 ### Monitoring
 
@@ -1868,6 +1795,7 @@ for handler in logging.root.handlers:
 - [ ] Alert on setup from non-localhost IP
 - [ ] Alert on long-running setup sessions
 - [ ] Log all configuration changes
+- [ ] Monitor Privy API usage for anomalies
 
 ---
 
@@ -1875,8 +1803,10 @@ for handler in logging.root.handlers:
 
 | Threat | Likelihood | Impact | Mitigation |
 |--------|-----------|--------|------------|
-| Private key theft from filesystem | Medium | Critical | Hardware-bound encryption |
-| Memory dump containing keys | Low | Critical | SecureBuffer with mlock |
+| Private key theft from filesystem | **N/A** | Critical | **No local keys** (Privy manages) |
+| Memory dump containing keys | **N/A** | Critical | **No local keys** (Privy TEE) |
+| Privy service compromise | Low | Critical | TEE sharding, no single point of failure |
+| Privy shutdown | Very Low | High | Export keys before migration |
 | Timing attack on validation | Low | Medium | Constant-time comparison |
 | Browser extension stealing input | Medium | Critical | CLI preferred, iframe sandbox |
 | Supply chain attack (ACE) | Low | Critical | Minimal dependencies, checksums |
@@ -1884,7 +1814,7 @@ for handler in logging.root.handlers:
 | Partial configuration corruption | Low | High | Atomic writes with rollback |
 | Log file containing secrets | Medium | Critical | Aggressive sanitization |
 | Session hijacking | Low | High | IP binding, short TTL |
-| Screen capture of keys | Medium | Medium | Hidden input, no echo |
+| Screen capture of keys | N/A | Medium | **No key display in UI** |
 
 ---
 
