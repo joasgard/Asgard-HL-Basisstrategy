@@ -1,0 +1,37 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    DASHBOARD_ENV=production
+
+# Install curl for healthcheck
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app user
+RUN groupadd -r dashboard && useradd -r -g dashboard -s /bin/false dashboard
+
+# Install Python deps
+COPY requirements/base.txt /tmp/base.txt
+COPY requirements/dashboard.txt /tmp/dashboard.txt
+RUN pip install --no-cache-dir -r /tmp/dashboard.txt
+
+WORKDIR /app
+
+# Copy code
+COPY src/dashboard/ ./src/dashboard/
+COPY src/shared/ ./src/shared/
+COPY src/config/ ./src/config/
+
+# Create data directory
+RUN mkdir -p /app/data && chown -R dashboard:dashboard /app
+
+USER dashboard
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+    CMD curl -f "http://localhost:8080/health" --max-time 4 || exit 1
+
+CMD ["uvicorn", "src.dashboard.main:app", "--host", "0.0.0.0", "--port", "8080"]

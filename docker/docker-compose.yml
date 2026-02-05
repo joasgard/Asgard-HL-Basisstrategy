@@ -53,6 +53,9 @@ services:
     networks:
       - bot-network
     
+    expose:
+      - "8000"  # Internal API for dashboard
+    
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
@@ -67,6 +70,50 @@ services:
         max-file: "3"
         labels: "service"
         env: "BOT_ENV"
+
+  # ===========================================================================
+  # Dashboard Service
+  # ===========================================================================
+  dashboard:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.dashboard
+    image: delta-neutral-dashboard:latest
+    container_name: delta-neutral-dashboard
+    restart: unless-stopped
+    
+    environment:
+      - DASHBOARD_ENV=production
+      - DASHBOARD_HOST=0.0.0.0
+      - DASHBOARD_PORT=8080
+      - BOT_API_URL=http://bot:8000
+      - ADMIN_API_KEY=${ADMIN_API_KEY}
+      - DASHBOARD_JWT_SECRET=${DASHBOARD_JWT_SECRET:-changeme-in-production}
+    
+    volumes:
+      - bot-data:/app/data:ro  # Read-only access to bot state
+    
+    ports:
+      - "8080:8080"
+    
+    networks:
+      - bot-network
+    
+    depends_on:
+      bot:
+        condition: service_healthy
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health", "--max-time", "4"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # ===========================================================================
   # Health Monitor Sidecar

@@ -203,7 +203,17 @@ class DeltaNeutralBot:
         self._lst_monitor = LSTMonitor()
         
         # Initialize pause controller
-        api_key = self.config.admin_api_key or get_settings().admin_api_key or "default_key"
+        api_key = self.config.admin_api_key or get_settings().admin_api_key
+        if not api_key:
+            import warnings
+            warnings.warn(
+                "ADMIN_API_KEY not configured. Bot pause/resume controls will not work. "
+                "Set ADMIN_API_KEY environment variable or admin_api_key in config.",
+                RuntimeWarning
+            )
+            # Generate a temporary key for this session only (won't persist)
+            import secrets
+            api_key = f"temp_{secrets.token_hex(16)}"
         self._pause_controller = PauseController(admin_api_key=api_key)
         
         # Initialize position manager (with async context)

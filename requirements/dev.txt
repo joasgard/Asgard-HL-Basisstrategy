@@ -1,0 +1,14 @@
+# Development dependencies
+-r base.txt
+-r bot.txt
+-r dashboard.txt
+-r test.txt
+
+# Code quality
+black>=23.0.0
+ruff>=0.1.0
+mypy>=1.0.0
+
+# Debugging
+ipython>=8.0.0
+ipdb>=0.13.0

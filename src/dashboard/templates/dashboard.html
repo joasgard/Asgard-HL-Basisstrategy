@@ -1,0 +1,233 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div x-data="dashboard()" x-init="init()">
+    <!-- Status Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        <!-- Uptime -->
+        <div class="bg-slate-800 rounded-lg p-6 border border-slate-700">
+            <h3 class="text-sm font-medium text-slate-400">Uptime</h3>
+            <p class="mt-2 text-2xl font-bold" x-text="stats.uptime_formatted || '--:--:--'"></p>
+        </div>
+        
+        <!-- Positions -->
+        <div class="bg-slate-800 rounded-lg p-6 border border-slate-700">
+            <h3 class="text-sm font-medium text-slate-400">Open Positions</h3>
+            <p class="mt-2 text-2xl font-bold" x-text="summary.open_positions || 0"></p>
+        </div>
+        
+        <!-- PnL -->
+        <div class="bg-slate-800 rounded-lg p-6 border border-slate-700">
+            <h3 class="text-sm font-medium text-slate-400">Total PnL</h3>
+            <p class="mt-2 text-2xl font-bold" 
+               :class="summary.total_pnl_usd >= 0 ? 'text-success' : 'text-danger'"
+               x-text="'$' + (summary.total_pnl_usd || 0).toFixed(2)"></p>
+        </div>
+        
+        <!-- Status -->
+        <div class="bg-slate-800 rounded-lg p-6 border border-slate-700">
+            <h3 class="text-sm font-medium text-slate-400">Status</h3>
+            <div class="mt-2 flex items-center">
+                <span class="h-3 w-3 rounded-full mr-2"
+                      :class="pause_state.paused ? 'bg-danger' : 'bg-success'"></span>
+                <span class="text-lg font-bold" x-text="pause_state.paused ? 'PAUSED' : 'RUNNING'"></span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Control Panel -->
+    <div class="bg-slate-800 rounded-lg p-6 border border-slate-700 mb-8">
+        <h2 class="text-lg font-medium mb-4">Control Panel</h2>
+        <div class="flex flex-wrap gap-4">
+            <button @click="pause('entry')" 
+                    :disabled="pause_state.paused"
+                    class="px-4 py-2 bg-warning text-slate-900 rounded hover:bg-warning/80 disabled:opacity-50 disabled:cursor-not-allowed">
+                Pause Entry
+            </button>
+            <button @click="pause('all')"
+                    :disabled="pause_state.paused"
+                    class="px-4 py-2 bg-danger text-white rounded hover:bg-danger/80 disabled:opacity-50 disabled:cursor-not-allowed">
+                Pause All
+            </button>
+            <button @click="resume()"
+                    :disabled="!pause_state.paused"
+                    class="px-4 py-2 bg-success text-slate-900 rounded hover:bg-success/80 disabled:opacity-50 disabled:cursor-not-allowed">
+                Resume
+            </button>
+        </div>
+        <p x-show="pause_state.reason" class="mt-4 text-sm text-slate-400" x-text="'Reason: ' + pause_state.reason"></p>
+    </div>
+    
+    <!-- Positions List -->
+    <div class="bg-slate-800 rounded-lg border border-slate-700">
+        <div class="px-6 py-4 border-b border-slate-700 flex justify-between items-center">
+            <h2 class="text-lg font-medium">Active Positions</h2>
+            <span class="text-sm text-slate-400" x-text="positions.length + ' positions'"></span>
+        </div>
+        <div class="divide-y divide-slate-700">
+            <template x-if="positions.length === 0">
+                <div class="px-6 py-8 text-center text-slate-400">
+                    No active positions
+                </div>
+            </template>
+            <template x-for="position in positions" :key="position.position_id">
+                <div class="px-6 py-4 flex items-center justify-between hover:bg-slate-700/50">
+                    <div>
+                        <span class="font-medium text-lg" x-text="position.asset"></span>
+                        <span class="ml-2 text-sm text-slate-400" x-text="position.leverage + 'x'"></span>
+                        <span class="ml-2 text-xs px-2 py-0.5 rounded bg-slate-700" x-text="position.status"></span>
+                    </div>
+                    <div class="flex items-center space-x-6">
+                        <div class="text-right">
+                            <p class="text-sm text-slate-400">PnL</p>
+                            <p class="font-medium" 
+                               :class="position.total_pnl_usd >= 0 ? 'text-success' : 'text-danger'"
+                               x-text="'$' + Number(position.total_pnl_usd).toFixed(2)"></p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-sm text-slate-400">Funding</p>
+                            <p class="font-medium text-success" x-text="'$' + Number(position.funding_pnl_usd).toFixed(2)"></p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-sm text-slate-400">Health</p>
+                            <p class="font-medium" x-text="(Number(position.asgard_hf) * 100).toFixed(1) + '%'"></p>
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+    
+    <!-- Last Updated -->
+    <div class="mt-4 text-right text-sm text-slate-400">
+        Last updated: <span x-text="lastUpdated || 'Never'"></span>
+    </div>
+</div>
+
+<script>
+function dashboard() {
+    return {
+        positions: [],
+        summary: {
+            total_positions: 0,
+            open_positions: 0,
+            total_pnl_usd: 0,
+            total_deployed_usd: 0
+        },
+        stats: {},
+        pause_state: {},
+        lastUpdated: '',
+        apiKey: localStorage.getItem('api_key') || '',
+        refreshInterval: null,
+        
+        init() {
+            this.fetchData();
+            // Poll every 5 seconds
+            this.refreshInterval = setInterval(() => this.fetchData(), 5000);
+            
+            // Update connection status
+            window.addEventListener('beforeunload', () => {
+                if (this.refreshInterval) {
+                    clearInterval(this.refreshInterval);
+                }
+            });
+        },
+        
+        async fetchData() {
+            try {
+                const [positionsRes, statusRes] = await Promise.all([
+                    fetch('/api/v1/positions'),
+                    fetch('/api/v1/status')
+                ]);
+                
+                // Update connection status indicator
+                const statusDot = document.getElementById('status-dot');
+                const statusText = document.getElementById('status-text');
+                
+                if (positionsRes.ok && statusRes.ok) {
+                    statusDot.className = 'h-2 w-2 rounded-full bg-success mr-2';
+                    statusText.textContent = 'Connected';
+                    
+                    const posData = await positionsRes.json();
+                    this.positions = posData || [];
+                    this.summary = {
+                        total_positions: this.positions.length,
+                        open_positions: this.positions.filter(p => p.status === 'open').length,
+                        total_pnl_usd: this.positions.reduce((sum, p) => sum + Number(p.total_pnl_usd || 0), 0),
+                        total_deployed_usd: this.positions.reduce((sum, p) => sum + Number(p.deployed_usd || 0), 0)
+                    };
+                    
+                    const statusData = await statusRes.json();
+                    this.stats = statusData.stats || {};
+                    this.pause_state = statusData.pause_state || {};
+                    
+                    this.lastUpdated = new Date().toLocaleTimeString();
+                } else {
+                    statusDot.className = 'h-2 w-2 rounded-full bg-warning mr-2';
+                    statusText.textContent = 'Degraded';
+                }
+            } catch (e) {
+                console.error('Failed to fetch data:', e);
+                const statusDot = document.getElementById('status-dot');
+                const statusText = document.getElementById('status-text');
+                statusDot.className = 'h-2 w-2 rounded-full bg-danger mr-2';
+                statusText.textContent = 'Disconnected';
+            }
+        },
+        
+        async pause(scope) {
+            if (!this.apiKey) {
+                this.apiKey = prompt('Enter admin API key:');
+                if (!this.apiKey) return;
+                localStorage.setItem('api_key', this.apiKey);
+            }
+            
+            const reason = prompt('Reason for pause:');
+            if (!reason) return;
+            
+            try {
+                const res = await fetch('/api/v1/control/pause', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({api_key: this.apiKey, reason, scope})
+                });
+                
+                if (res.ok) {
+                    this.fetchData();
+                } else {
+                    const error = await res.text();
+                    alert('Failed to pause: ' + error);
+                }
+            } catch (e) {
+                alert('Error: ' + e);
+            }
+        },
+        
+        async resume() {
+            if (!this.apiKey) {
+                this.apiKey = prompt('Enter admin API key:');
+                if (!this.apiKey) return;
+                localStorage.setItem('api_key', this.apiKey);
+            }
+            
+            try {
+                const res = await fetch('/api/v1/control/resume', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({api_key: this.apiKey})
+                });
+                
+                if (res.ok) {
+                    this.fetchData();
+                } else {
+                    const error = await res.text();
+                    alert('Failed to resume: ' + error);
+                }
+            } catch (e) {
+                alert('Error: ' + e);
+            }
+        }
+    }
+}
+</script>
+{% endblock %}

@@ -1,9 +1,27 @@
 # Delta Neutral Funding Rate Arbitrage Bot
 
-**Status:** Phases 1-9 Complete (686 tests passing)  
+**Status:** Phases 1-9 Complete (804 tests passing)  
+**Dashboard:** Web UI with real-time monitoring and controls  
 **Spec Version:** 2.1
 
 A delta-neutral arbitrage strategy capturing funding rate differentials between **Asgard Finance** (Solana long positions) and **Hyperliquid** (Arbitrum short perpetuals).
+
+---
+
+## 🚀 Quick Start
+
+**New users:** See **[GETTING_STARTED.md](GETTING_STARTED.md)** for complete setup instructions.
+
+```bash
+# Quick start for returning users
+git clone <repository-url>
+cd BasisStrategy
+./scripts/setup.sh              # Run setup script
+python run_bot.py               # Start the bot
+uvicorn src.dashboard.main:app  # Start dashboard (separate terminal)
+```
+
+Then open http://localhost:8080 for the web dashboard.
 
 ---
 
@@ -30,13 +48,17 @@ A delta-neutral arbitrage strategy capturing funding rate differentials between 
 
 ---
 
-## Documentation
+## 📚 Documentation
 
 | Document | Purpose |
 |----------|---------|
+| **[GETTING_STARTED.md](GETTING_STARTED.md)** | **Step-by-step setup guide for new users** |
 | [spec.md](spec.md) | Full technical specification (architecture, formulas, risk limits) |
-| [tracker.md](tracker.md) | Implementation progress, task breakdown, and status |
-| [test-check.md](test-check.md) | 170-test safety verification suite |
+| [spec-dashboard.md](spec-dashboard.md) | Dashboard technical specification |
+| [tracker.md](tracker.md) | Implementation progress and task breakdown |
+| [tracker-dashboard.md](tracker-dashboard.md) | Dashboard implementation tracker |
+| [SECURITY.md](SECURITY.md) | Security best practices and secret management |
+| [test-check.md](test-check.md) | Safety verification test suite |
 | [future-releases.md](future-releases.md) | Roadmap and deferred features |
 
 ---
@@ -74,120 +96,91 @@ A delta-neutral arbitrage strategy capturing funding rate differentials between 
 | Phase 5.4 | ✅ Complete | Position sizer |
 | Phase 5.5 | ✅ Complete | LST correlation monitor |
 | Phase 6 | ✅ Complete | Risk engine & circuit breakers |
+| Phase 7 | ✅ Complete | Pause controller & emergency stops |
+| Phase 8 | ✅ Complete | Shadow trading & paper trading mode |
+| Phase 9 | ✅ Complete | **Dashboard** - Web UI with real-time monitoring |
 
-### Completed Work (686 tests passing)
+### Completed Work (804 tests passing)
 - ✅ **Foundation** - Directory structure, deps, config, logging, retry
 - ✅ **Models** - Enums, FundingRate, AsgardRates, ArbitrageOpportunity, Positions
 - ✅ **Chain Connection** - Solana/Arbitrum clients, outage detection
 - ✅ **Asgard Integration** - Client, market data, state machine, transactions, manager
 - ✅ **Hyperliquid Integration** - Client, funding oracle, signer, trader
 - ✅ **Core Strategy** - Opportunity detection, price consensus, fill validation
+- ✅ **Dashboard** - Web UI, REST API, real-time monitoring, pause/resume controls
 
 See [tracker.md](tracker.md) for detailed task breakdown.
 
 ---
 
-## Local Development Setup
+## 🖥️ Dashboard
 
-### Prerequisites
-- Python 3.9+
-- Git
+The bot now includes a **web dashboard** for monitoring and control:
 
-### 1. Clone the Repository
+| Feature | Description |
+|---------|-------------|
+| **Real-time Status** | Uptime, positions, PnL, bot status |
+| **Position Monitor** | Live position tracking with health metrics |
+| **Control Panel** | Pause/resume bot operations |
+| **Auto-refresh** | Updates every 5 seconds |
+| **Dark Mode** | Default dark theme |
 
-```bash
-git clone <repository-url>
-cd BasisStrategy
-```
+**Access:** http://localhost:8080 (when running)
 
-### 2. Create Virtual Environment
-
-```bash
-# Create venv
-python3 -m venv .venv
-
-# Activate venv
-# macOS/Linux:
-source .venv/bin/activate
-
-# Windows:
-.venv\Scripts\activate
-```
-
-### 3. Install Dependencies
-
-```bash
-# Make sure venv is activated (you should see (.venv) in your prompt)
-pip install -r requirements.txt
-```
-
-### 4. Configure Environment
-
-```bash
-# Copy example environment file
-cp .env.example .env
-
-# Edit .env with your API keys and configuration
-# Required variables:
-# - ASGARD_API_KEY
-# - SOLANA_RPC_URL (recommend Helius or Triton)
-# - SOLANA_PRIVATE_KEY
-# - HYPERLIQUID_WALLET_ADDRESS
-# - HYPERLIQUID_PRIVATE_KEY
-```
-
-**Security Note:** Never commit `.env` to git. It's already in `.gitignore`.
-
-### 5. Run Tests
-
-```bash
-# Ensure venv is activated
-source .venv/bin/activate
-
-# Run all unit tests
-pytest tests/unit/ -v
-
-# Run with coverage report
-pytest tests/unit/ --cov=src --cov-report=html
-```
-
-### 6. Verify Setup
-
-```bash
-# Test imports work
-python -c "from src.config.settings import get_settings; print('✓ Settings OK')"
-python -c "from src.models.common import Asset; print('✓ Models OK')"
-python -c "from src.chain.solana import SolanaClient; print('✓ Chain clients OK')"
-```
+**Setup:** See [GETTING_STARTED.md](GETTING_STARTED.md#method-2-with-dashboard-recommended)
 
 ---
 
 ## Usage
 
-### Paper Trading Mode (Future)
-
+### Run Bot Only (Headless)
 ```bash
 source .venv/bin/activate
-python -m src.main --paper
+python run_bot.py
 ```
 
-### Live Trading (Future)
-
+### Run Bot + Dashboard
 ```bash
+# Terminal 1 - Bot
 source .venv/bin/activate
-python -m src.main
+python run_bot.py
+
+# Terminal 2 - Dashboard
+source .venv/bin/activate
+uvicorn src.dashboard.main:app --host 0.0.0.0 --port 8080
 ```
+
+### Run with Docker Compose
+```bash
+cd docker
+docker-compose up -d
+```
+
+See [GETTING_STARTED.md](GETTING_STARTED.md) for complete setup details.
+
+---
+
+## Local Development Setup
+
+For detailed setup instructions, see **[GETTING_STARTED.md](GETTING_STARTED.md)**.
+
+Quick summary:
+1. Clone repository
+2. Run `./scripts/setup.sh`
+3. Configure secrets (see GETTING_STARTED.md)
+4. Run tests: `pytest tests/ -v`
 
 ---
 
 ## Safety & Testing
 
-This project includes a comprehensive 299-test safety suite covering:
+This project includes a comprehensive **804-test** safety suite covering:
 - Delta neutrality invariants
 - Liquidation protection
 - Price consensus validation
 - Funding rate safety checks
 - Transaction state machine recovery
+- Dashboard API security
 
 See [test-check.md](test-check.md) for the safety verification test matrix.
 

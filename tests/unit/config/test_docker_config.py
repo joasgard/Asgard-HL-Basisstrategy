@@ -10,7 +10,7 @@ class TestDockerfile:
     @pytest.fixture
     def dockerfile_path(self):
         """Path to Dockerfile."""
-        return Path(__file__).parent.parent.parent / "docker" / "Dockerfile"
+        return Path(__file__).parent.parent.parent.parent / "docker" / "Dockerfile"
     
     @pytest.fixture
     def dockerfile_content(self, dockerfile_path):
@@ -67,7 +67,7 @@ class TestDockerCompose:
     @pytest.fixture
     def compose_path(self):
         """Path to docker-compose.yml."""
-        return Path(__file__).parent.parent.parent / "docker" / "docker-compose.yml"
+        return Path(__file__).parent.parent.parent.parent / "docker" / "docker-compose.yml"
     
     @pytest.fixture
     def compose_config(self, compose_path):
@@ -164,7 +164,7 @@ class TestDeployScript:
     @pytest.fixture
     def script_path(self):
         """Path to deploy.sh."""
-        return Path(__file__).parent.parent.parent / "scripts" / "deploy.sh"
+        return Path(__file__).parent.parent.parent.parent / "scripts" / "deploy.sh"
     
     @pytest.fixture
     def script_content(self, script_path):
@@ -220,7 +220,7 @@ class TestSetupScript:
     @pytest.fixture
     def script_path(self):
         """Path to setup.sh."""
-        return Path(__file__).parent.parent.parent / "scripts" / "setup.sh"
+        return Path(__file__).parent.parent.parent.parent / "scripts" / "setup.sh"
     
     @pytest.fixture
     def script_content(self, script_path):
@@ -264,7 +264,7 @@ class TestHealthCheckScript:
     @pytest.fixture
     def script_path(self):
         """Path to health_check.sh."""
-        return Path(__file__).parent.parent.parent / "scripts" / "health_check.sh"
+        return Path(__file__).parent.parent.parent.parent / "scripts" / "health_check.sh"
     
     @pytest.fixture
     def script_content(self, script_path):
@@ -312,7 +312,7 @@ class TestProjectStructure:
     @pytest.fixture
     def project_root(self):
         """Get project root directory."""
-        return Path(__file__).parent.parent.parent
+        return Path(__file__).parent.parent.parent.parent
     
     def test_docker_directory_exists(self, project_root):
         """Test docker directory exists."""

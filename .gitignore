@@ -26,6 +26,10 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+MANIFEST
+pip-wheel-metadata/
+*.manifest
+*.spec
 
 # Virtual environments
 venv/
@@ -33,6 +37,7 @@ ENV/
 env/
 .venv/
 venv.bak/
+env.bak/
 
 # IDEs
 .vscode/
@@ -40,6 +45,8 @@ venv.bak/
 *.swp
 *.swo
 *~
+*.sublime-workspace
+*.sublime-project
 
 # ============================================
 # SECURITY: Environment Variables & Secrets
@@ -88,9 +95,27 @@ id.json
 # Testing
 # ============================================
 .coverage
+.coverage.*
 htmlcov/
 .pytest_cache/
 .tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# ============================================
+# Type Checking / Linting
+# ============================================
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+.pytype/
+cython_debug/
 
 # ============================================
 # Database (may contain sensitive data)
@@ -101,6 +126,9 @@ htmlcov/
 state.db
 positions.db
 history.db
+*.db-journal
+*.db-wal
+*.db-shm
 
 # ============================================
 # Logs (may contain sensitive data)
@@ -114,6 +142,7 @@ log/
 # ============================================
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # ============================================
 # Temporary files
@@ -121,3 +150,35 @@ Thumbs.db
 tmp/
 temp/
 .cache/
+*.tmp
+*.temp
+
+# ============================================
+# Documentation build artifacts
+# ============================================
+site/
+docs/_build/
+docs/_static/
+docs/_templates/
+*.doctrees
+
+# ============================================
+# Docker
+# ============================================
+.dockerignore
+.docker/
+*.env.docker
+
+# ============================================
+# Jupyter Notebook
+# ============================================
+.ipynb_checkpoints
+*.ipynb
+
+# ============================================
+# Profiling
+# ============================================
+*.prof
+*.lprof
+profile/
+prof/
