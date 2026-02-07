@@ -179,6 +179,178 @@ async def resume_bot(
     return {"success": result}
 
 
+@internal_app.post("/internal/positions/open")
+async def open_position_internal(
+    request: dict,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    """
+    Open a new delta-neutral position.
+    
+    This is a synchronous endpoint that executes the full position opening
+    flow. The dashboard should call this via the async job pattern.
+    
+    Request body:
+    {
+        "asset": "SOL",
+        "leverage": 3.0,
+        "size_usd": 10000,
+        "protocol": "kamino"  // optional, auto-selected if not provided
+    }
+    """
+    verify_internal_token(credentials)
+    bot = get_bot()
+    
+    try:
+        from decimal import Decimal
+        from src.models.common import Asset
+        from src.venues.asgard.market_data import AsgardMarketData
+        
+        # Parse request
+        asset_str = request.get("asset", "SOL")
+        leverage = Decimal(str(request.get("leverage", 3.0)))
+        size_usd = Decimal(str(request.get("size_usd", 10000)))
+        protocol_override = request.get("protocol")
+        
+        asset = Asset(asset_str)
+        
+        # Get market data for protocol selection
+        market_data = AsgardMarketData()
+        
+        # Select protocol (auto or override)
+        if protocol_override:
+            from src.models.common import Protocol
+            selected_protocol = Protocol[protocol_override.upper()]
+        else:
+            # Auto-select best protocol
+            protocol_result = await market_data.select_best_protocol(
+                asset=asset,
+                size_usd=size_usd,
+                leverage=leverage
+            )
+            selected_protocol = protocol_result.protocol
+        
+        # Build opportunity
+        from src.models.opportunity import ArbitrageOpportunity, ProtocolRate
+        from src.venues.hyperliquid.funding_oracle import HyperliquidFundingOracle
+        
+        # Get Hyperliquid funding rate
+        oracle = HyperliquidFundingOracle()
+        funding_rates = await oracle.get_current_funding_rates()
+        sol_funding = funding_rates.get("SOL")
+        
+        if not sol_funding:
+            return {
+                "success": False,
+                "error": "Failed to get Hyperliquid funding rate",
+                "stage": "market_data"
+            }
+        
+        # Get Asgard rates for selected protocol
+        markets = await market_data.get_markets()
+        protocol_rate = None
+        
+        for strategy_name, strategy_data in markets.get("strategies", {}).items():
+            if asset.value in strategy_name:
+                for source in strategy_data.get("liquiditySources", []):
+                    if source.get("lendingProtocol") == selected_protocol.value:
+                        from src.config.assets import ASSETS
+                        metadata = ASSETS[asset]
+                        
+                        lending_apy = source.get("tokenALendingApyRate", 0)
+                        borrowing_apy = source.get("tokenBBorrowingApyRate", 0)
+                        staking_apy = metadata.staking_apy if metadata.is_lst else 0
+                        
+                        net_carry_apy = (lending_apy + staking_apy - borrowing_apy * (leverage - 1))
+                        
+                        protocol_rate = ProtocolRate(
+                            protocol=selected_protocol,
+                            token_a_apy=lending_apy + staking_apy,
+                            token_b_apy=borrowing_apy,
+                            net_carry_apr=net_carry_apy,
+                            max_leverage=source.get("longMaxLeverage", 4.0),
+                            capacity_usd=float(source.get("tokenAMaxDepositCapacity", "1000000"))
+                        )
+                        break
+                if protocol_rate:
+                    break
+        
+        if not protocol_rate:
+            return {
+                "success": False,
+                "error": f"No valid rate found for {asset.value} on {selected_protocol.name}",
+                "stage": "market_data"
+            }
+        
+        # Create opportunity
+        opportunity = ArbitrageOpportunity(
+            asset=asset,
+            selected_protocol=selected_protocol,
+            asgard_rate=protocol_rate,
+            hyperliquid_rate=sol_funding,
+            leverage=leverage,
+            deployed_capital_usd=size_usd * 2,  # Total capital (both sides)
+            position_size_usd=size_usd,
+            hyperliquid_funding_premium_8hr=sol_funding.funding_rate,
+            expected_total_apr=0,  # Will be calculated
+            volatility_30d=0.1,  # Placeholder
+            preflight_checks_passed=False,  # Will run preflight
+        )
+        
+        # Run preflight checks
+        preflight_result = await bot._position_manager.run_preflight_checks(opportunity)
+        
+        if not preflight_result.passed:
+            return {
+                "success": False,
+                "error": "Preflight checks failed",
+                "stage": "preflight",
+                "failed_checks": {
+                    name: str(result) for name, result in preflight_result.checks.items() 
+                    if not result
+                }
+            }
+        
+        # Mark preflight as passed
+        opportunity.preflight_checks_passed = True
+        
+        # Execute position opening
+        result = await bot._position_manager.open_position(opportunity)
+        
+        if result.success:
+            return {
+                "success": True,
+                "position_id": result.position.position_id,
+                "asgard_pda": result.position.asgard.position_pda if hasattr(result.position.asgard, 'position_pda') else None,
+                "selected_protocol": selected_protocol.name,
+                "hyperliquid_funding_rate": float(sol_funding.funding_rate)
+            }
+        else:
+            # Check if partial failure (Asgard opened but Hyperliquid failed)
+            partial = {
+                "asgard_opened": result.stage != "asgard_open" if hasattr(result, 'stage') else False,
+                "stage": result.stage if hasattr(result, 'stage') else "unknown",
+                "unwind_attempted": True  # PositionManager tries to unwind on failure
+            }
+            
+            return {
+                "success": False,
+                "error": result.error,
+                "stage": result.stage if hasattr(result, 'stage') else "unknown",
+                "partial_result": partial
+            }
+            
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to open position: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e),
+            "stage": "unknown"
+        }
+
+
 @internal_app.websocket("/internal/events")
 async def events_websocket(websocket: WebSocket):
     """WebSocket for real-time events."""

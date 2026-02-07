@@ -88,13 +88,3 @@ def get_asset_metadata(asset: Asset) -> AssetMetadata:
 def get_mint(asset: Asset) -> str:
     """Get the SPL token mint for an asset."""
     return ASSETS[asset].mint
-
-
-def get_all_assets() -> List[Asset]:
-    """Get list of all supported assets."""
-    return list(ASSETS.keys())
-
-
-def get_lst_assets() -> List[Asset]:
-    """Get list of LST assets only."""
-    return [a for a in ASSETS.keys() if ASSETS[a].is_lst]

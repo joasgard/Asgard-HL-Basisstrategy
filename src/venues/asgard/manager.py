@@ -123,20 +123,19 @@ class AsgardPositionManager:
         
         # Lazy initialization of tx_builder (needs settings)
         if self.tx_builder is None:
-            if settings.solana_private_key:
+            if settings.solana_wallet_address and settings.privy_app_id:
                 self.tx_builder = AsgardTransactionBuilder(
                     client=self.client,
                     state_machine=self.state_machine,
                 )
             else:
-                logger.warning("Solana private key not configured, transaction signing disabled")
+                logger.warning("Solana wallet address or Privy not configured, transaction signing disabled")
         
         # Lazy initialization of solana_client
         if self.solana_client is None:
-            if settings.solana_rpc_url and settings.solana_private_key:
+            if settings.solana_rpc_url:
                 self.solana_client = SolanaClient(
                     rpc_url=settings.solana_rpc_url,
-                    private_key=settings.solana_private_key,
                 )
     
     async def __aenter__(self) -> "AsgardPositionManager":
@@ -232,7 +231,7 @@ class AsgardPositionManager:
             )
             
             # Step 2: Sign transaction
-            sign_result = self.tx_builder.sign_transaction(
+            sign_result = await self.tx_builder.sign_transaction(
                 intent_id=intent_id,
                 unsigned_tx=build_result.unsigned_tx,
             )
@@ -320,7 +319,7 @@ class AsgardPositionManager:
             )
             
             # Step 2: Sign transaction
-            sign_result = self.tx_builder.sign_transaction(
+            sign_result = await self.tx_builder.sign_transaction(
                 intent_id=intent_id,
                 unsigned_tx=build_result.unsigned_tx,
             )

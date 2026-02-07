@@ -57,7 +57,7 @@ class TestOpenLongPosition:
             blockhash="test_blockhash",
             protocol=Protocol.MARGINFI,
         ))
-        builder.sign_transaction = MagicMock(return_value=SignResult(
+        builder.sign_transaction = AsyncMock(return_value=SignResult(
             intent_id="test-intent",
             signed_tx=b"signed_tx_bytes",
             signature="test_signature_123",
@@ -209,7 +209,7 @@ class TestClosePosition:
             blockhash="test_blockhash",
             protocol=Protocol.MARGINFI,
         ))
-        builder.sign_transaction = MagicMock(return_value=SignResult(
+        builder.sign_transaction = AsyncMock(return_value=SignResult(
             intent_id="close-intent",
             signed_tx=b"signed_close_tx",
             signature="close_signature_123",

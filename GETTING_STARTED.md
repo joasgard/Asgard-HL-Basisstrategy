@@ -9,15 +9,13 @@ A step-by-step guide to set up and run the Delta Neutral Funding Rate Arbitrage 
 - **Python 3.9+**
 - **Git**
 - **Docker & Docker Compose** (optional, for containerized deployment)
-- **API Keys** from:
-  - [Asgard Finance](https://asgard.finance)
-  - [Helius](https://helius.xyz) or other Solana RPC provider
-  - Self-generated Solana wallet
-  - Self-generated Hyperliquid wallet (secp256k1)
+- **Privy Account** (free) from [privy.io](https://privy.io) - for secure wallet infrastructure
+
+> **Note:** Exchange API keys are **optional**. Both Asgard and Hyperliquid work with wallet-based authentication.
 
 ---
 
-## 🚀 Quick Start (5 minutes)
+## 🚀 Quick Start (3 minutes)
 
 ### 1. Clone the Repository
 
@@ -39,90 +37,147 @@ This will:
 - Create required directories
 - Set up secret files
 
-### 3. Configure Secrets
+### 3. Start the Dashboard
 
-Choose **one** of these methods:
-
-#### Option A: Secrets Directory (Recommended)
-
-```bash
-# Copy example files
-cp secrets/asgard_api_key.txt.example secrets/asgard_api_key.txt
-cp secrets/solana_private_key.txt.example secrets/solana_private_key.txt
-cp secrets/hyperliquid_private_key.txt.example secrets/hyperliquid_private_key.txt
-cp secrets/hyperliquid_wallet_address.txt.example secrets/hyperliquid_wallet_address.txt
-cp secrets/admin_api_key.txt.example secrets/admin_api_key.txt
-
-# Edit with your actual credentials
-echo "your_asgard_api_key" > secrets/asgard_api_key.txt
-echo "your_solana_private_key" > secrets/solana_private_key.txt
-echo "your_hyperliquid_private_key" > secrets/hyperliquid_private_key.txt
-echo "your_hyperliquid_wallet_address" > secrets/hyperliquid_wallet_address.txt
-
-# Generate a secure admin key for dashboard access
-openssl rand -hex 32 > secrets/admin_api_key.txt
-
-# Set secure permissions
-chmod 600 secrets/*.txt
-```
-
-#### Option B: Environment Variables
-
-```bash
-# Add to your shell profile (~/.bashrc, ~/.zshrc, etc.)
-export ASGARD_API_KEY="your_asgard_api_key"
-export SOLANA_RPC_URL="https://your-rpc-url.com"
-export SOLANA_PRIVATE_KEY="your_solana_private_key"
-export HYPERLIQUID_WALLET_ADDRESS="your_hyperliquid_wallet_address"
-export HYPERLIQUID_PRIVATE_KEY="your_hyperliquid_private_key"
-export ADMIN_API_KEY="your_secure_random_key"
-```
-
-#### Option C: .env File (Development Only)
-
-```bash
-# Copy example file
-cp .env.example .env
-
-# Edit .env with your credentials
-nano .env  # or use your preferred editor
-```
-
----
-
-## 🏃 Running the Bot
-
-### Method 1: Local Python (Development)
-
-```bash
-# Activate virtual environment
-source .venv/bin/activate
-
-# Run the bot
-python run_bot.py
-```
-
-The bot will:
-1. Connect to Solana and Arbitrum
-2. Start monitoring for opportunities
-3. Open positions when criteria are met
-4. Run until you press Ctrl+C
-
-### Method 2: With Dashboard (Recommended)
-
-**Terminal 1 - Bot:**
-```bash
-source .venv/bin/activate
-python run_bot.py
-```
-
-**Terminal 2 - Dashboard:**
 ```bash
 source .venv/bin/activate
 uvicorn src.dashboard.main:app --host 0.0.0.0 --port 8080
 ```
 
-Then open http://localhost:8080 in your browser.
+Then open **http://localhost:8080** and follow the 3-step setup wizard:
+
+| Step | Action | Description |
+|------|--------|-------------|
+| 1 | **Login** | Sign in with Privy (Google, Twitter, etc.) |
+| 2 | **Wallets** | Create Solana + Arbitrum wallets |
+| 3 | **Exchange** | Optional: Add API keys for higher rate limits |
+
+That's it! You're ready to trade.
+
+---
+
+## 📖 Detailed Setup
+
+### Privy Configuration (Required)
+
+The bot uses **Privy** for secure, server-side wallet management.
+
+#### 1. Create Privy App
+
+1. Go to [https://dashboard.privy.io](https://dashboard.privy.io) and sign up
+2. Create a new app
+3. Copy your **App ID** and **App Secret**
+
+#### 2. Configure Server Secret
+
+```bash
+# Generate a secure server secret for encryption
+openssl rand -hex 32 > secrets/server_secret.txt
+
+# Add your Privy credentials
+echo "your_privy_app_id" > secrets/privy_app_id.txt
+echo "your_privy_app_secret" > secrets/privy_app_secret.txt
+```
+
+#### 3. Set Secure Permissions
+
+```bash
+chmod 600 secrets/*.txt
+```
+
+---
+
+## 🌐 Using the Dashboard
+
+### First Time Setup Wizard
+
+The dashboard includes a guided 3-step setup:
+
+#### Step 1: Authentication
+- Click "Sign in with Privy"
+- Login with Google, Twitter, or email
+- Your user ID becomes your account identifier
+
+#### Step 2: Wallet Setup
+- The dashboard creates two wallets via Privy:
+  - **Solana wallet** - For Asgard trading
+  - **Arbitrum wallet** - For Hyperliquid trading
+- Fund these wallets with USDC to start trading
+
+#### Step 3: Exchange Configuration (Optional)
+- **Asgard**: Public access (1 req/sec) or add API key for unlimited
+- **Hyperliquid**: Wallet-based auth (no key needed)
+- Click "Skip" to use wallet-based authentication
+
+### Main Dashboard Features
+
+After setup, the dashboard shows:
+
+| Feature | Description |
+|---------|-------------|
+| **🔴 Fund Wallets** | Deposit USDC to your trading wallets |
+| **🟢 Launch Strategy** | Start the arbitrage bot |
+| **Status Cards** | Bot status, positions count, PnL |
+| **Positions List** | Real-time position monitoring |
+| **Control Panel** | Pause/resume trading |
+
+---
+
+## 💰 Funding Your Wallets
+
+Before trading, fund your wallets:
+
+### Solana Wallet (Asgard)
+- Send **SOL** - For transaction fees
+- Send **USDC** - For margin trading
+
+### Arbitrum Wallet (Hyperliquid)
+- Send **ETH** - For transaction fees (small amount)
+- Send **USDC** - For perpetual trading
+
+Use the "🔴 Fund Wallets" button on the dashboard to see your wallet addresses.
+
+---
+
+## 🔧 Optional: API Keys for Higher Rate Limits
+
+Both exchanges work without API keys, but you can add them for higher rate limits:
+
+### Asgard API Key (Optional)
+
+```bash
+# Contact Asgard for an API key
+echo "your_asgard_api_key" > secrets/asgard_api_key.txt
+```
+
+| Access Type | Rate Limit |
+|-------------|------------|
+| No API Key | 1 req/sec (IP-based) |
+| With API Key | Unlimited |
+
+### Hyperliquid API Key (Optional)
+
+Hyperliquid uses your EVM wallet for authentication (EIP-712 signatures). API keys are only needed for higher rate limits.
+
+---
+
+## 🏃 Running the Bot
+
+### Method 1: Dashboard-First (Recommended)
+
+```bash
+source .venv/bin/activate
+uvicorn src.dashboard.main:app --port 8080
+```
+
+Open http://localhost:8080, complete the 3-step wizard, then click **"🟢 Launch Strategy"**.
+
+### Method 2: Headless Bot
+
+```bash
+source .venv/bin/activate
+python run_bot.py
+```
 
 ### Method 3: Docker Compose (Production)
 
@@ -147,72 +202,25 @@ Access dashboard at http://localhost:8080
 
 ---
 
-## 🌐 Using the Dashboard
+## 🔒 Security
 
-### First Time Setup
+### How It Works
 
-1. Open http://localhost:8080
-2. Enter your `ADMIN_API_KEY` when prompted (for pause/resume controls)
-3. The API key is saved in browser localStorage for convenience
+1. **Privy manages wallets** - Private keys never touch your server
+2. **Server-side signing** - Transactions signed via Privy's secure API
+3. **Field-level encryption** - API keys encrypted at rest using AES-256-GCM
+4. **No local keys** - Unlike traditional setups, no `*_private_key.txt` files exist
 
-### Dashboard Features
+### Security Checklist
 
-| Feature | Description |
-|---------|-------------|
-| **Status Cards** | Uptime, positions count, total PnL, bot status |
-| **Control Panel** | Pause Entry, Pause All, Resume buttons |
-| **Positions List** | Real-time position monitoring with PnL |
-| **Auto-Refresh** | Updates every 5 seconds automatically |
+Before running with real funds:
 
-### API Endpoints
-
-The dashboard also provides a REST API:
-
-```bash
-# Health check
-curl http://localhost:8080/health
-
-# Get status (requires auth)
-curl -H "Authorization: Bearer $ADMIN_API_KEY" http://localhost:8080/api/v1/status
-
-# List positions
-curl -H "Authorization: Bearer $ADMIN_API_KEY" http://localhost:8080/api/v1/positions
-
-# Pause bot
-curl -X POST -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $ADMIN_API_KEY" \
-  -d '{"reason": "Maintenance", "scope": "all", "api_key": "'$ADMIN_API_KEY'"}' \
-  http://localhost:8080/api/v1/control/pause
-```
-
----
-
-## 🔧 Configuration Options
-
-### Bot Configuration
-
-Edit `run_bot.py` to customize:
-
-```python
-config = BotConfig(
-    max_concurrent_positions=5,      # Max open positions
-    min_opportunity_apy=0.01,        # 1% minimum APY
-    enable_auto_exit=True,           # Auto-close on triggers
-    enable_circuit_breakers=True,    # Safety circuit breakers
-    admin_api_key=settings.admin_api_key,
-)
-```
-
-### Dashboard Configuration
-
-Set via environment variables:
-
-```bash
-export DASHBOARD_HOST=0.0.0.0      # Bind address
-export DASHBOARD_PORT=8080         # Port
-export BOT_API_URL=http://bot:8000 # Bot internal API
-export CACHE_TTL=5.0               # Cache duration (seconds)
-```
+- [ ] Created Privy account and configured credentials
+- [ ] Generated secure `server_secret.txt` for encryption
+- [ ] Set restrictive permissions: `chmod 600 secrets/*`
+- [ ] Verified `.env` and `secrets/` are in `.gitignore`
+- [ ] Tested with small amounts first
+- [ ] Verified dashboard is not exposed to public internet
 
 ---
 
@@ -229,9 +237,6 @@ pytest tests/ -v
 # Run bot tests only
 pytest tests/unit/ -v
 
-# Run dashboard tests only
-pytest tests/dashboard/ -v
-
 # Run with coverage
 pytest tests/ --cov=src --cov-report=html
 ```
@@ -244,32 +249,19 @@ python -c "from src.config.settings import get_settings; print('✓ Settings OK'
 python -c "from src.core.bot import DeltaNeutralBot; print('✓ Bot OK')"
 python -c "from src.dashboard.main import app; print('✓ Dashboard OK')"
 
-# Test configuration loading
+# Test Privy connection
 python -c "
-from src.config.settings import get_settings
-settings = get_settings()
-print(f'✓ Config loaded: {settings}')
+from src.venues.privy_client import get_privy_client
+client = get_privy_client()
+print('✓ Privy client initialized')
 "
 ```
 
 ---
 
-## 🔒 Security Checklist
-
-Before running with real funds:
-
-- [ ] Created separate wallets for dev/prod
-- [ ] Set restrictive permissions on secrets: `chmod 600 secrets/*`
-- [ ] Verified `.env` and `secrets/` are in `.gitignore`
-- [ ] Generated strong `ADMIN_API_KEY`
-- [ ] Tested with small amounts first
-- [ ] Verified dashboard is not exposed to public internet
-
----
-
 ## 🐛 Troubleshooting
 
-### Bot won't start
+### Dashboard won't start
 
 ```bash
 # Check Python version
@@ -280,34 +272,32 @@ source .venv/bin/activate
 which python  # Should show .venv path
 
 # Check dependencies
-pip list | grep -E "(web3|solana|fastapi)"
+pip list | grep -E "(fastapi|privy|web3)"
 ```
 
-### Missing API keys
+### Privy authentication errors
 
 ```bash
-# Check if secrets are loaded
+# Verify credentials are set
+cat secrets/privy_app_id.txt
+cat secrets/privy_app_secret.txt
+
+# Test Privy connection
 python -c "
-from src.config.settings import get_settings
-s = get_settings()
-print('Asgard key:', '✓' if s.asgard_api_key else '✗')
-print('Solana key:', '✓' if s.solana_private_key else '✗')
-print('HL key:', '✓' if s.hyperliquid_private_key else '✗')
+from src.venues.privy_client import get_privy_client
+client = get_privy_client()
+print('✓ Privy client initialized')
 "
 ```
 
-### Dashboard can't connect to bot
+### Missing exchange data
 
 ```bash
-# Check bot health
-curl http://localhost:8000/health
+# Check if public API access is working
+curl https://v2-ultra-edge.asgard.finance/margin-trading/markets
 
-# Verify bot is running
-ps aux | grep python
-
-# Check ports
-lsof -i :8000  # Bot internal API
-lsof -i :8080  # Dashboard
+# Test with optional API key if you have one
+curl -H "X-API-Key: your_key" https://v2-ultra-edge.asgard.finance/margin-trading/markets
 ```
 
 ### Docker issues
@@ -327,20 +317,21 @@ docker-compose logs dashboard
 
 ## 📚 Next Steps
 
-1. **Read the spec**: See [spec.md](spec.md) for full technical details
-2. **Review architecture**: Check [spec-dashboard.md](spec-dashboard.md) for dashboard design
+1. **Read the spec**: See [docs/specs/spec.md](docs/specs/spec.md) for full technical details
+2. **Review architecture**: Check architecture docs in `docs/architecture/`
 3. **Monitor performance**: Use the dashboard to track PnL and positions
-4. **Set up alerts**: Configure Telegram/Discord webhooks (Phase 3)
+4. **Add API keys later**: Contact exchanges if you need higher rate limits
 
 ---
 
 ## 💡 Tips
 
 - **Start small**: Test with minimum position sizes first
+- **Fund both wallets**: You need USDC on both Solana and Arbitrum
 - **Monitor funding rates**: Dashboard shows real-time funding PnL
 - **Use pause**: Pause entry during volatile markets
 - **Check health**: Use `/health` endpoint for monitoring
-- **Backup state**: The bot saves state to `state.db`
+- **No API keys needed**: Both exchanges work with wallet-based auth
 
 ---
 

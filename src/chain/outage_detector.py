@@ -225,11 +225,3 @@ class OutageDetector:
 
 # Singleton instance
 _detector: Optional[OutageDetector] = None
-
-
-def get_outage_detector() -> OutageDetector:
-    """Get global outage detector instance."""
-    global _detector
-    if _detector is None:
-        _detector = OutageDetector()
-    return _detector

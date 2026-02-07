@@ -771,9 +771,9 @@ class TestRebalanceLogic:
             mock_consensus.return_value = AsyncMock()
             
             async with PositionManager() as manager:
-                # Mock high rebalance cost
-                manager._calculate_rebalance_cost = MagicMock(return_value=Decimal("1000"))
-                manager._calculate_drift_cost = MagicMock(return_value=Decimal("10"))
+                # Mock high rebalance cost - use side_effect to return actual Decimals
+                manager._calculate_rebalance_cost = lambda pos: Decimal("1000")
+                manager._calculate_drift_cost = lambda pos, delta: Decimal("10")
                 
                 result = await manager.rebalance_if_needed(mock_drifted_position)
                 

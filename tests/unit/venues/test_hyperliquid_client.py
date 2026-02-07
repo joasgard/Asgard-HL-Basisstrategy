@@ -338,6 +338,7 @@ class TestHyperliquidAPIErrorInResponse:
         """Test handling of errors in 200 response body."""
         client = HyperliquidClient()
         
+        # Create mock response class with proper async context manager
         class MockResponse:
             status = 200
             
@@ -348,10 +349,10 @@ class TestHyperliquidAPIErrorInResponse:
                 return self
             
             async def __aexit__(self, *args):
-                pass
+                return None
         
         mock_session = MagicMock()
-        mock_session.post = MagicMock(return_value=MockResponse())
+        mock_session.post = lambda *args, **kwargs: MockResponse()
         mock_session.closed = False
         client._session = mock_session
         

@@ -113,9 +113,9 @@ class Settings(BaseSettings):
         default_factory=lambda: get_secret("SOLANA_RPC_URL", "solana_rpc_url.txt", ""),
         alias="SOLANA_RPC_URL"
     )
-    solana_private_key: str = Field(
-        default_factory=lambda: get_secret("SOLANA_PRIVATE_KEY", "solana_private_key.txt", ""),
-        alias="SOLANA_PRIVATE_KEY"
+    solana_wallet_address: str = Field(
+        default_factory=lambda: get_secret("SOLANA_WALLET_ADDRESS", "solana_wallet_address.txt", ""),
+        alias="SOLANA_WALLET_ADDRESS"
     )
     
     # Hyperliquid (Arbitrum) - loaded from env or secrets file
@@ -123,9 +123,22 @@ class Settings(BaseSettings):
         default_factory=lambda: get_secret("HYPERLIQUID_WALLET_ADDRESS", "hyperliquid_wallet_address.txt", ""),
         alias="HYPERLIQUID_WALLET_ADDRESS"
     )
-    hyperliquid_private_key: str = Field(
-        default_factory=lambda: get_secret("HYPERLIQUID_PRIVATE_KEY", "hyperliquid_private_key.txt", ""),
-        alias="HYPERLIQUID_PRIVATE_KEY"
+    # Privy Configuration
+    privy_app_id: str = Field(
+        default_factory=lambda: get_secret("PRIVY_APP_ID", "privy_app_id.txt", ""),
+        alias="PRIVY_APP_ID"
+    )
+    privy_app_secret: str = Field(
+        default_factory=lambda: get_secret("PRIVY_APP_SECRET", "privy_app_secret.txt", ""),
+        alias="PRIVY_APP_SECRET"
+    )
+    privy_auth_key_path: str = Field(
+        default="privy_auth.pem",
+        alias="PRIVY_AUTH_KEY_PATH"
+    )
+    wallet_address: str = Field(
+        default_factory=lambda: get_secret("WALLET_ADDRESS", "wallet_address.txt", ""),
+        alias="WALLET_ADDRESS"
     )
     arbitrum_rpc_url: Optional[str] = Field(
         default_factory=lambda: get_secret("ARBITRUM_RPC_URL", "arbitrum_rpc_url.txt"),
@@ -181,12 +194,21 @@ class Settings(BaseSettings):
             missing.append("ASGARD_API_KEY (asgard_api_key.txt or env var)")
         if not self.solana_rpc_url:
             missing.append("SOLANA_RPC_URL (solana_rpc_url.txt or env var)")
-        if not self.solana_private_key:
-            missing.append("SOLANA_PRIVATE_KEY (solana_private_key.txt or env var)")
         if not self.hyperliquid_wallet_address:
             missing.append("HYPERLIQUID_WALLET_ADDRESS (hyperliquid_wallet_address.txt or env var)")
-        if not self.hyperliquid_private_key:
-            missing.append("HYPERLIQUID_PRIVATE_KEY (hyperliquid_private_key.txt or env var)")
+        
+        # Privy requirements
+        if not self.privy_app_id:
+            missing.append("PRIVY_APP_ID (privy_app_id.txt or env var)")
+        if not self.privy_app_secret:
+            missing.append("PRIVY_APP_SECRET (privy_app_secret.txt or env var)")
+        if not self.wallet_address:
+            missing.append("WALLET_ADDRESS (wallet_address.txt or env var)")
+        
+        # Check auth key file exists
+        auth_key_path = Path(self.privy_auth_key_path)
+        if not auth_key_path.exists():
+            missing.append(f"PRIVY_AUTH_KEY ({self.privy_auth_key_path} not found)")
         
         return missing
 
@@ -233,21 +255,6 @@ def get_risk_limits() -> dict:
     return load_risk_config().get("risk_limits", {})
 
 
-def get_fee_market_config() -> dict:
-    """Get fee market config section."""
-    return load_risk_config().get("fee_market", {})
-
-
 def get_funding_config() -> dict:
     """Get funding rate config section."""
     return load_risk_config().get("funding", {})
-
-
-def get_monitoring_config() -> dict:
-    """Get monitoring config section."""
-    return load_risk_config().get("monitoring", {})
-
-
-def get_retry_config() -> dict:
-    """Get retry config section."""
-    return load_risk_config().get("retry", {})

@@ -46,12 +46,19 @@ class TestGetCurrentFundingRates:
     async def test_get_current_funding_rates(self):
         """Test fetching current funding rates."""
         client = MagicMock(spec=HyperliquidClient)
-        client.get_meta_and_asset_contexts = AsyncMock(return_value={
-            "assetCtxs": [
-                {"coin": "SOL", "funding": -0.0001, "markPx": 100.0},
-                {"coin": "ETH", "funding": 0.00005, "markPx": 2000.0},
+        # New format: [meta, asset_ctxs]
+        client.get_meta_and_asset_contexts = AsyncMock(return_value=[
+            {
+                "universe": [
+                    {"name": "SOL", "szDecimals": 2, "maxLeverage": 40},
+                    {"name": "ETH", "szDecimals": 4, "maxLeverage": 25},
+                ]
+            },
+            [
+                {"funding": -0.0001, "markPx": 100.0},
+                {"funding": 0.00005, "markPx": 2000.0},
             ]
-        })
+        ])
         
         oracle = HyperliquidFundingOracle(client=client)
         
@@ -69,9 +76,11 @@ class TestGetCurrentFundingRates:
     async def test_get_current_funding_rates_empty(self):
         """Test fetching when no assets available."""
         client = MagicMock(spec=HyperliquidClient)
-        client.get_meta_and_asset_contexts = AsyncMock(return_value={
-            "assetCtxs": []
-        })
+        # New format: [meta, asset_ctxs] with empty universe
+        client.get_meta_and_asset_contexts = AsyncMock(return_value=[
+            {"universe": []},
+            []
+        ])
         
         oracle = HyperliquidFundingOracle(client=client)
         

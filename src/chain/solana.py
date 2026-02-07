@@ -6,7 +6,6 @@ from typing import Optional, List, Dict, Any
 from solana.rpc.async_api import AsyncClient
 from solana.rpc.commitment import Confirmed
 from solana.rpc.types import TxOpts
-from solders.keypair import Keypair
 from solders.pubkey import Pubkey
 from solders.signature import Signature
 from solders.transaction import VersionedTransaction
@@ -27,31 +26,11 @@ class SolanaClient:
         self.settings = get_settings()
         self.rpc_url = rpc_url or self.settings.solana_rpc_url
         self.client = AsyncClient(self.rpc_url, commitment=Confirmed)
-        self._keypair: Optional[Keypair] = None
         
-    @property
-    def keypair(self) -> Keypair:
-        """Lazy-load keypair from settings."""
-        if self._keypair is None:
-            private_key = self.settings.solana_private_key
-            # Try to parse as base58 encoded key
-            try:
-                self._keypair = Keypair.from_base58_string(private_key)
-            except Exception:
-                # Try as array format
-                import json
-                try:
-                    key_bytes = json.loads(private_key)
-                    self._keypair = Keypair.from_bytes(bytes(key_bytes))
-                except Exception as e:
-                    raise ValueError(f"Failed to load Solana private key: {e}")
-        
-        return self._keypair
-    
     @property
     def wallet_address(self) -> str:
-        """Get wallet public key as string."""
-        return str(self.keypair.pubkey())
+        """Get wallet public key as string from settings."""
+        return self.settings.solana_wallet_address
     
     @retry_rpc
     async def get_balance(self, pubkey: Optional[str] = None) -> float:
@@ -64,7 +43,7 @@ class SolanaClient:
         Returns:
             Balance in SOL
         """
-        target = Pubkey.from_string(pubkey) if pubkey else self.keypair.pubkey()
+        target = Pubkey.from_string(pubkey) if pubkey else Pubkey.from_string(self.wallet_address)
         
         resp = await self.client.get_balance(target)
         if resp.value is None:
@@ -84,12 +63,10 @@ class SolanaClient:
         Returns:
             Token balance in UI units
         """
-        owner_pubkey = Pubkey.from_string(owner) if owner else self.keypair.pubkey()
+        owner_pubkey = Pubkey.from_string(owner) if owner else Pubkey.from_string(self.wallet_address)
         mint_pubkey = Pubkey.from_string(mint)
         
         # Get token account
-        from spl.token.constants import TOKEN_PROGRAM_ID
-        
         resp = await self.client.get_token_accounts_by_owner(
             owner_pubkey,
             {"mint": mint_pubkey},

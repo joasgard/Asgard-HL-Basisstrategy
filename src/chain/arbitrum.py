@@ -6,9 +6,6 @@ from decimal import Decimal
 
 from web3 import AsyncWeb3
 from web3.types import TxReceipt, TxParams
-from eth_account import Account
-from eth_account.datastructures import SignedTransaction
-
 from src.config.settings import get_settings
 from src.utils.logger import get_logger
 from src.utils.retry import retry_rpc
@@ -22,29 +19,19 @@ DEFAULT_ARBITRUM_RPC = "https://arb1.arbitrum.io/rpc"
 class ArbitrumClient:
     """
     Async Arbitrum/Web3 client with retry and error handling.
+    
+    Note: This client is for read-only operations. All signing is done via Privy.
     """
     
     def __init__(self, rpc_url: Optional[str] = None):
         self.settings = get_settings()
         self.rpc_url = rpc_url or self.settings.arbitrum_rpc_url or DEFAULT_ARBITRUM_RPC
         self.w3 = AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(self.rpc_url))
-        self._account: Optional[Account] = None
-    
-    @property
-    def account(self) -> Account:
-        """Lazy-load account from settings."""
-        if self._account is None:
-            private_key = self.settings.hyperliquid_private_key
-            if private_key.startswith("0x"):
-                private_key = private_key[2:]
-            self._account = Account.from_key(private_key)
-        
-        return self._account
     
     @property
     def wallet_address(self) -> str:
-        """Get wallet address."""
-        return self.account.address
+        """Get wallet address from settings."""
+        return self.settings.wallet_address
     
     @retry_rpc
     async def get_balance(self, address: Optional[str] = None) -> Decimal:
@@ -85,26 +72,8 @@ class ArbitrumClient:
         """Estimate gas for a transaction."""
         return await self.w3.eth.estimate_gas(tx_params)
     
-    def sign_transaction(self, tx_params: TxParams) -> SignedTransaction:
-        """
-        Sign a transaction.
-        
-        Args:
-            tx_params: Transaction parameters
-        
-        Returns:
-            Signed transaction
-        """
-        signed = self.account.sign_transaction(tx_params)
-        logger.info(
-            "transaction_signed",
-            tx_hash=signed.hash.hex(),
-            from_address=self.wallet_address,
-        )
-        return signed
-    
     @retry_rpc
-    async def send_raw_transaction(self, signed_tx: SignedTransaction) -> str:
+    async def send_raw_transaction(self, signed_tx_bytes: bytes) -> str:
         """
         Send a signed raw transaction.
         

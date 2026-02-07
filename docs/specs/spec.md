@@ -1,17 +1,19 @@
-# Delta Neutral Funding Rate Arbitrage System
-## Technical Specification v2.0 - Asgard + Hyperliquid
+# Delta Neutral Bot - Technical Specification v3.4 (SaaS)
+
+**Product**: Delta Neutral Funding Rate Arbitrage Bot  
+**Deployment Model**: Single-tenant SaaS (Docker per user)  
+**Wallet Infrastructure**: Privy Embedded Wallets (server-side signing)  
+**Authentication**: Privy OAuth (Shared App)  
+**Primary Interface**: Web Dashboard with 3-Step Setup + Action Hub  
+**Version**: 3.4 (Simplified Dashboard-First UX)  
 
 ---
 
 ## 1. Executive Summary
 
-This document specifies a **Delta Neutral Funding Rate Arbitrage Bot** that captures yield differentials between:
-- **Long Spot/Margin Positions**: Via Asgard Finance API on Solana (aggregating Marginfi, Kamino, Solend, Drift)
-- **Short Perpetual Positions**: Via Hyperliquid on Arbitrum
+A delta-neutral funding rate arbitrage system deployed as single-tenant containers. Users run their own isolated instance through a web-based setup wizard, with embedded wallets managed via Privy. This specification covers the complete technical implementation including security architecture, authentication, backup/recovery, and operational procedures.
 
-The bot monitors Hyperliquid funding rates and Asgard net borrowing costs, identifies profitable spreads, and executes delta-neutral positions programmatically.
-
-### Primary Strategy: Equal Leverage Delta Neutral
+### Strategy Overview
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
@@ -19,11 +21,9 @@ The bot monitors Hyperliquid funding rates and Asgard net borrowing costs, ident
 │  ┌──────────────────────────────────────────────────────┐     │
 │  │  LONG Spot Margin Position                           │     │
 │  │  • Asset: SOL or SOL LST (jitoSOL, jupSOL, INF)      │     │
-│  │  • Collateral: USDC                                  │     │
 │  │  • Direction: LONG (0)                               │     │
-│  │  • Leverage: 3-4x (configurable, default 3x)         │     │
+│  │  • Leverage: 3-4x (default 3x)                       │     │
 │  │  • Protocol: Best rate from Marginfi/Kamino/Solend   │     │
-│  │  • Exposure: +3-4x SOL (or equivalent LST)           │     │
 │  └──────────────────────────────────────────────────────┘     │
 └────────────────────────┬───────────────────────────────────────┘
                          │ Delta Neutral (Equal Leverage)
@@ -32,1169 +32,1248 @@ The bot monitors Hyperliquid funding rates and Asgard net borrowing costs, ident
 │  ┌──────────────────────────────────────────────────────┐     │
 │  │  SHORT Perpetual Position                            │     │
 │  │  • Asset: SOL-PERP (SOLUSD)                          │     │
-│  │  • Leverage: 3-4x (must match long side)             │     │
+│  │  • Leverage: 3-4x (matches long side)                │     │
 │  │  • Funding: Received hourly (1/8 of 8hr rate)        │     │
-│  │  • Exposure: -3-4x SOL                               │     │
 │  └──────────────────────────────────────────────────────┘     │
 └────────────────────────────────────────────────────────────────┘
 ```
 
-**Key Principle**: Both legs use **equal leverage (3-4x)** to achieve delta neutrality. Default is 3x for conservative risk profile.
+**Yield Formula**: Hyperliquid funding earned - Asgard net borrowing cost + LST staking yield
 
-**Supported Long Assets**:
-| Asset | Type | Notes |
-|-------|------|-------|
-| SOL | Native | Standard choice |
-| jitoSOL | LST | Jito liquid staking token |
-| jupSOL | LST | Jupiter liquid staking token |
-| INF | LST | Infinity LST basket |
+---
 
-**Yield Capture**: Hyperliquid funding earned - Asgard net borrowing cost + LST staking yield
+## 2. SaaS Architecture
 
-**Net Borrowing Cost Formula** (calculated on deployed capital):
+### 2.1 Deployment Model
+
 ```
-Position Structure (3x leverage example):
-- Deployed Capital: $100
-- Total Position: $300 ($100 principal + $200 borrowed)
-- Collateral: $300 in SOL/LST earning lending yield
-- Debt: $200 in USDC paying borrowing cost
+┌─────────────────────────────────────────────────────────────────┐
+│                     USER BROWSER                                │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐  │
+│  │ Setup Wizard │  │   Dashboard  │  │   Monitoring UI      │  │
+│  └──────────────┘  └──────────────┘  └──────────────────────┘  │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │ HTTPS
+┌──────────────────────────▼──────────────────────────────────────┐
+│              USER'S DOCKER CONTAINER (Single Tenant)            │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │  FastAPI + Jinja2/HTMX Dashboard                        │   │
+│  │  • Setup wizard endpoints                               │   │
+│  │  • Authentication & session management                  │   │
+│  │  • Bot control APIs                                     │   │
+│  │  • Real-time monitoring (SSE)                           │   │
+│  │  • Backup/restore APIs                                  │   │
+│  └──────────────────────┬──────────────────────────────────┘   │
+│                         │                                       │
+│  ┌──────────────────────▼──────────────────────────────────┐   │
+│  │  DeltaNeutralBot Core                                   │   │
+│  │  • Opportunity detection                                │   │
+│  │  • Position management                                  │   │
+│  │  • Risk engine                                          │   │
+│  │  • Transaction signing via Privy                        │   │
+│  └──────────────────────┬──────────────────────────────────┘   │
+│                         │                                       │
+│  ┌──────────────────────▼──────────────────────────────────┐   │
+│  │  SQLite (state.db)                                      │   │
+│  │  • Encrypted configuration (field-level AES-256-GCM)    │   │
+│  │  • Position state                                       │   │
+│  │  • Transaction history                                  │   │
+│  │  • Audit logs (sanitized)                               │   │
+│  └─────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+                           │
+           ┌───────────────┴───────────────┐
+           ▼                               ▼
+┌─────────────────────┐        ┌─────────────────────┐
+│   PRIVY (Wallets)   │        │   EXTERNAL APIS     │
+│  • EVM wallet       │        │  • Asgard Finance   │
+│  • Solana wallet    │        │  • Hyperliquid      │
+│  • Server signing   │        │  • Solana RPC       │
+└─────────────────────┘        └─────────────────────┘
+```
 
-Annual Flows:
-- Lending Yield Earned: $300 × tokenALendingApyRate
-- Borrowing Cost Paid: $200 × tokenBBorrowingApyRate
-- Net Carry: (Lending Yield) - (Borrowing Cost)
-- Net APY: Net Carry / Deployed Capital
+### 2.2 Key Architectural Decisions
 
-Example (3x leverage, 5% lend, 8% borrow):
-- Lending Yield: $300 × 5% = $15/year
-- Borrowing Cost: $200 × 8% = $16/year
-- Net Carry: $15 - $16 = -$1/year (cost)
-- Net Carry APY: -$1 / $100 = -1%
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| **Tenancy** | Single-tenant | User controls data, simpler security model |
+| **Wallets** | Privy embedded | No private keys in container, recoverable, TEE-backed |
+| **Setup** | **4-step wizard** (v3.4) | Auth → Wallets → Exchange → Dashboard |
+| **Config Storage** | SQLite + field-level encryption | Encrypted at rest, single file backup |
+| **State** | SQLite | Unified storage for config + state |
+| **UI** | Jinja2 + HTMX + SSE | Server-rendered, minimal JS |
+| **Auth** | **Privy OAuth** (shared app) | Email/Google/Twitter login, no config needed |
+| **KEK Derivation** | HMAC(user_id, server_secret) | Unique per user |
+| **Backup** | **Handled by Privy** | Account recovery via email |
+| **Dashboard** | **Trade monitor + action hub** (v3.4) | View status, fund wallets, launch strategy |
+| **Access** | Localhost-only + SSH tunnel | Secure by default |
 
-Example (3x leverage, 6% lend, 5% borrow - POSITIVE CARRY):
-- Lending Yield: $300 × 6% = $18/year
-- Borrowing Cost: $200 × 5% = $10/year
-- Net Carry: $18 - $10 = +$8/year (you get paid!)
-- Net Carry APY: +$8 / $100 = +8%
+### 2.3 Wallet Infrastructure (Privy)
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     Privy Key Architecture                               │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│   Key Creation                                                            │
+│   ┌──────────────┐     ┌──────────────┐     ┌──────────────┐           │
+│   │   Shard 1    │     │   Shard 2    │     │   Shard 3    │           │
+│   │  (User)      │     │  (Privy)     │     │  (TEE)       │           │
+│   │  Device      │     │  Server      │     │  Enclave     │           │
+│   └──────┬───────┘     └──────┬───────┘     └──────┬───────┘           │
+│          │                    │                    │                    │
+│          └────────────────────┴────────────────────┘                    │
+│                              │                                          │
+│                    Shamir Secret Sharing                               │
+│                    (e.g., 2-of-3 threshold)                            │
+│                                                                          │
+│   Signing Transaction                                                     │
+│   ┌─────────────────────────────────────────────────────────┐          │
+│   │              TEE (Trusted Execution Environment)          │          │
+│   │  ┌─────────────────────────────────────────────────────┐  │          │
+│   │  │  • Shards reconstituted inside secure enclave       │  │          │
+│   │  │  • Private key never exists in plaintext outside    │  │          │
+│   │  │  • Signature computed, key immediately destroyed    │  │          │
+│   │  └─────────────────────────────────────────────────────┘  │          │
+│   └─────────────────────────────────────────────────────────┘          │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Security Properties:**
+- ✅ Keys are **sharded** across multiple parties
+- ✅ **TEE isolation**: Keys reconstituted only in secure hardware
+- ✅ **No plaintext exposure**: Private key never in memory/logs
+- ✅ **Non-custodial**: Privy cannot access keys without user shard
+- ✅ **Exportable**: Users can export keys for self-custody anytime
+
+**Rate Limiting Considerations:**
+- 50K signatures/month on free tier
+- Typical usage: 20-40 signatures/day at 5 trades/day
+- Tracking: Monitor usage, alert at 80% threshold
+- Fallback: Pause trading if limits approached, suggest Privy upgrade
+
+---
+
+## 3. Authentication & Encryption
+
+> **v3.2 Update:** Authentication changed from password-based to Privy OAuth. No user password required.
+
+### 3.1 Two-Tier Key Hierarchy (Privy-Based)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                  ENCRYPTION ARCHITECTURE                     │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │  Key Encryption Key (KEK)                            │   │
+│  │  • Derived from: HMAC_SHA256(privy_user_id, secret)  │   │
+│  │  • Server secret from env (DASHBOARD_SESSION_SECRET) │   │
+│  │  • NEVER persisted - only in memory during session   │   │
+│  │  • Used to encrypt/decrypt the DEK                   │   │
+│  │  • Unique per user+server combination                │   │
+│  └──────────────────────┬──────────────────────────────┘   │
+│                         │                                    │
+│                         ▼                                    │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │  Data Encryption Key (DEK)                           │   │
+│  │  • Random 256-bit key generated on first setup       │   │
+│  │  • Stored in SQLite encrypted by KEK                 │   │
+│  │  • Used for field-level AES-256-GCM encryption       │   │
+│  │  • Same DEK encrypts all sensitive fields            │   │
+│  └──────────────────────┬──────────────────────────────┘   │
+│                         │                                    │
+│                         ▼                                    │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │  Encrypted Fields (SQLite)                           │   │
+│  │  • privy_app_id, privy_app_secret                    │   │
+│  │  • privy_auth_key (PEM)                              │   │
+│  │  • asgard_api_key                                    │   │
+│  │  • Each field: nonce (12B) || ciphertext || HMAC     │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 3.2 Authentication Flow (Pre-configured Privy OAuth)
+
+> **v3.3 Update:** Privy app is pre-configured by operator. Users just authenticate.
+
+**First-Time Setup:**
+1. User accesses dashboard → redirected to `/setup`
+2. Click "Login with Privy" → OAuth popup (email, Google, or Twitter/X)
+3. Server receives Privy user ID from callback
+4. Server derives KEK from HMAC(privy_user_id, server_secret)
+5. DEK generated, encrypted with KEK, stored in `user_keys` table
+6. Session cookie issued (HTTP-only, Secure, SameSite=Strict)
+7. Complete remaining setup steps (wallets, funding, exchange, strategy)
+8. All credentials encrypted with DEK on final launch
+
+**Returning User:**
+1. Access dashboard → click "Login with Privy"
+2. Authenticate via OAuth (same account = same wallets)
+3. Server derives same KEK from user ID + server secret
+4. Decrypt DEK from database
+5. Session issued with unlocked encryption manager
+
+**Why This Works:**
+- Privy app is shared across all users (configured by operator)
+- Each user gets unique wallets via their Privy user ID
+- KEK derivation ensures encryption isolation per user
+- Account recovery handled by Privy (email-based)
+
+**Session Management:**
+```python
+class SessionManager:
+    SESSION_TIMEOUT_MINUTES = 30
+    MAX_SESSION_HOURS = 8
+    
+    def _derive_kek(self, privy_user_id: str, server_secret: str) -> bytes:
+        """Derive KEK from Privy user ID and server secret."""
+        return hmac.new(
+            server_secret.encode(),
+            privy_user_id.encode(),
+            hashlib.sha256
+        ).digest()
+    
+    async def create_session(
+        self, 
+        privy_user_id: str,
+        email: str,
+        server_secret: str
+    ) -> Session:
+        """Create new session after successful Privy auth."""
+        session_id = secrets.token_urlsafe(32)
+        csrf_token = secrets.token_urlsafe(32)
+        
+        # Derive KEK and get/create DEK
+        kek = self._derive_kek(privy_user_id, server_secret)
+        encrypted_dek = await self._get_or_create_dek(privy_user_id, kek)
+        
+        # Store session metadata (no KEK!)
+        await self.db.execute(
+            """INSERT INTO sessions 
+               (id, privy_user_id, email, created_at, expires_at, csrf_token) 
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (session_id, privy_user_id, email, 
+             now(), now() + timedelta(hours=8), csrf_token)
+        )
+        
+        session = Session(
+            id=session_id,
+            privy_user_id=privy_user_id,
+            email=email,
+            csrf_token=csrf_token
+        )
+        session.encryption_manager.unlock_with_dek(encrypted_dek, kek)
+        return session
+```
+
+### 3.3 Privy OAuth Providers
+
+Supported authentication methods:
+- **Email** - Magic link sent to email
+- **Google** - OAuth via Google account
+- **Twitter/X** - OAuth via Twitter/X account
+
+**Benefits:**
+- ✅ No password for user to remember
+- ✅ No Privy app configuration needed
+- ✅ Wallets automatically recovered via email
+- ✅ Same user = same wallets across sessions
+- ✅ Enterprise-grade MPC security
+
+### 3.4 Tamper Detection
+
+All encrypted fields include HMAC-SHA256:
+```python
+def encrypt_field(plaintext: str, dek: bytes) -> bytes:
+    """Encrypt with AES-256-GCM + HMAC for tamper detection."""
+    nonce = os.urandom(12)
+    aesgcm = AESGCM(dek)
+    ciphertext = aesgcm.encrypt(nonce, plaintext.encode(), None)
+    
+    # Compute HMAC of ciphertext
+    hmac_key = dek[:32]  # First half of DEK
+    h = hmac.HMAC(hmac_key, hashes.SHA256())
+    h.update(ciphertext)
+    field_hmac = h.finalize()
+    
+    return nonce + ciphertext + field_hmac
+
+def decrypt_field(encrypted: bytes, dek: bytes) -> str:
+    """Decrypt and verify HMAC."""
+    nonce = encrypted[:12]
+    field_hmac = encrypted[-32:]
+    ciphertext = encrypted[12:-32]
+    
+    # Verify HMAC
+    hmac_key = dek[:32]
+    h = hmac.HMAC(hmac_key, hashes.SHA256())
+    h.update(ciphertext)
+    h.verify(field_hmac)  # Raises InvalidSignature if tampered
+    
+    # Decrypt
+    aesgcm = AESGCM(dek)
+    plaintext = aesgcm.decrypt(nonce, ciphertext, None)
+    return plaintext.decode()
 ```
 
 ---
 
-## 2. System Architecture
+## 4. Setup Wizard Flow
+
+### 4.1 Security-First Approach
+
+| Feature | Implementation | Rationale |
+|---------|---------------|-----------|
+| **Wallet Security** | Privy embedded wallets (TEE-sharded keys) | No private keys stored locally |
+| **Session Management** | Time-bounded (30 min), localhost-only | Limits attack window |
+| **Input Validation** | Server-side + client-side validation | Prevents injection attacks |
+| **Data Transmission** | Encrypted via HTTPS/TLS | Prevents eavesdropping |
+| **Configuration Storage** | SQLite with field-level encryption | Encrypted at rest |
+| **Audit Logging** | PII sanitized, actions logged | Accountability without exposure |
+| **Auth Key Backup** | Mandatory encrypted backup before completion | Prevents lockout |
+
+### 4.2 Simplified Flow (4 Steps + Dashboard)
+
+> **v3.4 Update:** Streamlined UX. Both exchanges work with wallet-based authentication (no API keys required). Funding and Strategy are dashboard actions, not setup steps.
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         OFF-CHAIN MONITORING LAYER                          │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
-│  │  Hyperliquid │  │    Asgard    │  │   Price      │  │   Risk       │     │
-│  │Funding Oracle│  │ Borrow Oracle│  │   Consensus  │  │   Monitor    │     │
-│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘     │
-│         └─────────────────┴─────────────────┴─────────────────┘             │
-│                               │                                             │
-│                    ┌──────────▼──────────┐                                  │
-│                    │  Opportunity        │                                  │
-│                    │  Detection Engine   │                                  │
-│                    └──────────┬──────────┘                                  │
-└───────────────────────────────┼─────────────────────────────────────────────┘
-                                │
-                    ┌───────────▼───────────┐
-                    │   Execution Router    │
-                    │   (Off-chain Logic)   │
-                    └───────────┬───────────┘
-                                │
-        ┌───────────────────────┴───────────────────────┐
-        │                                               │
-        ▼                                               ▼
-┌───────────────┐                            ┌───────────────┐
-│   SOLANA      │                            │   ARBITRUM    │
-│   (Asgard)    │                            │ (Hyperliquid) │
-│               │                            │               │
-│  ┌─────────┐  │                            │  ┌─────────┐  │
-│  │  LONG   │  │                            │  │  SHORT  │  │
-│  │  SPOT   │  │                            │  │  PERP   │  │
-│  │  MARGIN │  │                            │  │         │  │
-│  └─────────┘  │                            │  └─────────┘  │
-└───────────────┘                            └───────────────┘
+SETUP WIZARD (3 Steps)
+======================
+
+Step 1: Authentication
+├── OAuth: Email, Google, or Twitter/X login via Privy
+├── Derive: KEK from HMAC(privy_user_id, server_secret)
+├── Generate: DEK, encrypt with KEK
+└── Status: ✅ Authenticated
+
+Step 2: Wallet Creation
+├── Create: EVM wallet (Hyperliquid) via Privy
+├── Create: Solana wallet (Asgard) via Privy
+├── Display: Wallet addresses
+└── Status: ✅ Wallets ready
+
+Step 3: Exchange Configuration (Optional API Keys)
+├── Asgard: Public access (1 req/sec) or add API key for unlimited
+├── Hyperliquid: Wallet-based auth (EIP-712 signatures)
+├── Test: Connections to both exchanges
+├── Encrypt: API credentials with DEK (if provided)
+└── Status: ✅ Exchanges connected
+
+→ Dashboard Access
+├── User lands on main dashboard
+├── View: Trade status, positions, PnL
+└── Status: ✅ Ready for funding & launch
+
+DASHBOARD (Main Interface) - 2 Tab Layout
+========================================
+
+TAB 1: HOME (Position Management)
+=================================
+┌─────────────────────────────────────────────────────────────┐
+│  [🏠 Home] [⚙️ Settings]                                     │  ← Tab navigation
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  DESIRED LEVERAGE                                           │
+│  [========|==========] 3.0x                                 │  ← Slider 2x-4x
+│                                                             │
+│  ┌──────────────────────────┬──────────────────────────┐   │
+│  │  🏛️ ASGARD RATES         │  ⚡ HYPERLIQUID          │   │
+│  │  Net APY @ 3.0x          │  Funding Rate @ 3.0x     │   │
+│  │                          │                          │   │
+│  │  SOL                     │  SOL-PERP: -12.5%        │   │
+│  │  ├─ Kamino: 12.5%        │  Predicted: -14.8%       │   │
+│  │  └─ Drift: 11.8%         │                          │   │
+│  │                          │                          │   │
+│  │  jitoSOL (~8% staking)   │                          │   │
+│  │  ├─ Kamino: 18.2%        │                          │   │
+│  │  └─ Drift: 17.5%         │                          │   │
+│  │                          │                          │   │
+│  │  jupSOL (~7.5% staking)  │                          │   │
+│  │  ├─ Kamino: 16.5%        │                          │   │
+│  │  └─ Drift: 15.8%         │                          │   │
+│  │                          │                          │   │
+│  │  INF (~7% staking)       │                          │   │
+│  │  ├─ Kamino: 15.2%        │                          │   │
+│  │  └─ Drift: 14.5%         │                          │   │
+│  │                          │                          │   │
+│  └──────────────────────────┴──────────────────────────┘   │
+│                                                             │
+│  ACTIVE POSITIONS                                           │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │ Asset    Size      Leverage    PnL        Action     │  │
+│  │ jitoSOL  $10,000  3.0x       +$234.50   [Close]     │  │
+│  └──────────────────────────────────────────────────────┘  │
+│                                                             │
+│  [      🔴 FUND WALLETS      ]  [    🟢 OPEN POSITION    ] │
+└─────────────────────────────────────────────────────────────┘
+
+TAB 2: SETTINGS (Strategy Configuration)
+========================================
+┌─────────────────────────────────────────────────────────────┐
+│  PRESETS                                                    │
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐  [💾 Save] [↺ Reset] │
+│  │Preset 1 │ │Preset 2 │ │Preset 3 │                      │
+│  │3x/$50k  │ │Not Set  │ │Not Set  │                      │
+│  └─────────┘ └─────────┘ └─────────┘                      │
+├─────────────────────────────────────────────────────────────┤
+│  POSITION SETTINGS                                          │
+│  • Default Leverage: [3.0]                                  │
+│  • Max Position Size: [$50000]                              │
+│  • Min Position Size: [$1000]                               │
+│  • Max Positions/Asset: [1]                                 │
+│                                                             │
+│  ENTRY CRITERIA                                             │
+│  • Min Opportunity APY: [1.0%]                              │
+│  • Max Funding Volatility: [50%]                            │
+│                                                             │
+│  RISK MANAGEMENT                                            │
+│  • Price Deviation: [0.5%]                                  │
+│  • Delta Drift: [0.5%]                                      │
+│  • [✓] Enable Auto-Exit                                     │
+│  • [✓] Enable Circuit Breakers                              │
+│                                                             │
+│                              [  Save Settings  ]            │
+└─────────────────────────────────────────────────────────────┘
+
+FUNDING (Click 🔴 FUND WALLETS button)
+======================================
+├── Display: Wallet addresses with copy buttons
+├── Show: Required minimums (USDC on Arbitrum, SOL + USDC on Solana)
+├── Real-time: Balance checking
+└── User: Deposits funds, clicks "Done"
+```
+```
+
+### 4.3 Long-Running Operations
+
+Wallet creation and connection tests may take seconds. Use async job pattern:
+
+```python
+class SetupJobManager:
+    """Manages async setup operations with progress tracking."""
+    
+    async def create_job(self, job_type: str, params: dict) -> str:
+        """Create job, return job ID for polling."""
+        job_id = str(uuid.uuid4())
+        await self.db.execute(
+            "INSERT INTO setup_jobs (id, type, status, params) VALUES (?, ?, ?, ?)",
+            (job_id, job_type, "pending", json.dumps(params))
+        )
+        # Start background task
+        asyncio.create_task(self._run_job(job_id, job_type, params))
+        return job_id
+    
+    async def get_status(self, job_id: str) -> JobStatus:
+        """Get current job status for polling."""
+        row = await self.db.fetchone(
+            "SELECT status, progress, result, error FROM setup_jobs WHERE id = ?",
+            (job_id,)
+        )
+        return JobStatus(**row)
+    
+    async def _run_job(self, job_id: str, job_type: str, params: dict):
+        """Execute job and update status."""
+        try:
+            await self._update_status(job_id, "running", progress=0)
+            
+            if job_type == "create_wallets":
+                result = await self._create_wallets(params)
+            elif job_type == "test_exchange":
+                result = await self._test_exchange(params)
+            
+            await self._update_status(job_id, "completed", progress=100, result=result)
+        except Exception as e:
+            await self._update_status(job_id, "failed", error=str(e))
+```
+
+**HTMX Integration:**
+```html
+<button hx-post="/setup/wallets" hx-trigger="click">
+  Create Wallets
+</button>
+
+<!-- Returns 202 Accepted with job ID -->
+<!-- HTMX polls for status -->
+<div hx-get="/setup/status/{job_id}" 
+     hx-trigger="every 500ms"
+     hx-target="#progress">
+  <progress id="progress" value="0" max="100"></progress>
+</div>
+```
+
+### 4.4 Validation & Testing
+
+```python
+class SetupValidator:
+    """Validates configuration at each wizard step."""
+    
+    async def validate_privy_credentials(
+        self, 
+        app_id: str, 
+        app_secret: str
+    ) -> ValidationResult:
+        """Test Privy API connectivity."""
+        try:
+            client = PrivyClient(app_id, app_secret)
+            await client.health_check()
+            return ValidationResult(valid=True)
+        except PrivyAuthError:
+            return ValidationResult(
+                valid=False, 
+                error="Invalid credentials"
+            )
+    
+    async def validate_wallet_funding(
+        self, 
+        evm_address: str, 
+        solana_address: str,
+        min_evm_usdc: Decimal = Decimal("100"),
+        min_solana_sol: Decimal = Decimal("0.1"),
+        min_solana_usdc: Decimal = Decimal("100")
+    ) -> FundingStatus:
+        """Check wallet balances across chains."""
+        evm_balance = await self.arbitrum_client.get_usdc_balance(evm_address)
+        solana_sol = await self.solana_client.get_sol_balance(solana_address)
+        solana_usdc = await self.solana_client.get_usdc_balance(solana_address)
+        
+        return FundingStatus(
+            evm_funded=evm_balance >= min_evm_usdc,
+            solana_sol_funded=solana_sol >= min_solana_sol,
+            solana_usdc_funded=solana_usdc >= min_solana_usdc,
+            balances={
+                "evm_usdc": evm_balance,
+                "solana_sol": solana_sol,
+                "solana_usdc": solana_usdc
+            }
+        )
+```
+
+### 4.5 Input Sanitization
+
+```python
+class SecretSanitizer:
+    """Sanitizes sensitive data for logging."""
+    
+    SENSITIVE_PATTERNS = [
+        (r'0x[a-fA-F0-9]{64}', '[PRIVATE_KEY]'),
+        (r'[a-zA-Z0-9]{88}', '[SOLANA_KEY]'),
+        (r'[a-zA-Z0-9]{32,}', '[API_KEY]'),
+        (r'pass(?:word|wd)?["\']?\s*[:=]\s*["\']?[^"\'\s]+', '[PASSWORD]'),
+        (r'secret["\']?\s*[:=]\s*["\']?[^"\'\s]+', '[SECRET]'),
+    ]
+    
+    @classmethod
+    def sanitize(cls, text: str) -> str:
+        for pattern, replacement in cls.SENSITIVE_PATTERNS:
+            text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+        return text
 ```
 
 ---
 
-## 3. Venue Specifications
+## 5. Backup & Recovery
 
-### 3.1 Asgard Finance (Long Side)
+### 5.1 Backup Requirements
 
-| Parameter | Value |
-|-----------|-------|
-| **Chain** | Solana |
-| **Type** | Margin Trading Aggregator |
-| **Underlying Protocols** | Marginfi (0), Kamino (1), Solend (2), Drift (3) |
-| **API Base** | `https://v2-ultra-edge.asgard.finance/margin-trading` |
-| **Auth** | X-API-Key header |
-| **Transaction Pattern** | Build → Sign → Submit (with persistent state tracking) |
-| **Position ID** | positionPDA (Program Derived Address) |
-| **Max Leverage** | 4x (strategy default: 3x) |
+**What must be backed up:**
+1. **SQLite database** (state.db) - contains all encrypted configuration
+2. **Privy authorization key** - server signing key (encrypted backup)
 
-**Supported Assets** (Token A/USDC pairs):
-| Token A | Mint | Type |
-|---------|------|------|
-| SOL | So11111111111111111111111111111111111111112 | Native |
-| jitoSOL | jupSoLaHXQiZZTSfEWMTRRgpnyFm8f6sZdosWBjx93v | LST |
-| jupSOL | jupSoLaHXQiZZTSfEWMTRRgpnyFm8f6sZdosWBjx93v | LST |
-| INF | 5oVNBeEEQvYi1cX3ir8Dx5n1P7pdxydbGF2X6TxNxsi | LST |
+**What does NOT need backup:**
+- Wallet private keys (managed by Privy, recoverable via their systems)
+- Session data (ephemeral)
 
-**Note**: All long assets are SOL or SOL-equivalent (liquid staking tokens). Short leg on Hyperliquid uses SOL-PERP which tracks SOL price.
+### 5.2 Backup API
 
-### 3.2 Hyperliquid (Short Side)
+```python
+class BackupManager:
+    """Manages encrypted database backups."""
+    
+    async def create_backup(self, include_logs: bool = False) -> bytes:
+        """Create encrypted backup of database."""
+        # Create temp copy of SQLite DB
+        backup_path = f"/tmp/backup_{uuid.uuid4()}.db"
+        await self.db.execute(f"VACUUM INTO '{backup_path}'")
+        
+        # Compress
+        with open(backup_path, 'rb') as f:
+            db_data = f.read()
+        compressed = gzip.compress(db_data)
+        
+        # Encrypt with DEK
+        encrypted = encrypt_field(compressed, self.dek)
+        
+        # Add header
+        header = {
+            "version": "3.1",
+            "created_at": datetime.utcnow().isoformat(),
+            "includes_logs": include_logs
+        }
+        
+        return json.dumps(header).encode() + b"\n" + encrypted
+    
+    async def restore_backup(self, backup_data: bytes, kek: bytes) -> bool:
+        """Restore database from encrypted backup."""
+        # Parse header
+        header_line, encrypted = backup_data.split(b"\n", 1)
+        header = json.loads(header_line)
+        
+        # Decrypt
+        dek = await self._decrypt_dek_from_backup(encrypted, kek)
+        compressed = decrypt_field(encrypted, dek)
+        db_data = gzip.decompress(compressed)
+        
+        # Validate SQLite
+        if not self._validate_sqlite(db_data):
+            raise ValueError("Invalid backup file")
+        
+        # Restore with atomic swap
+        temp_path = "/data/state.db.tmp"
+        with open(temp_path, 'wb') as f:
+            f.write(db_data)
+        os.rename(temp_path, "/data/state.db")
+        
+        return True
+```
 
-| Parameter | Value |
-|-----------|-------|
-| **Chain** | Arbitrum (Hyperliquid L1) |
-| **Type** | Perpetual DEX |
-| **Collateral** | USDC |
-| **API Base** | `https://api.hyperliquid.xyz` |
-| **Funding Interval** | 8 hours (paid hourly as 1/8 of rate) |
-| **Info Endpoint** | `POST /info` |
-| **Exchange Endpoint** | `POST /exchange` |
-| **Signing** | EIP-712 |
-| **Asset** | SOL-PERP (SOLUSD) |
-| **Max Leverage** | 4x (strategy default: 3x) |
-| **Order Type** | Market orders only |
+### 5.3 Automated Backups
 
-**Note**: Short leg always uses SOL-PERP regardless of whether long leg uses SOL, jitoSOL, jupSOL, or INF. All SOL LSTs track SOL price with minor drift.
+```python
+class AutomatedBackup:
+    """Runs scheduled backups."""
+    
+    BACKUP_INTERVAL_HOURS = 24
+    MAX_BACKUPS = 7  # Keep one week
+    
+    async def run(self):
+        while True:
+            await asyncio.sleep(self.BACKUP_INTERVAL_HOURS * 3600)
+            
+            backup = await self.backup_manager.create_backup()
+            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            path = f"/data/backups/state_{timestamp}.db.enc"
+            
+            with open(path, 'wb') as f:
+                f.write(backup)
+            
+            # Clean old backups
+            await self._rotate_backups()
+```
+
+### 5.4 Privy Auth Key Backup
+
+The authorization key is critical - losing it means losing wallet access through the API.
+
+**Backup Process:**
+1. Generate auth key during setup
+2. Encrypt with KEK
+3. Offer download as `.enc` file + BIP39 mnemonic encoding
+4. Force user to confirm download before completing setup
+
+**Recovery Process:**
+1. User provides encrypted backup file + password
+2. System derives KEK, decrypts auth key
+3. Validates key against Privy API
+4. Re-encrypts with new KEK for storage
 
 ---
 
-## 4. Core Components
+## 6. Emergency Stop Mechanisms
 
-### 4.1 Opportunity Detection
+### 6.1 Kill Switch Options
+
+| Method | Speed | Use Case |
+|--------|-------|----------|
+| Docker stop | Immediate | Complete container termination |
+| API endpoint | <1s | Remote/scripted stop |
+| File-based | 5s | Dashboard inaccessible |
+| Position close | 30-120s | Graceful exit |
+
+### 6.2 Implementation
+
+**Docker Stop:**
+```bash
+docker stop -t 30 delta-neutral-bot
+# SIGTERM -> graceful shutdown
+# SIGKILL after 30s if not exited
+```
+
+**API Endpoint:**
+```python
+@app.post("/api/v1/control/emergency-stop")
+async def emergency_stop(
+    request: EmergencyStopRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Emergency stop all operations."""
+    await audit_log.record("emergency_stop", user=current_user)
+    
+    # Signal bot to stop
+    await bot.emergency_stop(reason=request.reason)
+    
+    # Attempt position closure if requested
+    if request.close_positions:
+        await position_manager.close_all_positions()
+    
+    return {"status": "stopped"}
+```
+
+**File-Based Kill Switch:**
+```python
+class KillSwitchMonitor:
+    """Monitors for emergency stop file."""
+    
+    KILL_SWITCH_PATH = "/data/emergency.stop"
+    CHECK_INTERVAL = 5
+    
+    async def monitor(self):
+        while self.running:
+            if os.path.exists(self.KILL_SWITCH_PATH):
+                logger.critical("Kill switch detected - emergency stop!")
+                await bot.emergency_stop(reason="Kill switch file detected")
+                os.remove(self.KILL_SWITCH_PATH)  # Clean up
+                break
+            await asyncio.sleep(self.CHECK_INTERVAL)
+```
+
+---
+
+## 7. Core Components
+
+### 7.1 Opportunity Detection
 
 ```python
 class OpportunityDetector:
     """
-    Scans Asgard net borrowing costs vs Hyperliquid funding rates.
-    Limited to SOL ecosystem: SOL, jitoSOL, jupSOL, INF vs SOL-PERP.
-    
-    Opportunity Condition:
-    1. Current funding_rate indicates shorts are paid (negative rate)
-    2. Predicted next funding_rate also indicates shorts are paid
-    3. Total expected APY > 0 after all costs
-    
-    Total APY = |funding_rate| + net_carry_apy
-    
-    Note: net_carry_apy includes LST staking yield via the Lending_Rate
-    when using LST collateral (jitoSOL, jupSOL, INF)
-    
-    Funding lookback: 1 week minimum for volatility assessment
+    Scans for delta-neutral opportunities.
+    Only enters when current AND predicted funding favor shorts.
     """
     
-    # Asset universe
     ALLOWED_ASSETS = ["SOL", "jitoSOL", "jupSOL", "INF"]
-    LST_ASSETS = ["jitoSOL", "jupSOL", "INF"]
-    
-    # Funding analysis
     FUNDING_LOOKBACK_HOURS = 168  # 1 week
-    MIN_FUNDING_HISTORY_HOURS = 24
-    MAX_FUNDING_VOLATILITY = 0.5
     
-    async def scan_opportunities(self) -> List[ArbitrageOpportunity]:
+    async def scan(self) -> List[ArbitrageOpportunity]:
         """
-        1. Query Asgard /markets for SOL/USDC and LST/USDC pairs
-        2. Query Hyperliquid SOL-PERP current funding + predicted next funding
-        3. Calculate total expected APY including:
-           - Hyperliquid funding yield (annualized)
-           - Asgard net carry APY (lending yield - borrowing cost)
-           - LST staking yield if applicable
-        4. Filter: total APY > 0
-        5. Return sorted by total yield
+        1. Fetch Asgard rates for all SOL/LST pairs
+        2. Fetch Hyperliquid SOL-PERP funding
+        3. Check both current AND predicted funding < 0
+        4. Calculate total APY = |funding| + net_carry
+        5. Filter: total APY > min_threshold
         """
-        pass
 ```
 
-#### Scoring Formula
+### 7.2 Execution Flow
 
 ```
-Inputs (for 3x leverage, $100k deployed capital split 50/50):
-- Deployed per leg: $50k
-- Position size: $150k ($50k × 3x)
-- Borrowed: $100k
+1. PRE-FLIGHT CHECKS
+   ├── Price consensus check (< 0.5% deviation)
+   ├── Wallet balance validation
+   ├── Fee market check (Solana CUP < threshold)
+   ├── Protocol capacity check
+   └── Simulate both legs
 
-Hyperliquid Short Leg:
-  Funding_Earned = Position_Size × |funding_rate|
-                 = $150k × 25% = $37.5k/year
+2. EXECUTE ASGARD LONG
+   ├── Build: POST /create-position
+   ├── Sign: Via Privy Solana API
+   ├── Submit: POST /submit-create-position-tx
+   └── Confirm: Poll /refresh-positions
 
-Asgard Long Leg (Net Carry on Deployed Capital):
-  For LST assets (jitoSOL, jupSOL, INF):
-    tokenALendingApy = Base_Lending_Rate + LST_Staking_Rate
-    
-  Lending_Yield = Position_Size × tokenALendingApy
-                = $150k × 13% (5% base + 8% staking) = $19.5k/year
-  Borrowing_Cost = Borrowed_Amount × tokenBBorrowingApy
-                 = $100k × 8% = $8k/year
-  Net_Carry = Lending_Yield - Borrowing_Cost
-            = $19.5k - $8k = $11.5k/year
-  Net_Carry_APY = Net_Carry / Deployed_Capital
-                = $11.5k / $50k = 23%
+3. EXECUTE HYPERLIQUID SHORT
+   ├── Set leverage to match Asgard
+   ├── Place market short order
+   ├── Sign: Via Privy EVM API (EIP-712)
+   └── Confirm: Query clearinghouseState
 
-Total_Yield = Funding_Earned + Net_Carry
-            = $37.5k + $11.5k = $49k/year
-
-Total_APY = Total_Yield / Total_Deployed_Capital
-          = $49k / $100k = 49%
-
-Position Hold Decision:
-- If Total_APY > 0: Continue holding
-- If Total_APY < 0 AND closing_cost < 5min_bleed: Close position
+4. POST-EXECUTION VALIDATION
+   ├── Verify both positions confirmed
+   ├── Check fill price deviation < 0.5%
+   ├── Calculate actual delta
+   └── Store position state
 ```
 
-### 4.2 Hyperliquid Funding Rate Oracle
-
-```python
-class HyperliquidFundingOracle:
-    """
-    Fetches funding rates from Hyperliquid API.
-    Uses conservative approach: checks both current AND predicted next funding.
-    """
-    
-    API_BASE = "https://api.hyperliquid.xyz"
-    
-    async def get_current_funding_rates(self) -> Dict[str, FundingRate]:
-        """
-        Returns current funding rates for all assets.
-        Uses metaAndAssetCtxs endpoint.
-        """
-        pass
-    
-    async def get_funding_history(self, coin: str, hours: int = 168) -> List[FundingRate]:
-        """
-        Historical funding for trend analysis.
-        Default 1 week lookback for volatility assessment.
-        """
-        pass
-    
-    async def predict_next_funding(self, coin: str) -> float:
-        """
-        Predict next funding rate based on current premium.
-        Formula: funding = premium + clamp(interest_rate, -0.0001, 0.0001)
-        where premium = 1-hour TWAP of (mark_price - index_price) / index_price
-        
-        Implementation:
-        1. Fetch current mark price and index price from metaAndAssetCtxs
-        2. Calculate premium using 1-hour TWAP
-        3. Apply interest rate clamp
-        4. Return predicted 8-hour funding rate
-        
-        Conservative entry requires BOTH current AND predicted funding
-        to indicate shorts will be paid.
-        """
-        pass
-    
-    async def calculate_funding_volatility(self, coin: str, hours: int = 168) -> float:
-        """
-        Calculate funding rate volatility for opportunity filtering.
-        Uses hourly funding rates over lookback period (default 1 week).
-        
-        Volatility metric: Standard deviation of hourly funding rates.
-        Used to filter opportunities during extreme volatility periods.
-        """
-        pass
-```
-
-### 4.3 Asgard Borrowing Rate Oracle
-
-```python
-class AsgardBorrowingOracle:
-    """
-    Fetches lending/borrowing rates from Asgard /markets endpoint.
-    Calculates net carry based on deployed capital.
-    """
-    
-    async def get_rates(self, token_a_mint: str) -> Dict[int, AsgardRates]:
-        """
-        Returns lending and borrowing rates across all 4 protocols.
-        Checks tokenBMaxBorrowCapacity before recommending protocol.
-        """
-        pass
-    
-    async def calculate_net_carry_apy(self, 
-                                       protocol_id: int,
-                                       token_a_mint: str,
-                                       leverage: float = 3.0) -> float:
-        """
-        Calculate net carry APY on deployed capital.
-        
-        Formula:
-        Net_Carry = (Leverage × Lending_Rate) - ((Leverage - 1) × Borrowing_Rate)
-        
-        Example (3x leverage, 5% lend, 8% borrow):
-        Net_Carry = (3 × 5%) - (2 × 8%) = 15% - 16% = -1%
-        """
-        pass
-```
-
-### 4.4 Price Consensus
-
-```python
-class PriceConsensus:
-    """
-    Ensures Asgard and Hyperliquid prices are aligned before execution.
-    """
-    
-    MAX_PRICE_DEVIATION = 0.005  # 0.5%
-    
-    async def check_consensus(self, asset: str) -> ConsensusResult:
-        """
-        Compare Hyperliquid markPx vs Asgard oracle prices.
-        Raises if deviation > 0.5% - prevents bad entries during volatility.
-        """
-        pass
-```
-
----
-
-## 5. Execution Flow
-
-### 5.0 Pre-Flight Checklist
-
-Before executing any position entry, the following MUST pass:
-
-1. **Wallet Balance Check**: Both Solana and Hyperliquid wallets have sufficient funds
-2. **Price Consensus**: Deviation between venues < 0.5%
-3. **Funding Validation**: Both current AND predicted next funding indicate shorts paid
-4. **Protocol Capacity**: Asgard selected protocol has sufficient borrow capacity
-5. **Fee Market Check**: Solana compute unit price below threshold (see 5.1.2)
-6. **Opportunity Simulation**: Both legs can be built successfully
-
-### 5.1 Entry Flow
-
-```
-1. DETECT OPPORTUNITY
-   └─> Get Asgard net borrowing rates for SOL, jitoSOL, jupSOL, INF
-   └─> Get Hyperliquid SOL-PERP current + predicted funding rate
-   └─> Calculate total expected APY
-   └─> Filter: total APY > 0
-
-2. PRE-FLIGHT SIMULATION
-   └─> Build Asgard transaction (dry-run)
-   └─> Simulate Hyperliquid order
-   └─> Record reference prices for both legs
-   └─> Verify all checks pass (Section 5.0)
-
-3. EXECUTE ASGARD LONG (3-Step Flow with State Machine)
-   
-   Step A: Build Transaction
-   ├─> POST /create-position
-   ├─> Select best protocol (lowest NET borrowing rate)
-   ├─> Store state: INTENT_CREATED with unique intent_id
-   │
-   Step B: Sign Transaction
-   ├─> Decode base64 transaction
-   ├─> Sign with Solana keypair
-   ├─> Store state: TRANSACTION_SIGNED
-   │
-   Step C: Submit & Confirm
-   ├─> POST /submit-create-position-tx
-   ├─> Store state: TRANSACTION_SUBMITTED
-   ├─> Poll /refresh-positions until confirmed
-   ├─> Store state: POSITION_CONFIRMED
-   └─> Extract: positionPDA, entry price
-   
-   Retry Logic (Helius/Triton):
-   - If submission fails: Retry immediately (next Solana block ~400ms)
-   - If second failure: Abort entry, unwind if other leg active
-   - Track transaction status via getSignatureStatuses
-   
-   Transaction Rebroadcasting (Safety-First Approach):
-   - If transaction stuck >15s without confirmation:
-     1. Query getSignatureStatuses to check if landed
-     2. If landed: Update state and proceed
-     3. If not landed: Assume dropped, rebuild with fresh blockhash
-     4. Re-sign with same key (new signature, same intent)
-     5. Submit new transaction
-   - Deduplication: Same intent_id prevents double-position creation
-   - Timeout: Maximum 5 minutes for confirmation before marking failed
-
-4. EXECUTE HYPERLIQUID SHORT
-   
-   Step A: Update Leverage
-   ├─> POST /exchange {"action": {"type": "updateLeverage", ...}}
-   ├─> Set leverage to match Asgard (3x default)
-   │
-   Step B: Place Market Short Order (with retry logic)
-   ├─> POST /exchange with order action
-   ├─> {
-   │     "type": "order",
-   │     "orders": [{
-   │       "coin": "SOL",
-   │       "is_buy": false,          // SHORT
-   │       "sz": "20.5",             // Size in SOL (match long exposure)
-   │       "order_type": {"market": {}}
-   │     }]
-   │   }
-   ├─> Sign with EIP-712
-   │
-   Step C: Confirm Fill & Price Validation
-   ├─> Query /info {"type": "clearinghouseState", "user": "..."}
-   ├─> Verify fill price within 0.5% of Asgard entry price
-   ├─> If deviation > 0.5%: Check if total spread still profitable
-   └─> If not profitable: Trigger immediate unwind
-   
-   Partial Fill Handling:
-   - If Hyperliquid fills partially: Accept partial fill
-   - Immediately place additional order for remaining size
-   - Track target_size vs actual_size
-   - If drift > 0.1% after all retries: Alert and continue monitoring
-   
-   Retry Logic (Hyperliquid Entry Failure):
-   - Max retries: 15 attempts
-   - Interval: Every 2 seconds (30 second total window)
-   - Stop-loss monitoring: Active during entire retry window
-   - Stop-loss trigger: SOL moves >1% against position
-   - On stop-loss trigger: Immediate market unwind with 0.1% slippage tolerance
-   - On max retries exceeded: Unwind Asgard position
-
-5. POST-EXECUTION VALIDATION
-   ├─> Verify Asgard position confirmed
-   ├─> Verify Hyperliquid fill confirmed
-   ├─> Check price deviation from reference < 0.5%
-   ├─> Calculate actual delta exposure
-   └─> If delta > 0.5%: Trigger rebalance or unwind
-
-6. STORE POSITION
-   ├─> Asgard: protocol, positionPDA, entry prices
-   ├─> Hyperliquid: position size, entry price
-   ├─> Reference prices for both legs
-   ├─> Expected yields, monitoring thresholds
-   └─> Start monitoring loops
-```
-
-#### 5.1.1 Reference Price Tracking
-
-```python
-@dataclass
-class PositionReference:
-    """Captured at pre-flight simulation for validation."""
-    asgard_entry_price: float
-    hyperliquid_entry_price: float
-    max_acceptable_deviation: float = 0.005  # 0.5%
-    
-    def check_deviation(self, current_asgard: float, current_hyperliquid: float) -> bool:
-        asgard_dev = abs(current_asgard - self.asgard_entry_price) / self.asgard_entry_price
-        hyperliquid_dev = abs(current_hyperliquid - self.hyperliquid_entry_price) / self.hyperliquid_entry_price
-        return asgard_dev <= self.max_acceptable_deviation and hyperliquid_dev <= self.max_acceptable_deviation
-```
-
-#### 5.1.3 Post-Execution Fill Validation
-
-After each leg is executed, the system validates actual fill prices:
-
-```python
-class FillValidator:
-    """
-    Validates filled prices against reference prices and profitability.
-    Uses soft stop approach: Check profitability before unwinding on deviation.
-    """
-    
-    MAX_FILL_DEVIATION = 0.005  # 0.5% between Asgard and Hyperliquid fills
-    
-    async def validate_fills(self, 
-                            asgard_fill: float, 
-                            hyperliquid_fill: float,
-                            expected_spread: float) -> ValidationResult:
-        """
-        1. Calculate fill deviation: |asgard_fill - hyperliquid_fill| / asgard_fill
-        2. If deviation > 0.5%:
-           - Calculate actual spread at filled prices
-           - If still profitable: Accept position (soft stop)
-           - If not profitable: Trigger immediate unwind
-        3. If deviation <= 0.5%: Accept position
-        """
-        pass
-```
-
-**Soft Stop Logic**:
-- Hard deviation check of 0.5% triggers profitability re-evaluation
-- Position only unwound if total expected APY < 0 at actual filled prices
-- This prevents closing profitable positions during volatile but viable conditions
-
-#### 5.1.2 Solana Fee Market Monitoring
-
-```python
-class SolanaFeeMonitor:
-    """
-    Monitors compute unit prices for target programs.
-    Prevents entry during fee spikes.
-    Uses dynamic priority fees based on 75th percentile + 25% premium.
-    """
-    
-    MAX_CUP_MICRO_LAMPORTS = 10_000  # ~0.001 SOL for 200k CU tx
-    CHECK_DURATION_SECONDS = 30
-    
-    # Dynamic fee configuration
-    FEE_PERCENTILE = 75  # Base on 75th percentile of recent txs
-    FEE_PREMIUM_PCT = 25  # Add 25% premium
-    MAX_FEE_SOL = 0.01  # Maximum 0.01 SOL per tx
-    MAX_FEE_EMERGENCY_SOL = 0.02  # Maximum 0.02 SOL for stop-loss
-    
-    async def check_fee_market(self, target_programs: List[str]) -> bool:
-        """
-        Check median CUP for recent landed transactions on target programs.
-        Return False if fees exceed threshold for >30 seconds.
-        """
-        pass
-    
-    async def calculate_priority_fee(self, urgency: str = "normal") -> int:
-        """
-        Calculate priority fee based on fee market.
-        - normal: 75th percentile + 25%
-        - high: 90th percentile + 50%
-        - emergency: 90th percentile + 50%, capped at MAX_FEE_EMERGENCY_SOL
-        """
-        pass
-    
-    async def preflight_fee_check(self) -> FeeCheckResult:
-        """
-        If fees spike: Abort entry, return to monitoring.
-        """
-        pass
-```
-
-### 5.2 Exit Flow
-
-```
-EXIT TRIGGERS:
-├─> Total APY turns negative (funding + net carry + staking < 0)
-├─> Closing cost < expected loss over next 5 minutes
-├─> Asgard health_factor approaching threshold (20% away for 20s+)
-├─> Hyperliquid margin fraction approaching threshold (20% away for 20s+)
-├─> Price deviation > 2% between venues
-├─> Manual override
-└─> Solana/Hyperliquid outage detected
-
-EXIT FLOW:
-
-1. CLOSE HYPERLIQUID SHORT FIRST
-   ├─> Reduces liquidation risk on short side
-   ├─> Place market buy order to close short
-   ├─> Wait for fill confirmation
-   ├─> Retry logic: Up to 5 attempts with exponential backoff
-   ├─> If still failing after 60s: Proceed to close Asgard anyway
-   └─> Withdraw USDC margin
-   
-   Note: Maximum acceptable single-leg exposure during exit is 120 seconds.
-   If Asgard close fails after Hyperliquid is closed:
-   - Retry aggressively with 2x priority fee
-   - Alert if still failing after 60s
-   - Accept directional short exposure until resolved
-
-2. CLOSE ASGARD LONG (3-Step with State Machine)
-   
-   Step A: Build Close
-   ├─> POST /close-position
-   ├─> Store state: CLOSE_INTENT_CREATED
-   │
-   Step B: Sign
-   ├─> Sign with Solana wallet
-   ├─> Store state: CLOSE_SIGNED
-   │
-   Step C: Submit
-   ├─> POST /submit-close-position-tx
-   ├─> Store state: CLOSE_SUBMITTED
-   ├─> Poll until confirmed
-   └─> Calculate realized PnL
-
-3. SETTLE & REBALANCE
-   ├─> Calculate total return
-   ├─> Rebalance wallets if imbalance > 10% (only when no position open)
-   ├─> Bridge funds if needed (use highest volume bridge)
-   └─> Log performance
-```
-
-### 5.3 Monitoring Loop
-
-```python
-class PositionMonitor:
-    """
-    Continuous monitoring of both positions.
-    Aligned polling intervals: 30 seconds for both chains.
-    """
-    
-    POLL_INTERVAL_SECONDS = 30
-    
-    async def monitor_asgard(self, position_pda: str, protocol: int):
-        """
-        Every 30 seconds:
-        - POST /refresh-positions
-        - Check health_factor
-        - Close if < 20% away from liquidation for 20s+
-        """
-        pass
-    
-    async def monitor_hyperliquid(self, wallet: str, coin: str):
-        """
-        Every 30 seconds:
-        - Query clearinghouseState
-        - Track funding payments accrued
-        - Check margin fraction
-        - Close if < 20% away from liquidation for 20s+
-        """
-        pass
-    
-    async def check_funding_flip(self):
-        """
-        Check if total APY has turned negative.
-        If negative AND closing_cost < 5min_expected_loss: Exit.
-        """
-        pass
-    
-    async def check_lst_peg(self, lst_mint: str):
-        """
-        Monitor LST-SOL price ratio.
-        If premium > 3% or discount > 1%: Alert.
-        If premium > 5% or discount > 2%: Emergency close.
-        """
-        pass
-    
-    async def check_delta_drift(self):
-        """
-        Account for LST appreciation (staking rewards accrue in token).
-        Rebalance strategy: Wait until accumulated drift cost exceeds rebalance cost.
-        
-        Formula:
-        drift_cost = drift_amount × funding_rate × time_held
-        if drift_cost > rebalance_cost (gas + slippage):
-            Rebalance by partially closing long position to restore delta neutral
-        """
-        pass
-```
-
-### 5.4 Chain Outage Detection & Handling
-
-```python
-class ChainOutageDetector:
-    """
-    Detects outages on either chain using consecutive failure counting.
-    """
-    
-    MAX_CONSECUTIVE_FAILURES = 3
-    FAILURE_WINDOW_SECONDS = 15
-    
-    async def check_chain_health(self, chain: str) -> ChainStatus:
-        """
-        Mark chain as OUTAGE if 3 consecutive RPC calls fail within 15s.
-        """
-        pass
-    
-    async def handle_outage(self, affected_chain: str):
-        """
-        If Solana down but Hyperliquid up:
-        - Immediately close Hyperliquid position
-        - Continue retrying Solana close until confirmed
-        
-        If Hyperliquid down but Solana up:
-        - Immediately close Asgard position
-        - Continue retrying Hyperliquid close until confirmed
-        """
-        pass
-```
-
----
-
-## 6. Asgard Integration Deep Dive
-
-### 6.1 Transaction Flow with State Machine
-
-```
-┌────────────────────────────────────────────────────────────────────┐
-│  PERSISTENT STATE STORE (SQLite)                                   │
-│  - intent_id: UUID for each position attempt                       │
-│  - state: Enum of transaction lifecycle                            │
-│  - timestamp: For timeout handling                                 │
-│  - signature: Transaction signature only (not full tx bytes)       │
-│  - metadata: Position params, reference prices, retry count        │
-└────────────────────────────────────────────────────────────────────┘
-
-Note: Only signatures and metadata are stored, not full signed transaction
-bytes, for security. Recovery requires rebuilding transactions with fresh
-blockhashes and re-signing.
-
-State Machine:
-IDLE → BUILDING → BUILT → SIGNING → SIGNED → SUBMITTING → SUBMITTED → CONFIRMED
-              ↓        ↓          ↓           ↓             ↓
-           FAILED   FAILED     FAILED      FAILED        FAILED/timeout
-
-Recovery on Startup:
-1. Query state DB for incomplete transactions
-2. For each SIGNED but not SUBMITTED:
-   - Discard old signature (blockhash likely expired)
-   - Rebuild transaction with fresh blockhash
-   - Re-sign and submit
-3. For SUBMITTED but not CONFIRMED:
-   - Poll for confirmation up to 5 minutes
-   - Check on-chain via /refresh-positions for position existence
-   - If found on-chain: Mark CONFIRMED
-   - If not found and signature not found: Rebuild and retry
-   - If timeout: Rebuild with fresh blockhash
-```
-
-### 6.2 Key Data Fields
-
-From `/refresh-positions`:
-```json
-{
-  "healthFactor": 40.94,
-  "booksAndBalances": {
-    "balances": [{
-      "bank_address": {
-        "mint": "So111111...",
-        "assetsQt": 45.5,
-        "liabsQt": 0
-      }
-    }, {
-      "bank_address": {
-        "mint": "EPjF...",
-        "assetsQt": 0,
-        "liabsQt": 1365.0
-      }
-    }]
-  }
-}
-```
-
-### 6.3 Protocol Selection
-
-```python
-def select_best_protocol(markets: dict, token_a: str, size_usd: float, leverage: float) -> int:
-    """
-    1. Filter markets by tokenAMint == token_a
-    2. For each liquidity source:
-       - Check tokenBMaxBorrowCapacity >= size_usd * (leverage - 1) * 1.2
-         (20% safety margin on borrow capacity)
-       - Calculate net_rate = (leverage × lending) - ((leverage-1) × borrowing)
-    3. Return protocol with best (highest) net carry
-    4. Tie-breaker order: Marginfi (0) > Kamino (1) > Solend (2) > Drift (3)
-    5. If capacity unavailable: Return None (abort entry)
-    """
-    pass
-```
-
----
-
-## 7. Hyperliquid Integration Deep Dive
-
-### 7.1 API Structure
-
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/info` | POST | Read-only data (meta, funding, positions) |
-| `/exchange` | POST | State-changing actions (orders, leverage) |
-
-### 7.2 Info Endpoints
-
-```python
-# Get all asset metadata + current states
-{"type": "metaAndAssetCtxs"}
-# Returns: [meta, [assetCtxs]]
-# assetCtx contains: funding, markPx, openInterest, etc.
-
-# Get user's clearinghouse state
-{"type": "clearinghouseState", "user": "0x..."}
-# Returns: positions, margin summary, etc.
-
-# Get historical funding
-{"type": "fundingHistory", "coin": "SOL", "startTime": timestamp_ms}
-```
-
-### 7.3 Exchange Actions
-
-```python
-# Update leverage
-{
-  "action": {
-    "type": "updateLeverage",
-    "coin": "SOL",
-    "leverage": 3,
-    "isCross": True
-  },
-  "nonce": 123456,
-  "signature": "0x..."
-}
-
-# Place market order
-{
-  "action": {
-    "type": "order",
-    "orders": [{
-      "coin": "SOL",
-      "is_buy": False,
-      "sz": "20.5",
-      "order_type": {"market": {}}
-    }]
-  },
-  "nonce": 123457,
-  "signature": "0x..."
-}
-```
-
-### 7.4 Funding Rate Calculation
-
-```
-Hourly_Funding = funding_8hr_rate / 8
-
-Conservative Entry Check:
-1. Current funding_8hr < 0 (shorts paid)
-2. Predicted next funding < 0 (shorts will be paid)
-3. Both conditions must pass
-```
-
----
-
-## 8. Risk Management
-
-### 8.1 Risk Parameters
+### 7.3 Risk Management
 
 ```yaml
 risk_limits:
-  # Position Limits
+  # Position
   max_position_size_usd: 500000
-  max_total_exposure_usd: 2000000
   max_positions_per_asset: 1
-  
-  # Asset Universe
-  allowed_long_assets:
-    - SOL
-    - jitoSOL
-    - jupSOL
-    - INF
-  allowed_short_assets:
-    - SOL-PERP
-  
-  # Leverage Limits
   default_leverage: 3.0
   max_leverage: 4.0
-  enforce_equal_leverage: true
   
-  # Asgard Risk
-  asgard:
-    min_health_factor: 0.20
-    emergency_health_factor: 0.10
-    critical_health_factor: 0.05
-    liquidation_proximity_threshold: 0.20  # 20% away for 20s+ = close
-    liquidation_proximity_duration: 20
-    
-  # Hyperliquid Risk
-  hyperliquid:
-    margin_fraction_threshold: 0.10
-    liquidation_proximity_threshold: 0.20
-    liquidation_proximity_duration: 20
-    
-  # Execution Safety
-  max_price_deviation: 0.005  # 0.5%
+  # Asgard
+  min_health_factor: 0.20
+  liquidation_proximity: 0.20
+  
+  # Hyperliquid  
+  margin_fraction_threshold: 0.10
+  
+  # Execution
+  max_price_deviation: 0.005
   max_slippage_entry_bps: 50
   max_slippage_exit_bps: 100
-  max_delta_drift: 0.005  # 0.5%
+  max_delta_drift: 0.005
+  
+  # Gas protection
+  max_solana_priority_fee_sol: 0.01
+  max_solana_emergency_fee_sol: 0.02
   
   # LST Monitoring
-  lst:
-    warning_premium: 0.03  # 3%
-    critical_premium: 0.05  # 5%
-    warning_discount: 0.01  # 1%
-    critical_discount: 0.02  # 2%
+  lst_warning_premium: 0.03
+  lst_critical_premium: 0.05
+  lst_velocity_warning: 0.02    # 2% per hour
+  lst_velocity_critical: 0.05   # 5% per hour
 ```
 
-### 8.2 Transaction Allowlist
+---
+
+## 8. Dashboard & API
+
+### 8.1 Dashboard Structure
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  Delta Neutral Bot Dashboard                              [⚙] [👤] │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  STATUS OVERVIEW                                            │   │
+│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐       │   │
+│  │  │  Status  │ │ Positions│ │  PnL 24h │ │  Health  │       │   │
+│  │  │ RUNNING  │ │    2     │ │ +$123.45│ │   OK     │       │   │
+│  │  └──────────┘ └──────────┘ └──────────┘ └──────────┘       │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│  ┌──────────────────────────┐  ┌──────────────────────────────┐   │
+│  │  ACTIVE POSITIONS        │  │  QUICK CONTROLS              │   │
+│  │  ┌────────────────────┐  │  │                              │   │
+│  │  │ SOL  |  3x  | +$45 │  │  │  [Pause Entry]              │   │
+│  │  │ HF: 28%  MF: 15%   │  │  │  [Pause All]                │   │
+│  │  └────────────────────┘  │  │  [Emergency Stop]           │   │
+│  │  ┌────────────────────┐  │  │                              │   │
+│  │  │jitoSOL| 3x | +$78 │  │  │  Last Update: 2s ago        │   │
+│  │  │ HF: 25%  MF: 12%   │  │  │                              │   │
+│  │  └────────────────────┘  │  └──────────────────────────────┘   │
+│  └──────────────────────────┘                                     │
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  FUNDING RATES & OPPORTUNITIES                              │   │
+│  │  • SOL-PERP: -15.2% (predicted: -14.8%)  ✅ ENTERED         │   │
+│  │  • jitoSOL net carry: +8.3%                                 │   │
+│  │  • Total expected APY: 23.5%                                │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  RECENT ACTIVITY                                            │   │
+│  │  • 12:05:23 - Position opened: jitoSOL @ 3x                 │   │
+│  │  • 12:00:00 - Funding payment received: $2.34               │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 8.2 Real-Time Updates (SSE)
+
+```python
+@app.get("/api/v1/events")
+async def event_stream(request: Request):
+    """Server-sent events for real-time updates."""
+    async def event_generator():
+        while True:
+            # Check for new events
+            event = await event_queue.get()
+            yield f"data: {json.dumps(event)}\n\n"
+            
+    return EventSourceResponse(event_generator())
+```
+
+**HTMX Integration:**
+```html
+<div hx-sse="connect:/api/v1/events swap:message">
+  <div sse-swap="position_update"></div>
+  <div sse-swap="funding_update"></div>
+</div>
+```
+
+### 8.3 API Endpoints (v3.4 - Simplified)
+
+#### Authentication (Privy OAuth)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/setup/privy/auth` | Show Privy OAuth login |
+| POST | `/setup/privy/callback` | Handle OAuth callback |
+| POST | `/logout` | Destroy session |
+
+#### Setup Wizard (4 Steps)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/setup/status` | Current setup progress |
+| POST | `/setup/wallets` | Step 2: Create wallets |
+| POST | `/setup/exchange` | Step 3: Configure APIs (Asgard + Hyperliquid) |
+
+#### Dashboard
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/dashboard` | Main dashboard (trade status, balances) |
+| GET | `/dashboard/funding` | Funding page (deposit addresses) |
+| GET | `/dashboard/strategy` | Strategy config page |
+
+#### Bot Control
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/control/start` | **Start bot trading** |
+| POST | `/api/v1/control/pause` | Pause operations |
+| POST | `/api/v1/control/resume` | Resume operations |
+| POST | `/api/v1/control/stop` | Stop bot |
+| POST | `/api/v1/control/emergency-stop` | Emergency stop |
+
+#### Real-time Data
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/events` | SSE stream for live updates |
+| GET | `/api/v1/status` | Bot status |
+| GET | `/api/v1/positions` | Current positions |
+| GET | `/api/v1/balances` | Wallet balances |
+| GET | `/api/v1/funding-rates` | Current funding rates |
+
+---
+
+## 9. Security Model
+
+### 9.1 Container Security
+
+- **Single tenant**: Each user has their own isolated container
+- **No SSH**: No remote shell access to running containers
+- **Non-root user**: Container runs as UID 1000
+- **Read-only filesystem**: Except for `/data` volume
+- **No secrets in env**: All sensitive data encrypted in SQLite
+- **Network isolation**: Only binds to localhost (127.0.0.1)
+- **Resource limits**: CPU/memory caps to prevent DoS
+
+**Docker Compose:**
+```yaml
+services:
+  bot:
+    image: delta-neutral-bot:latest
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+    volumes:
+      - ./data:/data:rw
+    ports:
+      - "127.0.0.1:8080:8080"
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+```
+
+### 9.2 Remote Access (SSH Tunnel)
+
+Dashboard binds to localhost only. For remote access:
+
+```bash
+# On local machine, tunnel to remote server
+ssh -L 8080:localhost:8080 user@server
+
+# Then access http://localhost:8080 locally
+```
+
+This ensures:
+- TLS termination via SSH
+- No exposed ports on server
+- User controls access
+
+### 9.3 Transaction Validation
 
 ```python
 class TransactionValidator:
-    """
-    Validates all transactions before signing.
-    Prevents compromised bot from draining funds.
-    """
+    """Validates all transactions before signing."""
     
-    # Allowlisted programs/contracts
     ALLOWED_SOLANA_PROGRAMS = [
-        "Marginfi program",
-        "Kamino program", 
-        "Solend program",
-        "Drift program",
-        "Asgard program"
+        "MFv2hWf31T...",  # Marginfi
+        "KLend2g3cP...",  # Kamino
+        "So1end1111...",  # Solend
+        "dRiftyHA39...",  # Drift
+        "Asgard...",      # Asgard
     ]
     
-    ALLOWED_HYPERLIQUID_CONTRACTS = [
-        "Hyperliquid exchange"
-    ]
+    ALLOWED_HYPERLIQUID_ACTIONS = ["order", "updateLeverage", "cancel"]
     
-    # Withdrawal addresses (hardware wallet under operator control)
-    AUTHORIZED_WITHDRAWAL_SOLANA = "HARDWARE_WALLET_ADDRESS"
-    AUTHORIZED_WITHDRAWAL_HYPERLIQUID = "HARDWARE_WALLET_ADDRESS"
-    
-    async def validate_transaction(self, tx: Transaction, chain: str) -> bool:
-        """
-        Verify transaction only interacts with allowlisted programs.
-        Verify any transfers go to authorized withdrawal addresses only.
-        
-        Solana validation:
-        - Decode transaction and inspect all instruction program IDs
-        - Verify against ALLOWED_SOLANA_PROGRAMS allowlist
-        - Check Account Metas for unexpected draining addresses
-        - Reject if any instruction calls unknown programs
-        
-        Hyperliquid validation:
-        - Verify EIP-712 domain separator matches expected
-        - Verify chain ID prevents cross-chain replay
-        - Validate action type is in allowed set (order, updateLeverage, etc.)
-        """
-        pass
-```
-
-### 8.3 Pause Mechanism
-
-```python
-class PauseController:
-    """
-    Administrative pause without requiring private keys.
-    """
-    
-    def __init__(self, admin_api_key: str):
-        self.paused = False
-        self.admin_api_key = admin_api_key
-    
-    def pause(self, api_key: str, reason: str):
-        """Halt all new position entries immediately."""
-        pass
-    
-    def resume(self, api_key: str):
-        """Resume normal operations."""
-        pass
-    
-    def check_paused(self) -> bool:
-        """Called before any entry execution."""
-        pass
-```
-
-### 8.4 Circuit Breakers
-
-| Condition | Action | Cooldown |
-|-----------|--------|----------|
-| Asgard HF < 10% for 20s | Emergency close both | Immediate |
-| Hyperliquid MF < 20% for 20s | Close short, then long | Immediate |
-| Total APY < 0 | Evaluate exit cost vs bleed | Immediate |
-| Price deviation > 2% | Pause new entries | 30 min |
-| LST premium > 5% or discount > 2% | Emergency close | Immediate |
-| Solana gas > 0.01 SOL | Pause Asgard ops | Until < 0.005 |
-| Chain outage detected | Close reachable chain first | Immediate |
-
----
-
-## 9. Profitability Analysis
-
-### 9.1 Example: SOL Position with 3x Leverage
-
-| Parameter | Value |
-|-----------|-------|
-| Capital Deployed | $100,000 (split 50/50) |
-| Per Leg Deployed | $50,000 |
-| Asgard Protocol | Kamino |
-| Long Asset | SOL |
-| SOL Lending Yield | 5% APY |
-| USDC Borrowing Cost | 8% APY |
-| Hyperliquid Funding | -25% APY (shorts paid) |
-| **Leverage** | **3x** |
-| **Position Size** | **$150,000 each side** |
-
-**Capital Split**:
-- Asgard: $50,000 USDC principal → $150,000 SOL long (3x)
-  - Lending: $150,000 × 5% = $7,500/year
-  - Borrowing: $100,000 × 8% = $8,000/year
-  - **Net Carry: -$500/year** (pay to hold)
-  - **Net Carry APY: -1%**
-- Hyperliquid: $50,000 USDC margin → $150,000 SOL short (3x)
-  - Funding: $150,000 × 25% = $37,500/year
-
-**Total Calculation**:
-```
-Hyperliquid Funding Earned: $37,500 (75% APY on $50k)
-Asgard Net Carry: -$500 (-1% APY on $50k)
-Gross Profit: $37,000
-
-Costs:
-- Solana gas (entry+exit): ~$1
-- Arbitrum gas (entry+exit): ~$20
-- Slippage (0.5% entry, 1% exit): ~$2,250
-- Protocol fees: ~$400
-
-Net Annual Profit: ~$34,300
-ROI on Capital: 34.3%
-```
-
-### 9.2 Position Sizing Rules
-
-```python
-class PositionSizer:
-    """
-    Determines position size based on available capital.
-    """
-    
-    MIN_POSITION_USD = 1000
-    DEFAULT_DEPLOYMENT_PCT = 0.10  # 10% of available capital
-    MAX_DEPLOYMENT_PCT = 0.50      # 50% max
-    
-    def calculate_position_size(self, 
-                                solana_balance: float,
-                                hyperliquid_balance: float,
-                                current_leverage: float = 3.0) -> PositionSize:
-        """
-        1. Find minimum balance across chains
-        2. Apply deployment percentage (start conservative 10%)
-        3. Calculate per-leg deployment (50/50 split)
-        4. Calculate position size: deployment × leverage
-        """
-        min_balance = min(solana_balance, hyperliquid_balance)
-        deployment = min_balance * self.DEFAULT_DEPLOYMENT_PCT
-        per_leg = deployment / 2
-        position_size = per_leg * current_leverage
-        
-        return PositionSize(
-            total_deployment=deployment,
-            per_leg=per_leg,
-            position_size=position_size,
-            leverage=current_leverage
-        )
+    async def validate(self, tx, chain: str) -> bool:
+        if chain == "solana":
+            return self._validate_solana_tx(tx)
+        elif chain == "hyperliquid":
+            return self._validate_hyperliquid_tx(tx)
 ```
 
 ---
 
-## 10. Project Structure
+## 10. Monitoring & Alerting
+
+### 10.1 Health Checks
+
+| Check | Interval | Action on Failure |
+|-------|----------|-------------------|
+| Privy API | 60s | Alert, pause entries |
+| Privy rate limit | 300s | Alert at 80% threshold |
+| Asgard API | 30s | Alert, check alternatives |
+| Hyperliquid API | 30s | Alert, pause entries |
+| Solana RPC | 30s | Alert, switch RPC |
+| Position health | 30s | Auto-close if critical |
+| Funding rates | 60s | Alert only |
+
+### 10.2 Alert Channels
+
+- **In-app**: Real-time notifications via SSE
+- **Webhook**: User-configurable HTTP endpoint with retry
+- **Telegram**: Optional bot integration
+- **Logs**: Structured JSON to stdout
+
+**Webhook Retry Policy:**
+- 3 immediate retries (1s, 2s, 4s)
+- Then hourly for 24 hours
+- Persist failed alerts to SQLite
+
+### 10.3 Log Management
+
+```yaml
+logging:
+  retention_days: 30
+  sanitized_retention_days: 365
+  levels:
+    - DEBUG: Development only
+    - INFO: Normal operations
+    - WARNING: Deviations
+    - ERROR: Failures
+    - CRITICAL: Emergency
+  sanitization:
+    - Remove private keys
+    - Remove API secrets
+    - Mask wallet addresses (show first/last 4)
+```
+
+---
+
+## 11. Database Schema & Migrations
+
+### 11.1 Schema Version Tracking
+
+```sql
+CREATE TABLE schema_version (
+    version INTEGER PRIMARY KEY,
+    applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    checksum TEXT  -- SHA256 of migration script
+);
+
+-- Current version
+INSERT INTO schema_version (version, checksum) 
+VALUES (1, 'abc123...');
+```
+
+### 11.2 Migration Process
+
+```python
+class SchemaMigrator:
+    """Handles database schema migrations."""
+    
+    MIGRATIONS_DIR = "migrations"
+    
+    async def migrate(self, target_version: int):
+        current = await self._get_current_version()
+        
+        for version in range(current + 1, target_version + 1):
+            migration = self._load_migration(version)
+            
+            async with self.db.transaction():
+                # Run migration
+                await migration.up(self.db)
+                
+                # Record
+                await self.db.execute(
+                    "INSERT INTO schema_version (version, checksum) VALUES (?, ?)",
+                    (version, migration.checksum)
+                )
+```
+
+### 11.3 Core Tables
+
+```sql
+-- Configuration (encrypted fields)
+CREATE TABLE config (
+    key TEXT PRIMARY KEY,
+    value_encrypted BLOB,  -- nonce || ciphertext || hmac
+    is_encrypted BOOLEAN DEFAULT 1
+);
+
+-- Sessions
+CREATE TABLE sessions (
+    id TEXT PRIMARY KEY,
+    created_at TIMESTAMP,
+    expires_at TIMESTAMP,
+    csrf_token TEXT,
+    ip_address TEXT
+);
+
+-- Positions
+CREATE TABLE positions (
+    id TEXT PRIMARY KEY,
+    asset TEXT,
+    status TEXT,  -- open, closing, closed
+    asgard_protocol INTEGER,
+    asgard_position_pda TEXT,
+    hyperliquid_position_size DECIMAL,
+    entry_prices TEXT,  -- JSON
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+);
+
+-- Audit log (sanitized)
+CREATE TABLE audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    action TEXT,
+    user TEXT,
+    details TEXT  -- Sanitized
+);
+```
+
+---
+
+## 12. Testing Strategy
+
+### 12.1 Test Infrastructure
+
+| Component | Approach | Tools |
+|-----------|----------|-------|
+| Unit tests | Mock external APIs | pytest, AsyncMock |
+| Integration tests | Testnet where available | pytest-asyncio |
+| UI tests | Browser automation | Playwright |
+| Load tests | Simulate high frequency | locust |
+| Security tests | SAST, dependency scan | bandit, safety |
+
+### 12.2 Mock Servers
+
+```python
+# tests/mocks/privy_mock.py
+class MockPrivyServer:
+    """Flask-based mock of Privy API for testing."""
+    
+    def create_wallet(self):
+        return {
+            "address": "0x" + secrets.token_hex(20),
+            "id": str(uuid.uuid4())
+        }
+    
+    def sign_transaction(self, wallet_id, tx):
+        return {"signature": "0x" + secrets.token_hex(64)}
+```
+
+### 12.3 Demo Mode
+
+Setup wizard includes "Demo Mode" toggle:
+- Uses mock services
+- Fake balances
+- Simulated trades
+- No real transactions
+
+---
+
+## 13. Roadmap
+
+### Phase 1: Foundation (Current)
+- ✅ Privy wallet integration
+- ✅ Core delta-neutral engine
+- ✅ Risk management & circuit breakers
+- ✅ Authentication & encryption
+- 🔄 Web-based setup wizard
+- 🔄 Dashboard UI
+
+### Phase 2: Enhanced Control
+- Paper trading mode
+- Advanced exit logic (patience mode)
+- Funding rate simulation testing
+- Improved close timeout handling
+
+### Phase 3: Advanced Features
+- Multi-venue support
+- Enhanced LST management
+- Dead man's switch / watchdog
+- API key rotation
+
+### Phase 4: Scale
+- Multi-strategy support
+- Institutional features
+- Machine learning enhancements
+
+---
+
+## 14. Technical Reference
+
+### 14.1 Project Structure
 
 ```
-delta-neutral-arb/
+BasisStrategy/
 ├── src/
-│   ├── __init__.py
-│   ├── config/
-│   │   ├── settings.yaml
-│   │   └── secrets.env
-│   ├── core/
+│   ├── core/              # Bot engine
+│   │   ├── bot.py
 │   │   ├── opportunity_detector.py
 │   │   ├── position_manager.py
-│   │   ├── position_sizer.py
-│   │   ├── pause_controller.py
 │   │   └── risk_engine.py
-│   ├── venues/
+│   ├── venues/            # Exchange integrations
 │   │   ├── asgard/
-│   │   │   ├── client.py
-│   │   │   ├── transactions.py
-│   │   │   └── models.py
 │   │   └── hyperliquid/
-│   │       ├── client.py
-│   │       ├── signer.py
-│   │       └── models.py
-│   ├── chain/
-│   │   ├── solana.py
-│   │   ├── arbitrum.py
-│   │   └── outage_detector.py
-│   ├── state/
-│   │   ├── persistence.py
-│   │   └── state_machine.py
-│   ├── security/
-│   │   ├── transaction_validator.py
-│   │   └── allowlist.py
-│   ├── models/
-│   │   ├── opportunity.py
-│   │   ├── position.py
-│   │   └── funding.py
-│   └── utils/
-│       ├── logger.py
-│       ├── retry.py
-│       └── fee_monitor.py
-├── tests/
+│   ├── privy/             # Wallet infrastructure
+│   │   └── client.py
+│   ├── dashboard/         # Web interface
+│   │   ├── main.py        # FastAPI app
+│   │   ├── auth.py        # Authentication
+│   │   ├── setup.py       # Setup wizard
+│   │   ├── backup.py      # Backup/restore
+│   │   ├── api/           # API routes
+│   │   └── templates/     # Jinja2 templates
+│   ├── config/            # Configuration
+│   │   └── settings.py
+│   └── security/          # Encryption, validation
+│       ├── encryption.py
+│       └── validation.py
+├── migrations/            # Database migrations
 ├── docker/
-└── requirements.txt
+└── tests/
 ```
 
----
+### 14.2 Configuration Reference
 
-## 11. API Keys & Credentials
+| Variable | Source | Encrypted | Notes |
+|----------|--------|-----------|-------|
+| `PRIVY_APP_ID` | **Environment** | N/A | Shared Privy app (configured by operator) |
+| `PRIVY_APP_SECRET` | **Environment** | N/A | Shared app secret (v3.3: moved to env) |
+| `PRIVY_AUTH_KEY` | SQLite | ✅ | Server signing key (per-user) |
+| `WALLET_ADDRESS_EVM` | SQLite | ❌ | Public address |
+| `WALLET_ADDRESS_SOLANA` | SQLite | ❌ | Public address |
+| `ASGARD_API_KEY` | SQLite | ✅ | Exchange API key |
+| `PRIVY_USER_ID` | SQLite | ❌ | Privy user identifier (not secret) |
+| `DEK` | SQLite | ✅ | Encrypted by KEK per user |
+| `DASHBOARD_SESSION_SECRET` | Environment | N/A | Server secret for KEK derivation |
 
-| Venue | Credential | Security |
-|-------|------------|----------|
-| Asgard | X-API-Key | Environment variable |
-| Solana | Private key (ed25519) | HSM/AWS KMS - SEPARATE from Hyperliquid |
-| Hyperliquid | Private key (secp256k1) | HSM/AWS KMS - SEPARATE from Solana |
-| Admin | API key for pause/resume | Environment variable |
+**v3.3 Updates:**
+- `PRIVY_APP_ID`/`PRIVY_APP_SECRET` moved to environment variables (shared app)
+- Removed `ADMIN_PASSWORD_HASH` (no passwords)
+- Removed backup key storage (Privy handles recovery)
 
-### Wallet Setup
+### 14.3 API References
 
-1. **Solana**: Generate new keypair, use for Asgard positions only
-2. **Hyperliquid**: Generate new EVM wallet, deposit USDC
-3. **Withdrawal**: Hardware wallet under operator control (allowlisted)
-
----
-
-## 12. Monitoring & Alerting
-
-### Metrics to Track
-
-- Current funding rate (Hyperliquid) - current and predicted
-- Net borrowing rate (Asgard by protocol)
-- Total position APY (funding + net carry + staking)
-- Position health (Asgard HF, Hyperliquid MF)
-- Delta drift (long vs short USD value)
-- LST premium/discount
-- Accumulated funding earned
-- Accumulated net borrowing cost
-- PnL by position
-
-### Alerts
-
-- Funding rate flip detected
-- Health factor approaching threshold
-- Delta drift > 0.5%
-- LST depeg warning/critical
-- Price deviation > 0.5%
-- Position close to liquidation
-- Chain outage detected
-- API errors > 3 in 5 minutes
-- Transaction submission failures
-- Fee market spike detected
+- **Asgard Finance**: https://github.com/asgardfi/api-docs
+- **Hyperliquid**: https://hyperliquid.gitbook.io/hyperliquid-docs/
+- **Privy**: https://docs.privy.io/
 
 ---
 
-## Appendix A: API References
-
-### A.1 Asgard Finance
-- Docs: https://github.com/asgardfi/api-docs
-- Base: `https://v2-ultra-edge.asgard.finance/margin-trading`
-- Contact: @asgardfi (Telegram) for API key
-
-### A.2 Hyperliquid
-- Docs: https://hyperliquid.gitbook.io/hyperliquid-docs/
-- Info API: `https://api.hyperliquid.xyz/info`
-- Exchange API: `https://api.hyperliquid.xyz/exchange`
-- Python SDK: https://github.com/hyperliquid-dex/hyperliquid-python-sdk
-
-### A.3 RPC Providers
-- Solana: Helius or Triton (with smart transaction support)
-- Arbitrum: Alchemy or QuickNode
-
----
-
-*Document Version: 2.1 - Asgard + Hyperliquid*
-*Last Updated: 2025-02-03*
-
----
-
-## Change Log
-
-### v2.1 (2025-02-03)
-- Added detailed execution failure recovery procedures
-- Specified retry logic: 15 attempts every 2 seconds for Hyperliquid entry
-- Added stop-loss monitoring during retry window (1% SOL movement trigger)
-- Defined fill price validation with 0.5% soft stop threshold
-- Specified LST drift rebalancing: cost-based approach
-- Added dynamic priority fee strategy (75th percentile + 25% premium)
-- Specified state machine recovery for SIGNED/SUBMITTED edge cases
-- Added protocol selection tie-breaker and capacity safety margin
-- Added partial fill handling for Hyperliquid orders
-- Specified transaction rebroadcasting with fresh blockhash approach
-- Defined transaction validation details (program ID inspection, EIP-712)
-- Added SQLite as state store with signature-only persistence
-- Created FUTURE_RELEASES.md for deferred features
+*Document Version: 3.4 (Dashboard-First UX)*  
+*Last Updated: 2026-02-06*

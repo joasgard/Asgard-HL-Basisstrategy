@@ -85,10 +85,10 @@ def test_imports_work():
 
 def test_asset_definitions():
     """Verify asset definitions are loaded correctly."""
-    from src.config.assets import Asset, ASSETS, get_all_assets
+    from src.config.assets import Asset, ASSETS
     
     # Check all assets are defined
-    assets = get_all_assets()
+    assets = list(ASSETS.keys())
     assert len(assets) == 4
     
     # Check specific assets

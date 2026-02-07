@@ -211,6 +211,40 @@ class BotBridge:
             self.invalidate_cache("pause_state")
         return result
     
+    async def open_position(self, asset: str, leverage: float, size_usd: float, protocol: str = None) -> dict:
+        """
+        Open a new delta-neutral position.
+        
+        Args:
+            asset: Asset symbol (SOL, jitoSOL, jupSOL, INF)
+            leverage: Leverage multiplier (2.0 - 4.0)
+            size_usd: Position size in USD
+            protocol: Optional protocol override (kamino, drift, marginfi, solend)
+            
+        Returns:
+            dict with success status and position details
+        """
+        payload = {
+            "asset": asset,
+            "leverage": leverage,
+            "size_usd": size_usd
+        }
+        if protocol:
+            payload["protocol"] = protocol
+        
+        response = await self._request(
+            "POST",
+            "/internal/positions/open",
+            json=payload
+        )
+        result = response.json()
+        
+        # Invalidate positions cache on success
+        if result.get("success"):
+            self.invalidate_cache("positions")
+        
+        return result
+    
     async def health_check(self) -> bool:
         """Check if bot is healthy."""
         try:

@@ -118,13 +118,29 @@ class HyperliquidFundingOracle:
         try:
             response = await self.client.get_meta_and_asset_contexts()
             
-            funding_rates = {}
-            asset_ctxs = response.get("assetCtxs", [])
+            # Response is a list: [meta, asset_ctxs]
+            if isinstance(response, list) and len(response) == 2:
+                meta, asset_ctxs = response
+            elif isinstance(response, dict):
+                # Fallback for older API format
+                meta = response.get("meta", {})
+                asset_ctxs = response.get("assetCtxs", [])
+            else:
+                raise ValueError(f"Unexpected response format: {type(response)}")
             
-            for ctx in asset_ctxs:
-                coin = ctx.get("coin")
+            funding_rates = {}
+            universe = meta.get("universe", [])
+            
+            # Zip universe (coin names) with asset contexts (funding data)
+            for i, asset_info in enumerate(universe):
+                if i >= len(asset_ctxs):
+                    break
+                
+                coin = asset_info.get("name")
                 if not coin:
                     continue
+                
+                ctx = asset_ctxs[i]
                 
                 # Funding rate from context
                 funding_rate = float(ctx.get("funding", 0))

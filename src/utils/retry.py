@@ -1,6 +1,7 @@
 """
 Retry utilities using tenacity.
 """
+import logging
 from typing import Any, Callable, TypeVar, Tuple, Optional
 
 from tenacity import (
@@ -111,7 +112,7 @@ def retry(
             stop=_get_stop_condition(config),
             wait=_get_wait_strategy(config),
             retry=retry_if_exception_type(config.retry_exceptions),
-            before_sleep=before_sleep_log(logger, "warning") if log_before_sleep else None,
+            before_sleep=before_sleep_log(logger, logging.WARNING) if log_before_sleep else None,
             reraise=True,
         )
         return retry_decorator(func)
@@ -126,7 +127,7 @@ def retry_with_config(config: RetryConfig) -> Callable[[F], F]:
             stop=_get_stop_condition(config),
             wait=_get_wait_strategy(config),
             retry=retry_if_exception_type(config.retry_exceptions),
-            before_sleep=before_sleep_log(logger, "warning") if config.log_before_sleep else None,
+            before_sleep=before_sleep_log(logger, logging.WARNING) if config.log_before_sleep else None,
             reraise=True,
         )
         return retry_decorator(func)
@@ -158,16 +159,6 @@ RPC_RETRY = RetryConfig(
     wait_max=10.0,
     retry_exceptions=(Exception,),
 )
-
-
-def retry_asgard(func: F) -> F:
-    """Retry configuration for Asgard API calls."""
-    return retry_with_config(ASGARD_RETRY)(func)
-
-
-def retry_hyperliquid(func: F) -> F:
-    """Retry configuration for Hyperliquid API calls."""
-    return retry_with_config(HYPERLIQUID_RETRY)(func)
 
 
 def retry_rpc(func: F) -> F:

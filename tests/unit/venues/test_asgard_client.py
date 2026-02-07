@@ -332,9 +332,9 @@ class TestAsgardClientErrors:
         """Test that 401 response raises AsgardAuthError."""
         client = AsgardClient(api_key="invalid_key")
         
+        # Create mock response class with proper async context manager
         class MockResponse:
-            def __init__(self):
-                self.status = 401
+            status = 401
             
             async def json(self):
                 return {"error": "Invalid key"}
@@ -343,10 +343,11 @@ class TestAsgardClientErrors:
                 return self
             
             async def __aexit__(self, *args):
-                pass
+                return None
         
+        # Create mock session - use the class itself, not an instance
         mock_session = MagicMock()
-        mock_session.request = MagicMock(return_value=MockResponse())
+        mock_session.request = lambda *args, **kwargs: MockResponse()
         mock_session.closed = False
         client._session = mock_session
         
@@ -360,9 +361,9 @@ class TestAsgardClientErrors:
         """Test that 429 response raises AsgardRateLimitError."""
         client = AsgardClient(api_key="test_key")
         
+        # Create mock response class with proper async context manager
         class MockResponse:
-            def __init__(self):
-                self.status = 429
+            status = 429
             
             async def json(self):
                 return {"error": "Rate limited"}
@@ -371,10 +372,11 @@ class TestAsgardClientErrors:
                 return self
             
             async def __aexit__(self, *args):
-                pass
+                return None
         
+        # Create mock session - use lambda to return fresh instance
         mock_session = MagicMock()
-        mock_session.request = MagicMock(return_value=MockResponse())
+        mock_session.request = lambda *args, **kwargs: MockResponse()
         mock_session.closed = False
         client._session = mock_session
         

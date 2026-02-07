@@ -15,9 +15,6 @@ import json
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
-from solders.keypair import Keypair
-from solders.transaction import VersionedTransaction
-
 from src.config.assets import Asset
 from src.config.settings import get_settings
 from src.models.common import Protocol, TransactionState
@@ -80,30 +77,25 @@ class AsgardTransactionBuilder:
         self.client = client or AsgardClient()
         self.state_machine = state_machine or TransactionStateMachine()
         
+        # Load wallet address from settings (not keypair)
         settings = get_settings()
-        self.keypair = self._load_keypair(settings.solana_private_key)
-    
-    def _load_keypair(self, private_key: str) -> Keypair:
-        """
-        Load Solana keypair from private key.
+        self.wallet_address = settings.solana_wallet_address
         
-        Args:
-            private_key: Base58-encoded private key or path to keypair file
-            
-        Returns:
-            Keypair instance
-        """
-        # Try to load as file path first
-        import os
-        from pathlib import Path
+        # Initialize Privy config for lazy loading (allows mocking in tests)
+        self._privy = None
+        self._privy_config = {
+            'app_id': settings.privy_app_id,
+            'app_secret': settings.privy_app_secret,
+            'authorization_private_key_path': settings.privy_auth_key_path
+        }
         
-        if Path(private_key).exists():
-            with open(private_key, "r") as f:
-                key_data = f.read().strip()
-            return Keypair.from_base58_string(key_data)
-        
-        # Otherwise, assume it's a base58-encoded key
-        return Keypair.from_base58_string(private_key)
+    @property
+    def privy(self):
+        """Lazy load Privy client for testing compatibility."""
+        if self._privy is None:
+            from privy import PrivyClient
+            self._privy = PrivyClient(**self._privy_config)
+        return self._privy
     
     async def build_create_position(
         self,
@@ -147,7 +139,7 @@ class AsgardTransactionBuilder:
                 "tokenBMint": borrow_mint,
                 "tokenAAmount": collateral_amount,
                 "tokenBAmount": borrow_amount,
-                "owner": str(self.keypair.pubkey()),
+                "owner": self.wallet_address,
             }
             
             # Call Asgard API to build transaction
@@ -192,13 +184,13 @@ class AsgardTransactionBuilder:
             )
             raise
     
-    def sign_transaction(
+    async def sign_transaction(
         self,
         intent_id: str,
         unsigned_tx: bytes,
     ) -> SignResult:
         """
-        Sign a versioned transaction.
+        Sign a versioned transaction via Privy.
         
         Args:
             intent_id: Transaction intent ID
@@ -213,25 +205,21 @@ class AsgardTransactionBuilder:
         self.state_machine.transition(intent_id, TransactionState.SIGNING)
         
         try:
-            # Deserialize transaction
-            tx = VersionedTransaction.from_bytes(unsigned_tx)
+            # Sign via Privy instead of local keypair
+            signed_tx = await self.privy.wallet.sign_solana_transaction(
+                wallet_address=self.wallet_address,
+                transaction=unsigned_tx
+            )
             
-            # Sign transaction
-            signed_tx = VersionedTransaction(tx.message, [self.keypair])
-            
-            # Get signature
+            # Get signature (first signature in transaction)
             signature = str(signed_tx.signatures[0])
-            
-            # Serialize signed transaction
-            signed_tx_bytes = bytes(signed_tx)
             
             result = SignResult(
                 intent_id=intent_id,
-                signed_tx=signed_tx_bytes,
+                signed_tx=bytes(signed_tx),
                 signature=signature,
             )
             
-            # Transition to SIGNED
             self.state_machine.transition(
                 intent_id,
                 TransactionState.SIGNED,
@@ -344,7 +332,7 @@ class AsgardTransactionBuilder:
             payload = {
                 "intentId": intent_id,
                 "positionPda": position_pda,
-                "owner": str(self.keypair.pubkey()),
+                "owner": self.wallet_address,
             }
             
             response = await self.client._post("/close-position", json=payload)

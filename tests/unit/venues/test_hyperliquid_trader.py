@@ -44,7 +44,8 @@ class TestHyperliquidTraderInit:
     def test_init_loads_signer_from_settings(self, mock_get_settings):
         """Test that signer is loaded from settings."""
         mock_settings = MagicMock()
-        mock_settings.hyperliquid_private_key = "0x" + "a" * 64
+        mock_settings.wallet_address = "0x" + "a" * 40
+        mock_settings.privy_app_id = "test-app-id"
         mock_get_settings.return_value = mock_settings
         
         with patch("src.venues.hyperliquid.trader.HyperliquidSigner") as mock_signer:
@@ -59,27 +60,6 @@ class TestUpdateLeverage:
     """Tests for leverage updates."""
     
     @pytest.mark.asyncio
-    async def test_update_leverage_success(self):
-        """Test successful leverage update."""
-        signer = MagicMock(spec=HyperliquidSigner)
-        signer.sign_update_leverage = MagicMock(return_value=(
-            {"actionType": "updateLeverage", "coin": "SOL", "leverage": 5, "nonce": 123456},
-            "0xsignature123",
-        ))
-        
-        client = MagicMock(spec=HyperliquidClient)
-        client.exchange = AsyncMock(return_value={"status": "ok"})
-        
-        trader = HyperliquidTrader(client=client, signer=signer)
-        
-        result = await trader.update_leverage("SOL", 5, is_cross=True)
-        
-        assert result is True
-        signer.sign_update_leverage.assert_called_once_with(
-            coin="SOL", leverage=5, is_cross=True
-        )
-    
-    @pytest.mark.asyncio
     async def test_update_leverage_no_signer(self):
         """Test leverage update without signer."""
         trader = HyperliquidTrader()
@@ -90,13 +70,11 @@ class TestUpdateLeverage:
         assert result is False
     
     @pytest.mark.asyncio
-    async def test_update_leverage_failure(self):
-        """Test failed leverage update."""
+    async def test_update_leverage_not_implemented(self):
+        """Test leverage update returns False (not implemented with Privy)."""
         signer = MagicMock(spec=HyperliquidSigner)
-        signer.sign_update_leverage = MagicMock(return_value=({}, "0xsig"))
         
         client = MagicMock(spec=HyperliquidClient)
-        client.exchange = AsyncMock(return_value={"status": "err", "error": "Rejected"})
         
         trader = HyperliquidTrader(client=client, signer=signer)
         
@@ -176,7 +154,7 @@ class TestCloseShort:
     async def test_close_short_success(self):
         """Test successful close."""
         signer = MagicMock(spec=HyperliquidSigner)
-        signer.sign_order = MagicMock(return_value=MagicMock(
+        signer.sign_order = AsyncMock(return_value=MagicMock(
             coin="SOL",
             is_buy=True,
             sz="10.0",

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Delta Neutral Bot</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex items-center justify-center">
+    <div class="w-full max-w-md p-8">
+        <div class="bg-gray-800 rounded-lg shadow-xl p-8 border border-gray-700">
+            <h1 class="text-2xl font-bold mb-6 text-center">Delta Neutral Bot</h1>
+            <p class="text-gray-400 text-center mb-8">Enter your password to access the dashboard</p>
+            
+            <form hx-post="/setup/login" hx-swap="none" class="space-y-6">
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-2">Password</label>
+                    <input 
+                        type="password" 
+                        name="password"
+                        required
+                        class="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="Enter your password"
+                    >
+                </div>
+                
+                <div id="error-message" class="text-red-400 text-sm hidden"></div>
+                
+                <button 
+                    type="submit"
+                    class="w-full py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-medium transition-colors"
+                >
+                    Login
+                </button>
+            </form>
+            
+            <div class="mt-6 text-center text-sm text-gray-500">
+                <p>Don't have access? Contact your administrator.</p>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        document.body.addEventListener('htmx:afterRequest', function(evt) {
+            if (evt.detail.successful) {
+                const response = JSON.parse(evt.detail.xhr.response);
+                if (response.success) {
+                    // Set CSRF token for future requests
+                    document.cookie = 'csrf_token=' + response.csrf_token + '; path=/';
+                    window.location.href = '/';
+                } else {
+                    const errorDiv = document.getElementById('error-message');
+                    errorDiv.textContent = response.error || 'Login failed';
+                    errorDiv.classList.remove('hidden');
+                }
+            }
+        });
+    </script>
+</body>
+</html>

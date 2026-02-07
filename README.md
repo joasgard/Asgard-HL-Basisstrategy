@@ -1,27 +1,40 @@
 # Delta Neutral Funding Rate Arbitrage Bot
 
-**Status:** Phases 1-9 Complete (804 tests passing)  
-**Dashboard:** Web UI with real-time monitoring and controls  
-**Spec Version:** 2.1
+**Status:** Phases 1-9 Complete (555+ tests passing)  
+**Dashboard:** Web UI with 3-step setup wizard  
+**Spec Version:** 3.4  
+**Security:** 🔐 Privy embedded wallets (no local private keys)
 
 A delta-neutral arbitrage strategy capturing funding rate differentials between **Asgard Finance** (Solana long positions) and **Hyperliquid** (Arbitrum short perpetuals).
 
+> **🔐 Security Note:** This bot uses [Privy](https://privy.io) for secure wallet infrastructure. Private keys are **never stored locally** - they remain safely sharded in Privy's TEE (Trusted Execution Environment) infrastructure. All signing is done via secure API calls.
+
 ---
 
-## 🚀 Quick Start
+## 🚀 Quick Start (3 Minutes)
 
 **New users:** See **[GETTING_STARTED.md](GETTING_STARTED.md)** for complete setup instructions.
 
 ```bash
-# Quick start for returning users
+# 1. Clone and setup
 git clone <repository-url>
 cd BasisStrategy
-./scripts/setup.sh              # Run setup script
-python run_bot.py               # Start the bot
-uvicorn src.dashboard.main:app  # Start dashboard (separate terminal)
+./scripts/setup.sh
+
+# 2. Start the dashboard
+source .venv/bin/activate
+uvicorn src.dashboard.main:app --port 8080
 ```
 
-Then open http://localhost:8080 for the web dashboard.
+Then open **http://localhost:8080** and complete the 3-step wizard:
+
+| Step | Action | Time |
+|------|--------|------|
+| 1 | Login with Privy (Google/Twitter) | 30 sec |
+| 2 | Create Solana + Arbitrum wallets | 30 sec |
+| 3 | Fund wallets & start trading | 2 min |
+
+**No API keys required** - both exchanges work with wallet-based authentication!
 
 ---
 
@@ -115,19 +128,30 @@ See [tracker.md](tracker.md) for detailed task breakdown.
 
 ## 🖥️ Dashboard
 
-The bot now includes a **web dashboard** for monitoring and control:
+The bot includes a **web dashboard** with a guided 3-step setup wizard:
+
+### 3-Step Setup Wizard
+
+| Step | Description |
+|------|-------------|
+| **1. Auth** | Login with Privy (Google, Twitter, Email) |
+| **2. Wallets** | Auto-create Solana + Arbitrum wallets |
+| **3. Exchange** | Optional API keys (wallet auth works without) |
+
+### Dashboard Features
 
 | Feature | Description |
 |---------|-------------|
-| **Real-time Status** | Uptime, positions, PnL, bot status |
+| **🔴 Fund Wallets** | One-click wallet funding with QR codes |
+| **🟢 Launch Strategy** | Start trading with one click |
+| **Real-time Status** | Uptime, positions, PnL |
 | **Position Monitor** | Live position tracking with health metrics |
 | **Control Panel** | Pause/resume bot operations |
 | **Auto-refresh** | Updates every 5 seconds |
-| **Dark Mode** | Default dark theme |
 
 **Access:** http://localhost:8080 (when running)
 
-**Setup:** See [GETTING_STARTED.md](GETTING_STARTED.md#method-2-with-dashboard-recommended)
+**Setup:** See [GETTING_STARTED.md](GETTING_STARTED.md#-using-the-dashboard)
 
 ---
 
@@ -167,14 +191,17 @@ For detailed setup instructions, see **[GETTING_STARTED.md](GETTING_STARTED.md)*
 Quick summary:
 1. Clone repository
 2. Run `./scripts/setup.sh`
-3. Configure secrets (see GETTING_STARTED.md)
-4. Run tests: `pytest tests/ -v`
+3. Add Privy credentials (`secrets/privy_app_id.txt`, `secrets/privy_app_secret.txt`)
+4. Run dashboard: `uvicorn src.dashboard.main:app --port 8080`
+5. Complete 3-step wizard at http://localhost:8080
+
+No exchange API keys required - both Asgard and Hyperliquid work with wallet-based authentication!
 
 ---
 
 ## Safety & Testing
 
-This project includes a comprehensive **804-test** safety suite covering:
+This project includes a comprehensive **555+ test** safety suite covering:
 - Delta neutrality invariants
 - Liquidation protection
 - Price consensus validation
@@ -186,4 +213,4 @@ See [test-check.md](test-check.md) for the safety verification test matrix.
 
 ---
 
-*Last updated: 2026-02-05*
+*Last updated: 2026-02-06*

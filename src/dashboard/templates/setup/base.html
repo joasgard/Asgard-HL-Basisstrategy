@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Setup - Delta Neutral Bot</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <!-- Privy SDK -->
+    <script src="https://auth.privy.io/api/v1/sdk/javascript.js"></script>
+</head>
+<body class="bg-gray-900 text-white min-h-screen">
+    <!-- Security Banner -->
+    <div class="bg-yellow-900/50 border-b border-yellow-700 px-4 py-2">
+        <div class="max-w-4xl mx-auto flex items-center gap-2 text-yellow-200 text-sm">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+            </svg>
+            <span><strong>Security Notice:</strong> Your data is encrypted. Save your backup key in a secure location.</span>
+        </div>
+    </div>
+
+    <div class="max-w-4xl mx-auto p-8">
+        <!-- Header -->
+        <div class="text-center mb-12">
+            <h1 class="text-3xl font-bold mb-2">Delta Neutral Bot Setup</h1>
+            <p class="text-gray-400">Complete the 6-step wizard to configure your trading bot</p>
+        </div>
+
+        <!-- Progress Indicator -->
+        <div class="mb-12">
+            <div class="flex justify-between mb-2" id="progress-labels">
+                <span class="text-xs {% if step >= 1 %}text-blue-400{% else %}text-gray-500{% endif %}">Privy</span>
+                <span class="text-xs {% if step >= 2 %}text-blue-400{% else %}text-gray-500{% endif %}">Wallets</span>
+                <span class="text-xs {% if step >= 3 %}text-blue-400{% else %}text-gray-500{% endif %}">Funding</span>
+                <span class="text-xs {% if step >= 4 %}text-blue-400{% else %}text-gray-500{% endif %}">Exchange</span>
+                <span class="text-xs {% if step >= 5 %}text-blue-400{% else %}text-gray-500{% endif %}">Strategy</span>
+                <span class="text-xs {% if step >= 6 %}text-blue-400{% else %}text-gray-500{% endif %}">Launch</span>
+            </div>
+            <div class="h-2 bg-gray-800 rounded-full overflow-hidden">
+                <div id="progress-bar" class="h-full bg-blue-600 transition-all duration-500" style="width: {{ (step / 6) * 100 }}%"></div>
+            </div>
+        </div>
+
+        <!-- Setup Form Container -->
+        <div id="setup-container" class="bg-gray-800 rounded-lg shadow-xl border border-gray-700 p-8">
+            {% block setup_content %}{% endblock %}
+        </div>
+    </div>
+</body>
+</html>

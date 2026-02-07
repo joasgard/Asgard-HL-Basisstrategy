@@ -116,7 +116,7 @@ class HyperliquidTrader:
         if self.signer is None:
             try:
                 settings = get_settings()
-                if settings.hyperliquid_private_key:
+                if settings.wallet_address and settings.privy_app_id:
                     self.signer = HyperliquidSigner()
             except ValueError:
                 logger.warning("Hyperliquid signer not configured")
@@ -160,29 +160,10 @@ class HyperliquidTrader:
         try:
             logger.info(f"Updating leverage: {coin} {leverage}x {'cross' if is_cross else 'isolated'}")
             
-            # Sign leverage update
-            action_data, signature = self.signer.sign_update_leverage(
-                coin=coin,
-                leverage=leverage,
-                is_cross=is_cross,
-            )
+            # Sign leverage update via Privy (TODO: implement leverage update with Privy)
+            logger.warning("Leverage update not yet implemented with Privy signer")
+            return False
             
-            # Submit to exchange
-            payload = {
-                "action": action_data,
-                "signature": signature,
-                "nonce": action_data["nonce"],
-            }
-            
-            response = await self.client.exchange(payload)
-            
-            if response.get("status") == "ok":
-                logger.info(f"Leverage updated: {coin} {leverage}x")
-                return True
-            else:
-                logger.error(f"Failed to update leverage: {response}")
-                return False
-                
         except Exception as e:
             logger.error(f"Error updating leverage: {e}")
             return False
@@ -254,7 +235,7 @@ class HyperliquidTrader:
                 
                 # Place sell order (short)
                 remaining = target_size - filled_size
-                signed_order = self.signer.sign_order(
+                signed_order = await self.signer.sign_order(
                     coin=coin,
                     is_buy=False,  # Sell for short
                     sz=str(remaining),
@@ -367,7 +348,7 @@ class HyperliquidTrader:
         for attempt in range(max_retries):
             try:
                 # Place buy order to close short
-                signed_order = self.signer.sign_order(
+                signed_order = await self.signer.sign_order(
                     coin=coin,
                     is_buy=True,  # Buy to close short
                     sz=size,
