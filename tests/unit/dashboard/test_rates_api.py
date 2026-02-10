@@ -257,11 +257,17 @@ class TestFetchAsgardRates:
             }
         })
         
-        result = await _fetch_asgard_rates(leverage=3.0)
+        rates, details = await _fetch_asgard_rates(leverage=3.0)
         
-        assert "drift" in result
+        assert "drift" in rates
         # (0.12 * 3 - 0.035 * 2) * 100 = 29.0
-        assert result["drift"] == 29.0
+        assert rates["drift"] == 29.0
+        
+        # Check details
+        assert "drift" in details
+        assert details["drift"]["lending_apy"] == 36.0  # 0.12 * 3 * 100
+        assert details["drift"]["borrowing_apy"] == 7.0  # 0.035 * 2 * 100
+        assert details["drift"]["net_apy"] == 29.0
     
     @pytest.mark.asyncio
     @patch('src.dashboard.api.rates.AsgardClient')
@@ -293,11 +299,11 @@ class TestFetchAsgardRates:
             }
         })
         
-        result = await _fetch_asgard_rates(leverage=3.0)
+        rates, details = await _fetch_asgard_rates(leverage=3.0)
         
         # Unknown protocol should be skipped, known should be present
-        assert "kamino" in result
-        assert len(result) == 1  # Only kamino
+        assert "kamino" in rates
+        assert len(rates) == 1  # Only kamino
     
     @pytest.mark.asyncio
     @patch('src.dashboard.api.rates.AsgardClient')
@@ -312,10 +318,11 @@ class TestFetchAsgardRates:
         
         mock_asgard.get_markets = AsyncMock(return_value={"strategies": {}})
         
-        result = await _fetch_asgard_rates(leverage=3.0)
+        rates, details = await _fetch_asgard_rates(leverage=3.0)
         
-        # Should return empty dict
-        assert result == {}
+        # Should return empty dicts
+        assert rates == {}
+        assert details == {}
     
     @pytest.mark.asyncio
     @patch('src.dashboard.api.rates.AsgardClient')
@@ -336,10 +343,11 @@ class TestFetchAsgardRates:
             }
         })
         
-        result = await _fetch_asgard_rates(leverage=3.0)
+        rates, details = await _fetch_asgard_rates(leverage=3.0)
         
-        # Should return empty dict since SOL/USDC not found
-        assert result == {}
+        # Should return empty dicts since SOL/USDC not found
+        assert rates == {}
+        assert details == {}
 
 
 class TestFetchHyperliquidRates:

@@ -93,76 +93,31 @@
             </div>
 
             <div class="grid grid-cols-2 gap-6">
-                <!-- Asgard Rates Section -->
-                <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
-                    <div class="flex items-center justify-between mb-4">
-                        <h2 class="text-lg font-medium">🏛️ Asgard Rates</h2>
-                        <span class="text-xs text-gray-500">Net APY at selected leverage</span>
-                    </div>
-                    
-                    <!-- Net APY Display -->
-                    <div class="mb-4 p-4 bg-gradient-to-r from-blue-900/50 to-purple-900/50 border border-blue-700/50 rounded-xl">
-                        <div class="flex items-center justify-between mb-2">
-                            <span class="text-sm text-blue-300">🎯 Net Strategy APY</span>
-                            <span class="text-xs text-gray-400">Best Protocol</span>
-                        </div>
-                        <div class="flex items-baseline gap-2">
-                            <span id="net-apy" class="text-4xl font-bold text-white">--</span>
-                            <span class="text-gray-400">@ <span id="net-apy-protocol">--</span></span>
-                        </div>
-                        <div class="text-xs text-gray-500 mt-1">
-                            = Asgard Lending - Borrowing Costs + Hyperliquid Funding
-                        </div>
-                    </div>
-                    
-                    <div class="space-y-4" id="asgard-rates">
-                        <!-- Loading State -->
-                        <div id="asgard-loading" class="text-center py-8 text-gray-500">
-                            <svg class="animate-spin h-8 w-8 mx-auto mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            <p class="text-sm">Loading rates...</p>
-                        </div>
-
-                        <!-- SOL/USDC Only -->
-                        <div class="asgard-asset bg-gray-900/50 rounded-lg p-4">
-                            <div class="flex items-center justify-between mb-2">
-                                <span class="font-medium">SOL/USDC</span>
-                                <span class="text-xs text-gray-500">Delta-Neutral</span>
-                            </div>
-                            <div class="grid grid-cols-2 gap-2 text-sm" id="sol-rates">
-                                <!-- Venues populated by JS -->
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Hyperliquid Section -->
+                <!-- LEFT COLUMN: Strategy Performance + Quick Stats -->
                 <div class="space-y-6">
+                    <!-- Strategy Performance -->
                     <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
                         <div class="flex items-center justify-between mb-4">
-                            <h2 class="text-lg font-medium">⚡ Hyperliquid</h2>
-                            <span class="text-xs text-gray-500">Short Leg Funding</span>
+                            <h2 class="text-lg font-medium">🎯 Strategy Performance</h2>
+                            <span class="text-xs text-gray-500">Net APY @ <span id="perf-leverage">3.0</span>x</span>
                         </div>
                         
-                        <div class="bg-gray-900/50 rounded-lg p-6 text-center">
-                            <div class="text-sm text-gray-400 mb-2">SOL-PERP Funding (Short)</div>
-                            <div class="text-4xl font-bold" id="hl-funding">
-                                <span class="animate-pulse">Loading...</span>
-                            </div>
-                            <div class="text-xs text-gray-500 mt-2">at <span id="hl-leverage">3.0</span>x leverage</div>
-                            <div class="text-xs mt-2" id="funding-explanation"></div>
+                        <!-- Net APY Display -->
+                        <div class="p-6 bg-gradient-to-r from-blue-900/50 to-purple-900/50 border border-blue-700/50 rounded-xl text-center">
+                            <div class="text-sm text-blue-300 mb-2">Net APY</div>
+                            <div class="text-5xl font-bold text-white mb-2" id="net-apy">--</div>
+                            <div class="text-sm text-gray-400">via <span id="net-apy-protocol">--</span> Protocol</div>
                         </div>
-
+                        
+                        <!-- Breakdown -->
                         <div class="mt-4 grid grid-cols-2 gap-4 text-sm">
-                            <div class="bg-gray-900/30 rounded p-3">
-                                <div class="text-gray-400">8h Rate</div>
-                                <div class="font-mono" id="hl-predicted">-</div>
+                            <div class="bg-gray-900/30 rounded-lg p-3 text-center">
+                                <div class="text-gray-400 text-xs">Long Leg (Asgard)</div>
+                                <div class="font-mono text-lg text-green-400" id="breakdown-long">--</div>
                             </div>
-                            <div class="bg-gray-900/30 rounded p-3">
-                                <div class="text-gray-400">Annualized</div>
-                                <div class="font-mono" id="hl-annualized">-</div>
+                            <div class="bg-gray-900/30 rounded-lg p-3 text-center">
+                                <div class="text-gray-400 text-xs">Short Leg (Hyperliquid)</div>
+                                <div class="font-mono text-lg text-green-400" id="breakdown-short">--</div>
                             </div>
                         </div>
                     </div>
@@ -224,6 +179,71 @@
                             <p class="text-sm mt-1">Select leverage and click "Open Position" to start</p>
                         </div>
                     {% endif %}
+                </div>
+            </div>
+
+            <!-- Right Column - Leg Details (Stacked) -->
+            <div class="space-y-6">
+                <!-- Asgard Leg Details (Top) -->
+                <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-lg font-medium">🏛️ Asgard Leg</h2>
+                        <div class="text-right">
+                            <div class="text-xs text-gray-400">Asgard APY</div>
+                            <div id="asgard-total-apy" class="text-lg font-bold text-emerald-400">--</div>
+                        </div>
+                    </div>
+                    <div class="space-y-3">
+                        <div class="flex justify-between items-center p-3 bg-gray-700/50 rounded-lg">
+                            <div>
+                                <div class="text-sm text-gray-300">SOL Supply Rate</div>
+                                <div class="text-xs text-gray-500">Long exposure scaled × leverage</div>
+                            </div>
+                            <div id="asgard-lending-apy" class="text-lg font-medium text-emerald-400">--</div>
+                        </div>
+                        <div class="flex justify-between items-center p-3 bg-gray-700/50 rounded-lg">
+                            <div>
+                                <div class="text-sm text-gray-300">USDC Borrow Rate</div>
+                                <div class="text-xs text-gray-500">Cost scaled × (leverage - 1)</div>
+                            </div>
+                            <div id="asgard-borrowing-apy" class="text-lg font-medium text-rose-400">--</div>
+                        </div>
+                    </div>
+                    <div class="mt-4 p-3 bg-blue-900/30 rounded-lg">
+                        <div class="text-xs text-blue-300 mb-1">Formula</div>
+                        <div class="text-sm text-blue-200 font-mono">(Lending × L) - (Borrowing × (L-1))</div>
+                    </div>
+                </div>
+
+                <!-- Hyperliquid Leg Details (Bottom) -->
+                <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-lg font-medium">⚡ Hyperliquid Leg</h2>
+                        <div class="text-right">
+                            <div class="text-xs text-gray-400">HL APY</div>
+                            <div id="hl-total-apy" class="text-lg font-bold text-emerald-400">--</div>
+                        </div>
+                    </div>
+                    <div class="space-y-3">
+                        <div class="flex justify-between items-center p-3 bg-gray-700/50 rounded-lg">
+                            <div>
+                                <div class="text-sm text-gray-300">SOL-PERP Funding</div>
+                                <div class="text-xs text-gray-500">Hourly rate × 24 × 365 × leverage</div>
+                            </div>
+                            <div id="hl-funding-rate" class="text-lg font-medium">--</div>
+                        </div>
+                        <div class="flex justify-between items-center p-3 bg-gray-700/50 rounded-lg">
+                            <div>
+                                <div class="text-sm text-gray-300">Annualized Rate</div>
+                                <div class="text-xs text-gray-500">Effective APY from funding</div>
+                            </div>
+                            <div id="hl-annualized" class="text-lg font-medium text-emerald-400">--</div>
+                        </div>
+                    </div>
+                    <div class="mt-4 p-3 bg-purple-900/30 rounded-lg">
+                        <div class="text-xs text-purple-300 mb-1">Short Position</div>
+                        <div class="text-sm text-purple-200">Negative funding = shorts get paid ✓</div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -537,27 +557,62 @@
                     }
                 }
                 
-                // Update Hyperliquid
-                const fundingEl = document.getElementById('hl-funding');
+                // Update Asgard Leg Details (if available from API)
+                if (data.asgard_details) {
+                    const lendingEl = document.getElementById('asgard-lending-apy');
+                    const borrowingEl = document.getElementById('asgard-borrowing-apy');
+                    const totalEl = document.getElementById('asgard-total-apy');
+                    
+                    if (lendingEl) lendingEl.textContent = '+' + data.asgard_details.lending_apy.toFixed(2) + '%';
+                    if (borrowingEl) borrowingEl.textContent = '-' + data.asgard_details.borrowing_apy.toFixed(2) + '%';
+                    if (totalEl) {
+                        const asgardTotal = data.asgard_details.net_apy;
+                        totalEl.textContent = (asgardTotal >= 0 ? '+' : '') + asgardTotal.toFixed(2) + '%';
+                        totalEl.className = 'text-lg font-bold ' + (asgardTotal >= 0 ? 'text-emerald-400' : 'text-rose-400');
+                    }
+                }
+                
+                // Update Hyperliquid Leg Details
                 const funding = data.hyperliquid.funding_rate;
                 const annualized = data.hyperliquid.annualized;
                 
                 // For shorts: negative funding = you get paid (green), positive = you pay (red)
-                fundingEl.textContent = (annualized >= 0 ? '+' : '') + annualized.toFixed(2) + '%';
-                fundingEl.className = 'text-4xl font-bold ' + (annualized <= 0 ? 'text-green-400' : 'text-red-400');
+                const fundingEl = document.getElementById('hl-funding');
+                if (fundingEl) {
+                    fundingEl.textContent = (annualized >= 0 ? '+' : '') + annualized.toFixed(2) + '%';
+                    fundingEl.className = 'text-4xl font-bold ' + (annualized <= 0 ? 'text-green-400' : 'text-red-400');
+                }
+                
+                // Update new leg detail elements
+                const hlFundingEl = document.getElementById('hl-funding-rate');
+                const hlAnnualEl = document.getElementById('hl-annualized');
+                const hlTotalEl = document.getElementById('hl-total-apy');
+                
+                if (hlFundingEl) hlFundingEl.textContent = funding.toFixed(4) + '%';
+                if (hlAnnualEl) hlAnnualEl.textContent = (annualized >= 0 ? '+' : '') + annualized.toFixed(2) + '%';
+                if (hlTotalEl) {
+                    // For short position, negative funding is good (earnings)
+                    const shortApy = -annualized;
+                    hlTotalEl.textContent = (shortApy >= 0 ? '+' : '') + shortApy.toFixed(2) + '%';
+                    hlTotalEl.className = 'text-lg font-bold ' + (shortApy >= 0 ? 'text-emerald-400' : 'text-rose-400');
+                }
                 
                 // Explanation text
                 const explanationEl = document.getElementById('funding-explanation');
-                if (annualized < 0) {
-                    explanationEl.innerHTML = '<span class="text-green-400">✓ Shorts get paid</span>';
-                } else if (annualized > 0) {
-                    explanationEl.innerHTML = '<span class="text-red-400">⚠ Shorts pay funding</span>';
-                } else {
-                    explanationEl.innerHTML = '<span class="text-gray-400">No funding</span>';
+                if (explanationEl) {
+                    if (annualized < 0) {
+                        explanationEl.innerHTML = '<span class="text-green-400">✓ Shorts get paid</span>';
+                    } else if (annualized > 0) {
+                        explanationEl.innerHTML = '<span class="text-red-400">⚠ Shorts pay funding</span>';
+                    } else {
+                        explanationEl.innerHTML = '<span class="text-gray-400">No funding</span>';
+                    }
                 }
                 
-                document.getElementById('hl-predicted').textContent = funding.toFixed(4) + '%';
-                document.getElementById('hl-annualized').textContent = (annualized >= 0 ? '+' : '') + annualized.toFixed(2) + '%';
+                const hlPredicted = document.getElementById('hl-predicted');
+                const hlAnnualOld = document.getElementById('hl-annualized');
+                if (hlPredicted) hlPredicted.textContent = funding.toFixed(4) + '%';
+                if (hlAnnualOld) hlAnnualOld.textContent = (annualized >= 0 ? '+' : '') + annualized.toFixed(2) + '%';
             } catch (e) {
                 console.error('Failed to fetch rates:', e);
                 document.getElementById('asgard-loading').innerHTML = '<p class="text-red-400">Failed to load rates</p>';

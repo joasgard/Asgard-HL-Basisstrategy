@@ -48,7 +48,7 @@ async def get_rates(
     """
     try:
         # Fetch Asgard rates for SOL/USDC
-        asgard_rates = await _fetch_asgard_rates(leverage)
+        asgard_rates, asgard_details = await _fetch_asgard_rates(leverage)
         
         # Fetch Hyperliquid funding rates (public)
         hl_rates = await _fetch_hyperliquid_rates(leverage)
@@ -64,8 +64,13 @@ async def get_rates(
             for protocol, apy in asgard_rates.items()
         }
         
+        # Find best protocol details for UI
+        best_protocol = max(combined_rates, key=combined_rates.get) if combined_rates else None
+        best_asgard_details = asgard_details.get(best_protocol) if best_protocol else None
+        
         return {
             "asgard": asgard_rates,
+            "asgard_details": best_asgard_details,
             "hyperliquid": hl_rates,
             "combined": combined_rates,
             "leverage": leverage,
@@ -76,7 +81,7 @@ async def get_rates(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def _fetch_asgard_rates(leverage: float) -> Dict[str, float]:
+async def _fetch_asgard_rates(leverage: float) -> tuple[Dict[str, float], Dict[str, Dict[str, float]]]:
     """
     Fetch Asgard SOL/USDC market rates at specified leverage.
     
@@ -84,8 +89,12 @@ async def _fetch_asgard_rates(leverage: float) -> Dict[str, float]:
     - Deposit SOL (Token A) → earn lending APY
     - Borrow USDC (Token B) → pay borrowing APY
     - Net APY = Lending - Borrowing * (leverage - 1)
+    
+    Returns:
+        Tuple of (rates dict, details dict with lending/borrowing breakdown)
     """
     asgard_rates: Dict[str, float] = {}
+    asgard_details: Dict[str, Dict[str, float]] = {}
     
     try:
         async with AsgardClient() as client:
@@ -94,7 +103,7 @@ async def _fetch_asgard_rates(leverage: float) -> Dict[str, float]:
             # Only support SOL/USDC strategy
             if "SOL/USDC" not in markets.get("strategies", {}):
                 logger.warning("SOL/USDC strategy not found in Asgard markets")
-                return {}
+                return {}, {}
             
             strategy_data = markets["strategies"]["SOL/USDC"]
             
@@ -124,6 +133,13 @@ async def _fetch_asgard_rates(leverage: float) -> Dict[str, float]:
                 # Convert to percentage for display
                 asgard_rates[protocol_name] = round(net_apy_decimal * 100, 2)
                 
+                # Store detailed breakdown for the best protocol
+                asgard_details[protocol_name] = {
+                    "lending_apy": round(lending_apy * leverage * 100, 2),
+                    "borrowing_apy": round(borrowing_apy * (leverage - 1) * 100, 2),
+                    "net_apy": round(net_apy_decimal * 100, 2),
+                }
+                
                 logger.debug(
                     f"SOL/USDC {protocol_name}: lend={lending_apy*100:.2f}%, "
                     f"borrow={borrowing_apy*100:.2f}%, net={net_apy_decimal*100:.2f}% @ {leverage}x"
@@ -134,7 +150,7 @@ async def _fetch_asgard_rates(leverage: float) -> Dict[str, float]:
     except Exception as e:
         logger.error(f"Failed to fetch Asgard rates: {e}")
     
-    return asgard_rates
+    return asgard_rates, asgard_details
 
 
 async def _fetch_hyperliquid_rates(leverage: float) -> Dict[str, float]:
