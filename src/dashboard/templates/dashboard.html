@@ -69,7 +69,7 @@
 
         <!-- HOME TAB -->
         <div id="content-home" class="space-y-6">
-            <!-- Leverage Selector -->
+            <!-- Leverage Selector (Persistent) -->
             <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
                 <div class="flex items-center justify-between mb-4">
                     <h2 class="text-lg font-medium">Desired Leverage</h2>
@@ -92,7 +92,8 @@
                 </div>
             </div>
 
-            <div class="grid grid-cols-2 gap-6">
+            <!-- DESKTOP LAYOUT: 2-Column Grid (hidden on mobile) -->
+            <div class="hidden md:grid md:grid-cols-2 gap-6">
                 <!-- LEFT COLUMN: Strategy Performance + Quick Stats -->
                 <div class="space-y-6">
                     <!-- Strategy Performance -->
@@ -140,22 +141,11 @@
                             </div>
                         </div>
                     </div>
-
-                    <!-- Start Trading Button -->
-                    <button 
-                        onclick="openPositionModal()"
-                        class="w-full py-4 bg-green-600 hover:bg-green-700 rounded-xl font-bold text-lg transition-colors flex items-center justify-center gap-2"
-                    >
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                        </svg>
-                        Open Position
-                    </button>
                 </div>
 
                 <!-- RIGHT COLUMN: Leg Details (Stacked) -->
                 <div class="space-y-6">
-                    <!-- Asgard Leg Details (Top) -->
+                    <!-- Asgard Leg Details -->
                     <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
                         <div class="flex items-center justify-between mb-4">
                             <h2 class="text-lg font-medium">🏛️ Asgard Leg</h2>
@@ -186,7 +176,7 @@
                         </div>
                     </div>
 
-                    <!-- Hyperliquid Leg Details (Bottom) -->
+                    <!-- Hyperliquid Leg Details -->
                     <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
                         <div class="flex items-center justify-between mb-4">
                             <h2 class="text-lg font-medium">⚡ Hyperliquid Leg</h2>
@@ -218,6 +208,144 @@
                     </div>
                 </div>
             </div>
+
+            <!-- MOBILE LAYOUT: Tabbed Interface (shown only on mobile) -->
+            <div class="md:hidden">
+                <!-- Mobile Sub-tabs -->
+                <div class="flex border-b border-gray-700 mb-4">
+                    <button onclick="switchMobileTab('overview')" id="mobile-tab-overview" class="flex-1 pb-3 text-center font-medium tab-active">
+                        📊 Overview
+                    </button>
+                    <button onclick="switchMobileTab('legs')" id="mobile-tab-legs" class="flex-1 pb-3 text-center font-medium text-gray-400">
+                        ⚡ Leg Details
+                    </button>
+                </div>
+
+                <!-- Overview Tab (Strategy Performance + Quick Stats) -->
+                <div id="mobile-content-overview" class="space-y-6">
+                    <!-- Strategy Performance -->
+                    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                        <div class="flex items-center justify-between mb-4">
+                            <h2 class="text-lg font-medium">🎯 Strategy Performance</h2>
+                            <span class="text-xs text-gray-500">Net APY @ <span id="mobile-perf-leverage">3.0</span>x</span>
+                        </div>
+                        
+                        <!-- Net APY Display -->
+                        <div class="p-6 bg-gradient-to-r from-blue-900/50 to-purple-900/50 border border-blue-700/50 rounded-xl text-center">
+                            <div class="text-sm text-blue-300 mb-2">Net APY</div>
+                            <div class="text-5xl font-bold text-white mb-2" id="mobile-net-apy">--</div>
+                            <div class="text-sm text-gray-400">via <span id="mobile-net-apy-protocol">--</span> Protocol</div>
+                        </div>
+                        
+                        <!-- Breakdown -->
+                        <div class="mt-4 grid grid-cols-2 gap-4 text-sm">
+                            <div class="bg-gray-900/30 rounded-lg p-3 text-center">
+                                <div class="text-gray-400 text-xs">Long Leg (Asgard)</div>
+                                <div class="font-mono text-lg text-green-400" id="mobile-breakdown-long">--</div>
+                            </div>
+                            <div class="bg-gray-900/30 rounded-lg p-3 text-center">
+                                <div class="text-gray-400 text-xs">Short Leg (Hyperliquid)</div>
+                                <div class="font-mono text-lg text-green-400" id="mobile-breakdown-short">--</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Quick Stats -->
+                    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                        <h2 class="text-lg font-medium mb-4">📊 Quick Stats</h2>
+                        <div class="space-y-3">
+                            <div class="flex justify-between">
+                                <span class="text-gray-400">Open Positions</span>
+                                <span class="font-mono">{{ positions_count }}</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-gray-400">24h PnL</span>
+                                <span class="font-mono {{ 'text-green-400' if pnl_24h > 0 else 'text-red-400' if pnl_24h < 0 else '' }}">{{ pnl_24h }}</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-gray-400">Total Value</span>
+                                <span class="font-mono">${{ total_value }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Leg Details Tab (Asgard + Hyperliquid) -->
+                <div id="mobile-content-legs" class="space-y-6 hidden">
+                    <!-- Asgard Leg Details -->
+                    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                        <div class="flex items-center justify-between mb-4">
+                            <h2 class="text-lg font-medium">🏛️ Asgard Leg</h2>
+                            <div class="text-right">
+                                <div class="text-xs text-gray-400">Asgard APY</div>
+                                <div id="mobile-asgard-total-apy" class="text-lg font-bold text-emerald-400">--</div>
+                            </div>
+                        </div>
+                        <div class="space-y-3">
+                            <div class="flex justify-between items-center p-3 bg-gray-700/50 rounded-lg">
+                                <div>
+                                    <div class="text-sm text-gray-300">SOL Supply Rate</div>
+                                    <div class="text-xs text-gray-500">Long exposure scaled × leverage</div>
+                                </div>
+                                <div id="mobile-asgard-lending-apy" class="text-lg font-medium text-emerald-400">--</div>
+                            </div>
+                            <div class="flex justify-between items-center p-3 bg-gray-700/50 rounded-lg">
+                                <div>
+                                    <div class="text-sm text-gray-300">USDC Borrow Rate</div>
+                                    <div class="text-xs text-gray-500">Cost scaled × (leverage - 1)</div>
+                                </div>
+                                <div id="mobile-asgard-borrowing-apy" class="text-lg font-medium text-rose-400">--</div>
+                            </div>
+                        </div>
+                        <div class="mt-4 p-3 bg-blue-900/30 rounded-lg">
+                            <div class="text-xs text-blue-300 mb-1">Formula</div>
+                            <div class="text-sm text-blue-200 font-mono">(Lending × L) - (Borrowing × (L-1))</div>
+                        </div>
+                    </div>
+
+                    <!-- Hyperliquid Leg Details -->
+                    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                        <div class="flex items-center justify-between mb-4">
+                            <h2 class="text-lg font-medium">⚡ Hyperliquid Leg</h2>
+                            <div class="text-right">
+                                <div class="text-xs text-gray-400">HL APY</div>
+                                <div id="mobile-hl-total-apy" class="text-lg font-bold text-emerald-400">--</div>
+                            </div>
+                        </div>
+                        <div class="space-y-3">
+                            <div class="flex justify-between items-center p-3 bg-gray-700/50 rounded-lg">
+                                <div>
+                                    <div class="text-sm text-gray-300">SOL-PERP Funding</div>
+                                    <div class="text-xs text-gray-500">Hourly rate × 24 × 365 × leverage</div>
+                                </div>
+                                <div id="mobile-hl-funding-rate" class="text-lg font-medium">--</div>
+                            </div>
+                            <div class="flex justify-between items-center p-3 bg-gray-700/50 rounded-lg">
+                                <div>
+                                    <div class="text-sm text-gray-300">Annualized Rate</div>
+                                    <div class="text-xs text-gray-500">Effective APY from funding</div>
+                                </div>
+                                <div id="mobile-hl-annualized" class="text-lg font-medium text-emerald-400">--</div>
+                            </div>
+                        </div>
+                        <div class="mt-4 p-3 bg-purple-900/30 rounded-lg">
+                            <div class="text-xs text-purple-300 mb-1">Short Position</div>
+                            <div class="text-sm text-purple-200">Negative funding = shorts get paid ✓</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Open Position Button (Persistent on all views) -->
+            <button 
+                onclick="openPositionModal()"
+                class="w-full py-4 bg-green-600 hover:bg-green-700 rounded-xl font-bold text-lg transition-colors flex items-center justify-center gap-2"
+            >
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                </svg>
+                Open Position
+            </button>
 
             <!-- Active Positions -->
             <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
@@ -487,6 +615,24 @@
             document.getElementById('tab-' + tab).classList.remove('text-gray-400');
         }
 
+        // Mobile sub-tab switching
+        function switchMobileTab(tab) {
+            // Hide all mobile content
+            document.getElementById('mobile-content-overview').classList.add('hidden');
+            document.getElementById('mobile-content-legs').classList.add('hidden');
+            
+            // Reset all mobile tabs
+            document.getElementById('mobile-tab-overview').classList.remove('tab-active');
+            document.getElementById('mobile-tab-overview').classList.add('text-gray-400');
+            document.getElementById('mobile-tab-legs').classList.remove('tab-active');
+            document.getElementById('mobile-tab-legs').classList.add('text-gray-400');
+            
+            // Show selected content and activate tab
+            document.getElementById('mobile-content-' + tab).classList.remove('hidden');
+            document.getElementById('mobile-tab-' + tab).classList.add('tab-active');
+            document.getElementById('mobile-tab-' + tab).classList.remove('text-gray-400');
+        }
+
         // Leverage handling
         let currentLeverage = 3.0;
         
@@ -561,7 +707,7 @@
                     }
                 }
                 
-                // Update Hyperliquid Leg Details
+                // Update Hyperliquid Leg Details (Desktop)
                 const funding = data.hyperliquid?.funding_rate || 0;
                 const annualized = data.hyperliquid?.annualized || 0;
                 
@@ -575,6 +721,54 @@
                     const shortApyTotal = -annualized;
                     hlTotalEl.textContent = (shortApyTotal >= 0 ? '+' : '') + shortApyTotal.toFixed(2) + '%';
                     hlTotalEl.className = 'text-lg font-bold ' + (shortApyTotal >= 0 ? 'text-emerald-400' : 'text-rose-400');
+                }
+                
+                // Update Mobile Elements (Overview Tab)
+                const mobileNetApy = document.getElementById('mobile-net-apy');
+                const mobileNetApyProtocol = document.getElementById('mobile-net-apy-protocol');
+                const mobilePerfLeverage = document.getElementById('mobile-perf-leverage');
+                const mobileBreakdownLong = document.getElementById('mobile-breakdown-long');
+                const mobileBreakdownShort = document.getElementById('mobile-breakdown-short');
+                
+                if (mobileNetApy && bestProtocol) {
+                    mobileNetApy.textContent = (bestNetApy >= 0 ? '+' : '') + bestNetApy.toFixed(2) + '%';
+                    mobileNetApy.className = 'text-5xl font-bold ' + (bestNetApy >= 0 ? 'text-green-400' : 'text-red-400');
+                }
+                if (mobileNetApyProtocol && bestProtocol) {
+                    mobileNetApyProtocol.textContent = bestProtocol.charAt(0).toUpperCase() + bestProtocol.slice(1);
+                }
+                if (mobilePerfLeverage) mobilePerfLeverage.textContent = leverage.toFixed(1);
+                if (mobileBreakdownLong) {
+                    mobileBreakdownLong.textContent = (asgardApy >= 0 ? '+' : '') + asgardApy.toFixed(2) + '%';
+                    mobileBreakdownLong.className = 'font-mono text-lg ' + (asgardApy >= 0 ? 'text-green-400' : 'text-red-400');
+                }
+                if (mobileBreakdownShort) {
+                    mobileBreakdownShort.textContent = (shortApy >= 0 ? '+' : '') + shortApy.toFixed(2) + '%';
+                    mobileBreakdownShort.className = 'font-mono text-lg ' + (shortApy >= 0 ? 'text-green-400' : 'text-red-400');
+                }
+                
+                // Update Mobile Elements (Legs Tab - Asgard)
+                const mobileAsgardLending = document.getElementById('mobile-asgard-lending-apy');
+                const mobileAsgardBorrowing = document.getElementById('mobile-asgard-borrowing-apy');
+                const mobileAsgardTotal = document.getElementById('mobile-asgard-total-apy');
+                
+                if (mobileAsgardLending) mobileAsgardLending.textContent = '+' + data.asgard_details.lending_apy.toFixed(2) + '%';
+                if (mobileAsgardBorrowing) mobileAsgardBorrowing.textContent = '-' + data.asgard_details.borrowing_apy.toFixed(2) + '%';
+                if (mobileAsgardTotal) {
+                    mobileAsgardTotal.textContent = (asgardApy >= 0 ? '+' : '') + asgardApy.toFixed(2) + '%';
+                    mobileAsgardTotal.className = 'text-lg font-bold ' + (asgardApy >= 0 ? 'text-emerald-400' : 'text-rose-400');
+                }
+                
+                // Update Mobile Elements (Legs Tab - Hyperliquid)
+                const mobileHlFunding = document.getElementById('mobile-hl-funding-rate');
+                const mobileHlAnnual = document.getElementById('mobile-hl-annualized');
+                const mobileHlTotal = document.getElementById('mobile-hl-total-apy');
+                
+                if (mobileHlFunding) mobileHlFunding.textContent = funding.toFixed(4) + '%';
+                if (mobileHlAnnual) mobileHlAnnual.textContent = (annualized >= 0 ? '+' : '') + annualized.toFixed(2) + '%';
+                if (mobileHlTotal) {
+                    mobileHlTotal.textContent = (shortApy >= 0 ? '+' : '') + shortApy.toFixed(2) + '%';
+                    mobileHlTotal.className = 'text-lg font-bold ' + (shortApy >= 0 ? 'text-emerald-400' : 'text-rose-400');
                 }
             } catch (e) {
                 console.error('Failed to fetch rates:', e);
