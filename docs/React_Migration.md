@@ -21,32 +21,32 @@ Migrating the Delta Neutral Bot dashboard from server-rendered Jinja2 templates 
 
 ## Phase 1: Setup & Infrastructure
 
-**Status:** `[ ]` Not Started
+**Status:** `[~]` In Progress
 
 ### 1.1 Project Setup
-- [ ] Create `frontend/` directory at project root
-- [ ] Initialize Vite + React + TypeScript project
-- [ ] Install core dependencies:
-  - [ ] React 18
-  - [ ] React Router DOM v6
-  - [ ] TypeScript
-  - [ ] Vite
-  - [ ] Tailwind CSS
-- [ ] Configure `tsconfig.json` with strict mode
-- [ ] Set up absolute imports (`@/` alias)
+- [x] Create `frontend/` directory at project root
+- [x] Initialize Vite + React + TypeScript project
+- [x] Install core dependencies:
+  - [x] React 18
+  - [x] React Router DOM v6
+  - [x] TypeScript
+  - [x] Vite
+  - [x] Tailwind CSS
+- [x] Configure `tsconfig.json` with strict mode
+- [x] Set up absolute imports (`@/` alias)
 
 ### 1.2 Development Environment
-- [ ] Configure ESLint with recommended rules
+- [x] Configure ESLint with recommended rules (included with Vite)
 - [ ] Set up Prettier for code formatting
-- [ ] Add `.env.example` with required variables:
-  - [ ] `VITE_API_BASE_URL`
-  - [ ] `VITE_PRIVY_APP_ID`
-  - [ ] `VITE_BOT_API_URL`
+- [x] Add `.env.example` with required variables:
+  - [x] `VITE_API_BASE_URL`
+  - [x] `VITE_PRIVY_APP_ID`
+  - [x] `VITE_BOT_API_URL`
 - [ ] Update `docker-compose.yml` to serve React dev server
 - [ ] Configure CORS in FastAPI backend for localhost:5173
 
 ### 1.3 Build Pipeline
-- [ ] Configure production build output to `frontend/dist/`
+- [x] Configure production build output to `frontend/dist/` (Vite default)
 - [ ] Set up Nginx to serve static files in Docker
 - [ ] Update Dockerfile for multi-stage build (build → serve)
 - [ ] Test production build locally
@@ -56,6 +56,7 @@ Migrating the Delta Neutral Bot dashboard from server-rendered Jinja2 templates 
 - [ ] Install React Testing Library
 - [ ] Install Playwright for E2E testing
 - [ ] Create test utilities and mocks
+- [x] Write test: Verify build succeeds
 - [ ] Write test: Verify setup renders without errors
 
 ---
@@ -110,24 +111,24 @@ Migrating the Delta Neutral Bot dashboard from server-rendered Jinja2 templates 
 **Status:** `[ ]` Not Started
 
 ### 3.1 Layout & Navigation
-- [ ] Create `Layout.tsx` component:
-  - [ ] Header with auth state
-  - [ ] Navigation tabs (Home, Settings, etc.)
-  - [ ] Footer/security banner
-- [ ] Create `ProtectedRoute.tsx` wrapper
-- [ ] Implement mobile responsive layout
+- [x] Create `Layout.tsx` component:
+  - [x] Header with auth state
+  - [x] Navigation tabs (Home, Settings, etc.)
+  - [x] Footer/security banner
+- [x] Create `AuthWrapper.tsx` for protected routes
+- [x] Implement mobile responsive layout
 - [ ] Write tests: Layout renders, navigation works
 
 ### 3.2 Authentication Integration (Privy React SDK)
-- [ ] Install `@privy-io/react-auth`
-- [ ] Configure `PrivyProvider` with app ID
-- [ ] Create `AuthWrapper.tsx`:
-  - [ ] Wrap app with Privy provider
-  - [ ] Handle auth state
-- [ ] Create `LoginPage.tsx`:
-  - [ ] Use Privy's `LoginModal` or custom UI
-  - [ ] Email OTP flow
-  - [ ] Wallet creation on signup
+- [x] Install `@privy-io/react-auth`
+- [x] Configure `PrivyProvider` with app ID
+- [x] Create `AuthWrapper.tsx`:
+  - [x] Wrap app with Privy provider
+  - [x] Handle auth state
+- [x] Create `LoginPage.tsx`:
+  - [x] Use Privy's `LoginModal` or custom UI
+  - [x] Email OTP flow
+  - [x] Wallet creation on signup (configured in PrivyProvider)
 - [ ] Create `DepositModal.tsx`:
   - [ ] Display Solana + EVM addresses
   - [ ] QR code generation
@@ -135,24 +136,27 @@ Migrating the Delta Neutral Bot dashboard from server-rendered Jinja2 templates 
 - [ ] Write tests: Auth flow, wallet display
 
 ### 3.3 Home Tab Components
-- [ ] Create `LeverageSlider.tsx`:
-  - [ ] Range slider (1.1x - 4x)
-  - [ ] Editable number input
-  - [ ] Synchronized with slider
-- [ ] Create `OpenPositionButton.tsx`:
-  - [ ] Disabled state when unfunded
-  - [ ] Loading state
-- [ ] Create `StrategyPerformance.tsx`:
-  - [ ] Net APY display
-  - [ ] Protocol breakdown
-  - [ ] APY calculation based on leverage
-- [ ] Create `LegDetails.tsx`:
-  - [ ] Asgard leg panel
-  - [ ] Hyperliquid leg panel
-- [ ] Create `QuickStats.tsx`:
-  - [ ] Open positions count
-  - [ ] 24h PnL
-  - [ ] Total value
+- [x] Create `LeverageSlider.tsx`:
+  - [x] Range slider (1.1x - 4x)
+  - [x] Editable number input
+  - [x] Synchronized with slider
+- [x] Create `OpenPositionButton.tsx`:
+  - [x] Disabled state when unfunded
+  - [x] Loading state
+- [x] Create `StrategyPerformance.tsx`:
+  - [x] Net APY display
+  - [x] Protocol breakdown
+  - [x] APY calculation based on leverage
+- [x] Create `LegDetails.tsx`:
+  - [x] Asgard leg panel
+  - [x] Hyperliquid leg panel
+- [x] Create `QuickStats.tsx`:
+  - [x] Open positions count
+  - [x] 24h PnL
+  - [x] Total value
+- [x] Create `ActivePositions.tsx`:
+  - [x] Position list
+  - [x] Refresh button
 - [ ] Write tests: Each component renders with mock data
 
 ### 3.4 Settings Tab Components
