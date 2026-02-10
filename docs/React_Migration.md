@@ -262,7 +262,14 @@ Migrating the Delta Neutral Bot dashboard from server-rendered Jinja2 templates 
 
 **Status:** `[ ]` Not Started
 
-### 5.1 Unit Tests
+### 5.1 Testing Infrastructure (Deferred from Phase 1)
+- [ ] Install Vitest for unit testing
+- [ ] Install React Testing Library
+- [ ] Install Playwright for E2E testing
+- [ ] Create test utilities and mocks
+- [ ] Configure test scripts in package.json
+
+### 5.2 Unit Tests
 - [ ] Component tests (80%+ coverage):
   - [ ] `LeverageSlider`
   - [ ] `PositionCard`
@@ -275,20 +282,23 @@ Migrating the Delta Neutral Bot dashboard from server-rendered Jinja2 templates 
 - [ ] Store tests:
   - [ ] All Zustand stores
 
-### 5.2 Integration Tests
+### 5.3 Integration Tests
 - [ ] Test: Full auth flow
 - [ ] Test: Open position flow
 - [ ] Test: Close position flow
 - [ ] Test: Settings save/load
 - [ ] Test: Real-time rate updates
 
-### 5.3 E2E Tests (Playwright)
+### 5.4 E2E Tests (Playwright)
 - [ ] Test: User login
 - [ ] Test: Dashboard navigation
 - [ ] Test: Open/close position
 - [ ] Test: Settings modification
 
-### 5.4 Polish
+### 5.5 Polish & Code Quality
+- [ ] Set up Prettier for code formatting (deferred from Phase 1)
+- [ ] Run Prettier on all files
+- [ ] Fix frontend LoginModal styling issue (black screen bug)
 - [ ] Add loading skeletons
 - [ ] Add error fallbacks
 - [ ] Verify mobile responsiveness
@@ -302,14 +312,23 @@ Migrating the Delta Neutral Bot dashboard from server-rendered Jinja2 templates 
 
 **Status:** `[ ]` Not Started
 
-### 6.1 Docker Updates
+### 6.1 Docker & Deployment (Deferred from Phase 1)
 - [ ] Update `docker/Dockerfile`:
   - [ ] Multi-stage build (Node build → Python serve)
-  - [ ] Copy `frontend/dist/` to Nginx
+  - [ ] Stage 1: Build React frontend with Node
+  - [ ] Stage 2: Copy `frontend/dist/` to Python/FastAPI
+  - [ ] Configure static file serving
 - [ ] Update `docker-compose.yml`:
-  - [ ] Remove dev server in production
+  - [ ] Add frontend build context
+  - [ ] Configure dev server for local development
+  - [ ] Production configuration without dev server
   - [ ] Add volume for static assets
+- [ ] Optional: Set up Nginx reverse proxy:
+  - [ ] Nginx serves static files
+  - [ ] Proxy API requests to FastAPI
+  - [ ] SSL/TLS configuration
 - [ ] Test: Build succeeds, app runs
+- [ ] Test: Production build works end-to-end
 
 ### 6.2 Configuration
 - [ ] Environment variables documented
