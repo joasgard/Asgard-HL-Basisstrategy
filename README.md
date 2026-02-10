@@ -1,7 +1,7 @@
 # Delta Neutral Funding Rate Arbitrage Bot
 
-**Status:** Phases 1-9 Complete (555+ tests passing)  
-**Dashboard:** Web UI with 3-step setup wizard  
+**Status:** Phases 1-9 Complete (950+ tests passing)  
+**Dashboard:** Web UI with real-time APY calculator & responsive mobile layout  
 **Spec Version:** 3.4  
 **Security:** 🔐 Privy embedded wallets (no local private keys)
 
@@ -52,7 +52,7 @@ Then open **http://localhost:8080** and complete the 3-step wizard:
 └─────────────────────────┘         └─────────────────────────┘
 ```
 
-**Supported Assets:** SOL, jitoSOL, jupSOL, INF
+**Supported Asset:** SOL/USDC only (focused strategy)
 
 **Yield Sources:**
 - Hyperliquid funding payments (shorts paid when funding < 0)
@@ -87,7 +87,7 @@ Then open **http://localhost:8080** and complete the 3-step wizard:
 ### Default Parameters
 | Parameter | Value |
 |-----------|-------|
-| Leverage | 3x (max 4x) |
+| Leverage | 2x-4x (slider-adjustable) |
 | Min Position | $1,000 |
 | Price Deviation Threshold | 0.5% |
 | Delta Drift Threshold | 0.5% |
@@ -111,16 +111,16 @@ Then open **http://localhost:8080** and complete the 3-step wizard:
 | Phase 6 | ✅ Complete | Risk engine & circuit breakers |
 | Phase 7 | ✅ Complete | Pause controller & emergency stops |
 | Phase 8 | ✅ Complete | Shadow trading & paper trading mode |
-| Phase 9 | ✅ Complete | **Dashboard** - Web UI with real-time monitoring |
+| Phase 9 | ✅ Complete | **Dashboard** - Web UI with real-time APY calculator, responsive mobile layout |
 
-### Completed Work (804 tests passing)
+### Completed Work (950+ tests passing)
 - ✅ **Foundation** - Directory structure, deps, config, logging, retry
 - ✅ **Models** - Enums, FundingRate, AsgardRates, ArbitrageOpportunity, Positions
 - ✅ **Chain Connection** - Solana/Arbitrum clients, outage detection
 - ✅ **Asgard Integration** - Client, market data, state machine, transactions, manager
 - ✅ **Hyperliquid Integration** - Client, funding oracle, signer, trader
 - ✅ **Core Strategy** - Opportunity detection, price consensus, fill validation
-- ✅ **Dashboard** - Web UI, REST API, real-time monitoring, pause/resume controls
+- ✅ **Dashboard** - Web UI, REST API, real-time APY calculator, responsive mobile layout, pause/resume controls
 
 See [tracker.md](tracker.md) for detailed task breakdown.
 
@@ -142,8 +142,13 @@ The bot includes a **web dashboard** with a guided 3-step setup wizard:
 
 | Feature | Description |
 |---------|-------------|
-| **🔴 Fund Wallets** | One-click wallet funding with QR codes |
-| **🟢 Launch Strategy** | Start trading with one click |
+| **📊 APY Calculator** | Real-time leverage-adjusted APY with funding rate integration |
+| **🎯 Strategy Performance** | Combined net APY display with leg breakdowns |
+| **🏛️ Asgard Leg Details** | SOL supply rate, USDC borrow rate, formula breakdown |
+| **⚡ Hyperliquid Leg Details** | SOL-PERP funding rate, annualized APY |
+| **📱 Mobile Responsive** | Tabbed layout for mobile (Overview / Leg Details) |
+| **⚡ Leverage Slider** | 2x-4x leverage with real-time APY updates |
+| **🟢 Open Position** | One-click position entry |
 | **Real-time Status** | Uptime, positions, PnL |
 | **Position Monitor** | Live position tracking with health metrics |
 | **Control Panel** | Pause/resume bot operations |
@@ -213,4 +218,5 @@ See [test-check.md](test-check.md) for the safety verification test matrix.
 
 ---
 
-*Last updated: 2026-02-06*
+*Last updated: 2026-02-06*  
+*Dashboard: v2.0 with responsive layout & APY calculator*

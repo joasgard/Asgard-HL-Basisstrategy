@@ -115,11 +115,26 @@ After setup, the dashboard shows:
 
 | Feature | Description |
 |---------|-------------|
+| **📊 APY Calculator** | Real-time leverage-adjusted APY display |
+| **🎯 Strategy Performance** | Combined net APY with leg breakdowns |
+| **🏛️ Asgard Leg** | SOL supply rate, USDC borrow rate, formula |
+| **⚡ Hyperliquid Leg** | SOL-PERP funding rate, annualized APY |
 | **🔴 Fund Wallets** | Deposit USDC to your trading wallets |
-| **🟢 Launch Strategy** | Start the arbitrage bot |
+| **🟢 Open Position** | Start trading with one click |
 | **Status Cards** | Bot status, positions count, PnL |
 | **Positions List** | Real-time position monitoring |
 | **Control Panel** | Pause/resume trading |
+
+#### Dashboard Layout
+
+**Desktop (2-column layout):**
+- **Left Column:** Strategy Performance (Net APY) + Quick Stats
+- **Right Column:** Asgard Leg details + Hyperliquid Leg details
+
+**Mobile (tabbed layout):**
+- **📊 Overview Tab:** Strategy Performance + Quick Stats
+- **⚡ Leg Details Tab:** Asgard + Hyperliquid breakdowns
+- Leverage slider and Open Position button are persistent
 
 ---
 
@@ -129,11 +144,12 @@ Before trading, fund your wallets:
 
 ### Solana Wallet (Asgard)
 - Send **SOL** - For transaction fees
-- Send **USDC** - For margin trading
+- Send **SOL** - Used as collateral for delta-neutral position
 
 ### Arbitrum Wallet (Hyperliquid)
-- Send **ETH** - For transaction fees (small amount)
-- Send **USDC** - For perpetual trading
+- Send **USDC** - For perpetual trading and fees
+
+**Note:** This is a SOL/USDC focused strategy. You go long SOL on Asgard and short SOL-PERP on Hyperliquid.
 
 Use the "🔴 Fund Wallets" button on the dashboard to see your wallet addresses.
 
@@ -327,11 +343,12 @@ docker-compose logs dashboard
 ## 💡 Tips
 
 - **Start small**: Test with minimum position sizes first
-- **Fund both wallets**: You need USDC on both Solana and Arbitrum
-- **Monitor funding rates**: Dashboard shows real-time funding PnL
+- **Fund both wallets**: You need SOL on Solana and USDC on Arbitrum
+- **Monitor APY**: Dashboard shows real-time combined APY at your selected leverage
 - **Use pause**: Pause entry during volatile markets
 - **Check health**: Use `/health` endpoint for monitoring
 - **No API keys needed**: Both exchanges work with wallet-based auth
+- **Mobile friendly**: Dashboard works great on mobile devices with tabbed layout
 
 ---
 
