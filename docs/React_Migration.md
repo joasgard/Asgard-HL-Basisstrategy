@@ -21,6 +21,11 @@ Migrating the Delta Neutral Bot dashboard from server-rendered Jinja2 templates 
 - Frontend LoginModal styling issue (black screen) - to be fixed in Phase 5 polish
 - Component tests deferred until core functionality complete
 
+### Task Status Legend
+- `[x]` Complete
+- `[~]` Partial / Deferred to later phase
+- `[ ]` Not started
+
 ### Goals
 - Integrate Privy's React SDK for native auth flow
 - Modern component-based architecture
@@ -47,27 +52,27 @@ Migrating the Delta Neutral Bot dashboard from server-rendered Jinja2 templates 
 
 ### 1.2 Development Environment
 - [x] Configure ESLint with recommended rules (included with Vite)
-- [ ] Set up Prettier for code formatting
+- [~] Set up Prettier for code formatting (deferred to Phase 5)
 - [x] Add `.env.example` with required variables:
   - [x] `VITE_API_BASE_URL`
   - [x] `VITE_PRIVY_APP_ID`
   - [x] `VITE_BOT_API_URL`
-- [ ] Update `docker-compose.yml` to serve React dev server
-- [ ] Configure CORS in FastAPI backend for localhost:5173
+- [~] Update `docker-compose.yml` to serve React dev server (deferred to Phase 6)
+- [x] Configure CORS in FastAPI backend for localhost:5173
 
 ### 1.3 Build Pipeline
 - [x] Configure production build output to `frontend/dist/` (Vite default)
-- [ ] Set up Nginx to serve static files in Docker
-- [ ] Update Dockerfile for multi-stage build (build → serve)
-- [ ] Test production build locally
+- [~] Set up Nginx to serve static files in Docker (deferred to Phase 6)
+- [~] Update Dockerfile for multi-stage build (build → serve) (deferred to Phase 6)
+- [x] Test production build locally (build succeeds)
 
 ### 1.4 Testing Infrastructure
-- [ ] Install Vitest for unit testing
-- [ ] Install React Testing Library
-- [ ] Install Playwright for E2E testing
-- [ ] Create test utilities and mocks
+- [~] Install Vitest for unit testing (deferred to Phase 5)
+- [~] Install React Testing Library (deferred to Phase 5)
+- [~] Install Playwright for E2E testing (deferred to Phase 5)
+- [~] Create test utilities and mocks (deferred to Phase 5)
 - [x] Write test: Verify build succeeds
-- [ ] Write test: Verify setup renders without errors
+- [~] Write test: Verify setup renders without errors (deferred to Phase 5)
 
 ---
 
