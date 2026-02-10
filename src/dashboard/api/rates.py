@@ -1,4 +1,4 @@
-"""Rates API endpoints for fetching Asgard and Hyperliquid rates."""
+"""Rates API endpoints for fetching Asgard SOL/USDC and Hyperliquid rates."""
 
 from fastapi import APIRouter, Query, HTTPException
 from typing import Dict, Any
@@ -6,7 +6,6 @@ import logging
 
 from src.venues.asgard.client import AsgardClient
 from src.venues.hyperliquid.funding_oracle import HyperliquidFundingOracle
-from src.config.assets import Asset, ASSETS
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["rates"])
@@ -17,7 +16,11 @@ async def get_rates(
     leverage: float = Query(3.0, ge=2.0, le=4.0, description="Desired leverage multiplier")
 ) -> Dict[str, Any]:
     """
-    Get current rates for Asgard and Hyperliquid at specified leverage.
+    Get current rates for SOL/USDC delta-neutral strategy.
+    
+    Strategy:
+    - Long: Deposit SOL on Asgard SOL/USDC, borrow USDC
+    - Short: Short SOL-PERP on Hyperliquid to hedge
     
     No API keys required - uses public endpoints:
     - Asgard: 1 req/sec public access
@@ -26,27 +29,45 @@ async def get_rates(
     Returns:
         {
             "asgard": {
-                "sol": {"kamino": 12.5, "drift": 11.8, ...},
-                "jitosol": {"kamino": 18.2, ...},
+                "kamino": 8.5,
+                "drift": 5.2,
                 ...
             },
             "hyperliquid": {
                 "funding_rate": -0.0025,
                 "predicted": -0.0030,
-                "annualized": -21.9
-            }
+                "annualized": -0.03
+            },
+            "combined": {
+                "kamino": 8.47,
+                "drift": 5.17,
+                ...
+            },
+            "leverage": 3.0
         }
     """
     try:
-        # Fetch Asgard rates (no API key needed for public access)
+        # Fetch Asgard rates for SOL/USDC
         asgard_rates = await _fetch_asgard_rates(leverage)
         
         # Fetch Hyperliquid funding rates (public)
         hl_rates = await _fetch_hyperliquid_rates(leverage)
         
+        # Calculate combined delta-neutral APY
+        # Asgard: Positive = you earn on long SOL position
+        # Hyperliquid: Negative funding = shorts get paid (positive return for short)
+        # Combined = Asgard Net APY - Hyperliquid Annualized Rate
+        # (We subtract because negative funding is good for shorts)
+        hl_annualized = hl_rates.get("annualized", 0)
+        combined_rates = {
+            protocol: round(apy - hl_annualized, 2)  # Subtract: negative funding = +return
+            for protocol, apy in asgard_rates.items()
+        }
+        
         return {
             "asgard": asgard_rates,
             "hyperliquid": hl_rates,
+            "combined": combined_rates,
             "leverage": leverage,
         }
         
@@ -55,58 +76,69 @@ async def get_rates(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def _fetch_asgard_rates(leverage: float) -> Dict[str, Dict[str, float]]:
-    """Fetch Asgard market rates at specified leverage."""
-    asgard_rates: Dict[str, Dict[str, float]] = {}
+async def _fetch_asgard_rates(leverage: float) -> Dict[str, float]:
+    """
+    Fetch Asgard SOL/USDC market rates at specified leverage.
+    
+    For SOL/USDC delta-neutral:
+    - Deposit SOL (Token A) → earn lending APY
+    - Borrow USDC (Token B) → pay borrowing APY
+    - Net APY = Lending - Borrowing * (leverage - 1)
+    """
+    asgard_rates: Dict[str, float] = {}
     
     try:
         async with AsgardClient() as client:
             markets = await client.get_markets()
             
-            for asset in [Asset.SOL, Asset.JITOSOL, Asset.JUPSOL, Asset.INF]:
-                asset_key = asset.value.lower()
-                asgard_rates[asset_key] = {}
+            # Only support SOL/USDC strategy
+            if "SOL/USDC" not in markets.get("strategies", {}):
+                logger.warning("SOL/USDC strategy not found in Asgard markets")
+                return {}
+            
+            strategy_data = markets["strategies"]["SOL/USDC"]
+            
+            for source in strategy_data.get("liquiditySources", []):
+                protocol = source.get("lendingProtocol")
+                protocol_name = {0: "marginfi", 1: "kamino", 2: "solend", 3: "drift"}.get(protocol)
                 
-                # Get asset metadata for staking APY
-                metadata = ASSETS[asset]
+                if not protocol_name:
+                    continue
                 
-                # Find markets for this asset
-                for strategy_name, strategy_data in markets.get("strategies", {}).items():
-                    if asset.value in strategy_name or (asset == Asset.SOL and strategy_name == "SOL"):
-                        for source in strategy_data.get("liquiditySources", []):
-                            protocol = source.get("lendingProtocol")
-                            protocol_name = {0: "marginfi", 1: "kamino", 2: "solend", 3: "drift"}.get(protocol)
-                            
-                            if not protocol_name:
-                                continue
-                            
-                            # Calculate net APY at requested leverage
-                            lending_apy = source.get("tokenALendingApyRate", 0)
-                            borrowing_apy = source.get("tokenBBorrowingApyRate", 0)
-                            
-                            # Net APY = (Lending + Staking) - Borrowing * (leverage - 1)
-                            staking_yield = metadata.staking_apy if metadata.is_lst else 0
-                            net_apy = (lending_apy + staking_yield - borrowing_apy * (leverage - 1)) * 100
-                            
-                            asgard_rates[asset_key][protocol_name] = round(net_apy, 2)
-                            
-        logger.info(f"Fetched Asgard rates for {len(asgard_rates)} assets")
+                # Get raw rates (API returns decimals, e.g., 0.05 = 5%)
+                lending_apy = source.get("tokenALendingApyRate", 0)
+                borrowing_apy = source.get("tokenBBorrowingApyRate", 0)
+                
+                # For delta-neutral SOL/USDC:
+                # - Earn: Lending APY on SOL * leverage (collateral + borrowed amount)
+                # - Pay: Borrowing APY on USDC * (leverage - 1)
+                # Net APY = (Lending * leverage) - (Borrowing * (leverage - 1))
+                #
+                # Example at 3x leverage with $1000 collateral:
+                # - Deposit $1000 SOL, borrow $2000 USDC, swap to SOL
+                # - Total lent: $3000 SOL earning lending_apy
+                # - Total borrowed: $2000 USDC paying borrowing_apy
+                # - Net = (0.04 * 3) - (0.05 * 2) = 0.12 - 0.10 = +2%
+                net_apy_decimal = (lending_apy * leverage) - (borrowing_apy * (leverage - 1))
+                
+                # Convert to percentage for display
+                asgard_rates[protocol_name] = round(net_apy_decimal * 100, 2)
+                
+                logger.debug(
+                    f"SOL/USDC {protocol_name}: lend={lending_apy*100:.2f}%, "
+                    f"borrow={borrowing_apy*100:.2f}%, net={net_apy_decimal*100:.2f}% @ {leverage}x"
+                )
+                        
+        logger.info(f"Fetched Asgard SOL/USDC rates: {asgard_rates}")
         
     except Exception as e:
         logger.error(f"Failed to fetch Asgard rates: {e}")
-        # Return empty dict - frontend will show loading/error state
-        asgard_rates = {
-            "sol": {},
-            "jitosol": {},
-            "jupsol": {},
-            "inf": {},
-        }
     
     return asgard_rates
 
 
 async def _fetch_hyperliquid_rates(leverage: float) -> Dict[str, float]:
-    """Fetch Hyperliquid funding rates at specified leverage."""
+    """Fetch Hyperliquid SOL-PERP funding rates at specified leverage."""
     try:
         async with HyperliquidFundingOracle() as oracle:
             # Get current funding rates for all coins
@@ -116,10 +148,12 @@ async def _fetch_hyperliquid_rates(leverage: float) -> Dict[str, float]:
             sol_rate = funding_rates.get("SOL")
             if sol_rate:
                 # Scale by leverage
+                # funding_rate is hourly (e.g., -0.000007 = -0.0007%)
+                # annualized_rate is already calculated (hourly * 24 * 365)
                 return {
-                    "funding_rate": round(sol_rate.funding_rate * leverage * 100, 4),
-                    "predicted": round(sol_rate.funding_rate * leverage * 100, 4),  # Use current as predicted for now
-                    "annualized": round(sol_rate.annualized_rate * leverage * 100, 2),
+                    "funding_rate": round(sol_rate.funding_rate * 100, 6),  # Hourly %
+                    "predicted": round(sol_rate.funding_rate * 100, 6),  # Use current as predicted
+                    "annualized": round(sol_rate.annualized_rate * leverage * 100, 2),  # Annualized % at leverage
                 }
             else:
                 logger.warning("SOL funding rate not found in response")

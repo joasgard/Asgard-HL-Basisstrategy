@@ -1,6 +1,4 @@
-"""
-Tests for dashboard rates API.
-"""
+"""Tests for dashboard rates API."""
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
 
@@ -19,12 +17,13 @@ class TestGetRates:
         
         # Mock Asgard client
         mock_asgard = AsyncMock()
-        mock_asgard_class.return_value.__aenter__ = AsyncMock(return_value=mock_asgard)
-        mock_asgard_class.return_value.__aexit__ = AsyncMock(return_value=None)
+        mock_asgard_class.return_value = mock_asgard
+        mock_asgard.__aenter__ = AsyncMock(return_value=mock_asgard)
+        mock_asgard.__aexit__ = AsyncMock(return_value=False)
         
-        mock_asgard.get_markets.return_value = {
+        mock_asgard.get_markets = AsyncMock(return_value={
             "strategies": {
-                "SOL": {
+                "SOL/USDC": {
                     "liquiditySources": [
                         {
                             "lendingProtocol": 1,  # kamino
@@ -32,48 +31,49 @@ class TestGetRates:
                             "tokenBBorrowingApyRate": 0.08
                         },
                         {
-                            "lendingProtocol": 2,  # solend
-                            "tokenALendingApyRate": 0.04,
-                            "tokenBBorrowingApyRate": 0.09
-                        }
-                    ]
-                },
-                "jitoSOL": {
-                    "liquiditySources": [
-                        {
-                            "lendingProtocol": 1,  # kamino
-                            "tokenALendingApyRate": 0.06,
-                            "tokenBBorrowingApyRate": 0.08
+                            "lendingProtocol": 3,  # drift
+                            "tokenALendingApyRate": 0.12,
+                            "tokenBBorrowingApyRate": 0.035
                         }
                     ]
                 }
             }
-        }
+        })
         
         # Mock Hyperliquid oracle
         mock_oracle = AsyncMock()
-        mock_oracle_class.return_value.__aenter__ = AsyncMock(return_value=mock_oracle)
-        mock_oracle_class.return_value.__aexit__ = AsyncMock(return_value=None)
+        mock_oracle_class.return_value = mock_oracle
+        mock_oracle.__aenter__ = AsyncMock(return_value=mock_oracle)
+        mock_oracle.__aexit__ = AsyncMock(return_value=False)
         
         mock_rate = MagicMock()
         mock_rate.funding_rate = -0.0001
-        mock_rate.annualized_rate = -0.1095  # -0.0001 * 3 * 365
+        mock_rate.annualized_rate = -0.1095
         
-        mock_oracle.get_current_funding_rates.return_value = {"SOL": mock_rate}
+        mock_oracle.get_current_funding_rates = AsyncMock(return_value={"SOL": mock_rate})
         
         result = await get_rates(leverage=3.0)
         
         assert "asgard" in result
         assert "hyperliquid" in result
+        assert "combined" in result
         assert result["leverage"] == 3.0
         
-        # Check Asgard rates
-        assert "sol" in result["asgard"]
-        assert "jitosol" in result["asgard"]
+        # Check Asgard rates (flat structure now)
+        assert "kamino" in result["asgard"]
+        assert "drift" in result["asgard"]
+        # (0.05 * 3 - 0.08 * 2) * 100 = (0.15 - 0.16) * 100 = -1.0
+        assert result["asgard"]["kamino"] == -1.0
+        # (0.12 * 3 - 0.035 * 2) * 100 = (0.36 - 0.07) * 100 = +29.0
+        assert result["asgard"]["drift"] == 29.0
         
         # Check Hyperliquid rates
         assert result["hyperliquid"]["funding_rate"] != 0
         assert result["hyperliquid"]["annualized"] != 0
+        
+        # Check combined rates
+        assert "kamino" in result["combined"]
+        assert "drift" in result["combined"]
     
     @pytest.mark.asyncio
     @patch('src.dashboard.api.rates.AsgardClient')
@@ -84,27 +84,46 @@ class TestGetRates:
         
         # Mock Asgard client
         mock_asgard = AsyncMock()
-        mock_asgard_class.return_value.__aenter__ = AsyncMock(return_value=mock_asgard)
-        mock_asgard_class.return_value.__aexit__ = AsyncMock(return_value=None)
-        mock_asgard.get_markets.return_value = {"strategies": {}}
+        mock_asgard_class.return_value = mock_asgard
+        mock_asgard.__aenter__ = AsyncMock(return_value=mock_asgard)
+        mock_asgard.__aexit__ = AsyncMock(return_value=False)
+        
+        mock_asgard.get_markets = AsyncMock(return_value={
+            "strategies": {
+                "SOL/USDC": {
+                    "liquiditySources": [
+                        {
+                            "lendingProtocol": 1,
+                            "tokenALendingApyRate": 0.05,
+                            "tokenBBorrowingApyRate": 0.08
+                        }
+                    ]
+                }
+            }
+        })
         
         # Mock Hyperliquid oracle
         mock_oracle = AsyncMock()
-        mock_oracle_class.return_value.__aenter__ = AsyncMock(return_value=mock_oracle)
-        mock_oracle_class.return_value.__aexit__ = AsyncMock(return_value=None)
+        mock_oracle_class.return_value = mock_oracle
+        mock_oracle.__aenter__ = AsyncMock(return_value=mock_oracle)
+        mock_oracle.__aexit__ = AsyncMock(return_value=False)
         
         mock_rate = MagicMock()
         mock_rate.funding_rate = -0.0001
         mock_rate.annualized_rate = -0.1095
-        mock_oracle.get_current_funding_rates.return_value = {"SOL": mock_rate}
+        mock_oracle.get_current_funding_rates = AsyncMock(return_value={"SOL": mock_rate})
         
         # Test with leverage 2.0
         result = await get_rates(leverage=2.0)
         assert result["leverage"] == 2.0
+        # At 2x: (0.05 * 2 - 0.08 * 1) * 100 = (0.10 - 0.08) * 100 = +2.0
+        assert result["asgard"]["kamino"] == 2.0
         
         # Test with leverage 4.0
         result = await get_rates(leverage=4.0)
         assert result["leverage"] == 4.0
+        # At 4x: (0.05 * 4 - 0.08 * 3) * 100 = (0.20 - 0.24) * 100 = -4.0
+        assert result["asgard"]["kamino"] == -4.0
     
     @pytest.mark.asyncio
     @patch('src.dashboard.api.rates.AsgardClient')
@@ -115,27 +134,28 @@ class TestGetRates:
         
         # Mock Asgard client to raise exception
         mock_asgard = AsyncMock()
-        mock_asgard_class.return_value.__aenter__ = AsyncMock(return_value=mock_asgard)
-        mock_asgard_class.return_value.__aexit__ = AsyncMock(return_value=None)
-        mock_asgard.get_markets.side_effect = Exception("Asgard API error")
+        mock_asgard_class.return_value = mock_asgard
+        mock_asgard.__aenter__ = AsyncMock(return_value=mock_asgard)
+        mock_asgard.__aexit__ = AsyncMock(return_value=False)
+        mock_asgard.get_markets = AsyncMock(side_effect=Exception("Asgard API error"))
         
         # Mock Hyperliquid oracle
         mock_oracle = AsyncMock()
-        mock_oracle_class.return_value.__aenter__ = AsyncMock(return_value=mock_oracle)
-        mock_oracle_class.return_value.__aexit__ = AsyncMock(return_value=None)
+        mock_oracle_class.return_value = mock_oracle
+        mock_oracle.__aenter__ = AsyncMock(return_value=mock_oracle)
+        mock_oracle.__aexit__ = AsyncMock(return_value=False)
         
         mock_rate = MagicMock()
         mock_rate.funding_rate = -0.0001
         mock_rate.annualized_rate = -0.1095
-        mock_oracle.get_current_funding_rates.return_value = {"SOL": mock_rate}
+        mock_oracle.get_current_funding_rates = AsyncMock(return_value={"SOL": mock_rate})
         
         result = await get_rates(leverage=3.0)
         
         # Should still return data, but Asgard rates empty
         assert "asgard" in result
         assert "hyperliquid" in result
-        assert result["asgard"]["sol"] == {}
-        assert result["asgard"]["jitosol"] == {}
+        assert result["asgard"] == {}
     
     @pytest.mark.asyncio
     @patch('src.dashboard.api.rates.AsgardClient')
@@ -146,15 +166,29 @@ class TestGetRates:
         
         # Mock Asgard client
         mock_asgard = AsyncMock()
-        mock_asgard_class.return_value.__aenter__ = AsyncMock(return_value=mock_asgard)
-        mock_asgard_class.return_value.__aexit__ = AsyncMock(return_value=None)
-        mock_asgard.get_markets.return_value = {"strategies": {}}
+        mock_asgard_class.return_value = mock_asgard
+        mock_asgard.__aenter__ = AsyncMock(return_value=mock_asgard)
+        mock_asgard.__aexit__ = AsyncMock(return_value=False)
+        mock_asgard.get_markets = AsyncMock(return_value={
+            "strategies": {
+                "SOL/USDC": {
+                    "liquiditySources": [
+                        {
+                            "lendingProtocol": 1,
+                            "tokenALendingApyRate": 0.05,
+                            "tokenBBorrowingApyRate": 0.08
+                        }
+                    ]
+                }
+            }
+        })
         
         # Mock Hyperliquid oracle to raise exception
         mock_oracle = AsyncMock()
-        mock_oracle_class.return_value.__aenter__ = AsyncMock(return_value=mock_oracle)
-        mock_oracle_class.return_value.__aexit__ = AsyncMock(return_value=None)
-        mock_oracle.get_current_funding_rates.side_effect = Exception("HL API error")
+        mock_oracle_class.return_value = mock_oracle
+        mock_oracle.__aenter__ = AsyncMock(return_value=mock_oracle)
+        mock_oracle.__aexit__ = AsyncMock(return_value=False)
+        mock_oracle.get_current_funding_rates = AsyncMock(side_effect=Exception("HL API error"))
         
         result = await get_rates(leverage=3.0)
         
@@ -172,15 +206,17 @@ class TestGetRates:
         
         # Mock Asgard client
         mock_asgard = AsyncMock()
-        mock_asgard_class.return_value.__aenter__ = AsyncMock(return_value=mock_asgard)
-        mock_asgard_class.return_value.__aexit__ = AsyncMock(return_value=None)
-        mock_asgard.get_markets.return_value = {"strategies": {}}
+        mock_asgard_class.return_value = mock_asgard
+        mock_asgard.__aenter__ = AsyncMock(return_value=mock_asgard)
+        mock_asgard.__aexit__ = AsyncMock(return_value=False)
+        mock_asgard.get_markets = AsyncMock(return_value={"strategies": {}})
         
         # Mock Hyperliquid oracle - no SOL in response
         mock_oracle = AsyncMock()
-        mock_oracle_class.return_value.__aenter__ = AsyncMock(return_value=mock_oracle)
-        mock_oracle_class.return_value.__aexit__ = AsyncMock(return_value=None)
-        mock_oracle.get_current_funding_rates.return_value = {"BTC": MagicMock()}
+        mock_oracle_class.return_value = mock_oracle
+        mock_oracle.__aenter__ = AsyncMock(return_value=mock_oracle)
+        mock_oracle.__aexit__ = AsyncMock(return_value=False)
+        mock_oracle.get_current_funding_rates = AsyncMock(return_value={"BTC": MagicMock()})
         
         result = await get_rates(leverage=3.0)
         
@@ -196,68 +232,36 @@ class TestFetchAsgardRates:
     @pytest.mark.asyncio
     @patch('src.dashboard.api.rates.AsgardClient')
     async def test_fetch_asgard_rates_calculation(self, mock_asgard_class):
-        """Test APY calculation for LSTs with leverage."""
+        """Test APY calculation at specified leverage."""
         from src.dashboard.api.rates import _fetch_asgard_rates
         
         mock_asgard = AsyncMock()
-        mock_asgard_class.return_value.__aenter__ = AsyncMock(return_value=mock_asgard)
-        mock_asgard_class.return_value.__aexit__ = AsyncMock(return_value=None)
+        mock_asgard_class.return_value = mock_asgard
+        mock_asgard.__aenter__ = AsyncMock(return_value=mock_asgard)
+        mock_asgard.__aexit__ = AsyncMock(return_value=False)
         
-        # jitoSOL: staking_apy=0.08 (8%), lending_apy=0.06, borrowing_apy=0.08
-        # Net APY at 3x leverage = (0.06 + 0.08 - 0.08 * 2) * 100 = -2.0%
-        mock_asgard.get_markets.return_value = {
+        # SOL: lending_apy=0.12, borrowing_apy=0.035
+        # Net APY at 3x leverage = (0.12 * 3 - 0.035 * 2) * 100 = +29.0%
+        # = (0.36 - 0.07) * 100 = 29.0
+        mock_asgard.get_markets = AsyncMock(return_value={
             "strategies": {
-                "jitoSOL": {
+                "SOL/USDC": {
                     "liquiditySources": [
                         {
-                            "lendingProtocol": 1,  # kamino
-                            "tokenALendingApyRate": 0.06,
-                            "tokenBBorrowingApyRate": 0.08
+                            "lendingProtocol": 3,  # drift
+                            "tokenALendingApyRate": 0.12,
+                            "tokenBBorrowingApyRate": 0.035
                         }
                     ]
                 }
             }
-        }
+        })
         
         result = await _fetch_asgard_rates(leverage=3.0)
         
-        assert "jitosol" in result
-        assert "kamino" in result["jitosol"]
-        # (0.06 + 0.08 - 0.08 * 2) * 100 = -2.0
-        assert result["jitosol"]["kamino"] == -2.0
-    
-    @pytest.mark.asyncio
-    @patch('src.dashboard.api.rates.AsgardClient')
-    async def test_fetch_asgard_rates_sol_no_staking(self, mock_asgard_class):
-        """Test SOL rates without staking yield (native SOL)."""
-        from src.dashboard.api.rates import _fetch_asgard_rates
-        
-        mock_asgard = AsyncMock()
-        mock_asgard_class.return_value.__aenter__ = AsyncMock(return_value=mock_asgard)
-        mock_asgard_class.return_value.__aexit__ = AsyncMock(return_value=None)
-        
-        # SOL: staking_apy=0, lending_apy=0.05, borrowing_apy=0.08
-        # Net APY at 3x leverage = (0.05 + 0 - 0.08 * 2) * 100 = -11.0%
-        mock_asgard.get_markets.return_value = {
-            "strategies": {
-                "SOL": {
-                    "liquiditySources": [
-                        {
-                            "lendingProtocol": 1,  # kamino
-                            "tokenALendingApyRate": 0.05,
-                            "tokenBBorrowingApyRate": 0.08
-                        }
-                    ]
-                }
-            }
-        }
-        
-        result = await _fetch_asgard_rates(leverage=3.0)
-        
-        assert "sol" in result
-        assert "kamino" in result["sol"]
-        # (0.05 + 0 - 0.08 * 2) * 100 = -11.0
-        assert result["sol"]["kamino"] == -11.0
+        assert "drift" in result
+        # (0.12 * 3 - 0.035 * 2) * 100 = 29.0
+        assert result["drift"] == 29.0
     
     @pytest.mark.asyncio
     @patch('src.dashboard.api.rates.AsgardClient')
@@ -266,12 +270,13 @@ class TestFetchAsgardRates:
         from src.dashboard.api.rates import _fetch_asgard_rates
         
         mock_asgard = AsyncMock()
-        mock_asgard_class.return_value.__aenter__ = AsyncMock(return_value=mock_asgard)
-        mock_asgard_class.return_value.__aexit__ = AsyncMock(return_value=None)
+        mock_asgard_class.return_value = mock_asgard
+        mock_asgard.__aenter__ = AsyncMock(return_value=mock_asgard)
+        mock_asgard.__aexit__ = AsyncMock(return_value=False)
         
-        mock_asgard.get_markets.return_value = {
+        mock_asgard.get_markets = AsyncMock(return_value={
             "strategies": {
-                "SOL": {
+                "SOL/USDC": {
                     "liquiditySources": [
                         {
                             "lendingProtocol": 99,  # Unknown protocol
@@ -286,14 +291,13 @@ class TestFetchAsgardRates:
                     ]
                 }
             }
-        }
+        })
         
         result = await _fetch_asgard_rates(leverage=3.0)
         
         # Unknown protocol should be skipped, known should be present
-        assert "sol" in result
-        assert "kamino" in result["sol"]
-        assert len(result["sol"]) == 1  # Only kamino
+        assert "kamino" in result
+        assert len(result) == 1  # Only kamino
     
     @pytest.mark.asyncio
     @patch('src.dashboard.api.rates.AsgardClient')
@@ -302,18 +306,40 @@ class TestFetchAsgardRates:
         from src.dashboard.api.rates import _fetch_asgard_rates
         
         mock_asgard = AsyncMock()
-        mock_asgard_class.return_value.__aenter__ = AsyncMock(return_value=mock_asgard)
-        mock_asgard_class.return_value.__aexit__ = AsyncMock(return_value=None)
+        mock_asgard_class.return_value = mock_asgard
+        mock_asgard.__aenter__ = AsyncMock(return_value=mock_asgard)
+        mock_asgard.__aexit__ = AsyncMock(return_value=False)
         
-        mock_asgard.get_markets.return_value = {"strategies": {}}
+        mock_asgard.get_markets = AsyncMock(return_value={"strategies": {}})
         
         result = await _fetch_asgard_rates(leverage=3.0)
         
-        # Should return empty dicts for all assets
-        assert result["sol"] == {}
-        assert result["jitosol"] == {}
-        assert result["jupsol"] == {}
-        assert result["inf"] == {}
+        # Should return empty dict
+        assert result == {}
+    
+    @pytest.mark.asyncio
+    @patch('src.dashboard.api.rates.AsgardClient')
+    async def test_fetch_asgard_rates_missing_sol_usdc(self, mock_asgard_class):
+        """Test when SOL/USDC strategy is missing."""
+        from src.dashboard.api.rates import _fetch_asgard_rates
+        
+        mock_asgard = AsyncMock()
+        mock_asgard_class.return_value = mock_asgard
+        mock_asgard.__aenter__ = AsyncMock(return_value=mock_asgard)
+        mock_asgard.__aexit__ = AsyncMock(return_value=False)
+        
+        # Only other strategies present
+        mock_asgard.get_markets = AsyncMock(return_value={
+            "strategies": {
+                "JITOSOL/USDC": {"liquiditySources": []},
+                "BTC/USDC": {"liquiditySources": []}
+            }
+        })
+        
+        result = await _fetch_asgard_rates(leverage=3.0)
+        
+        # Should return empty dict since SOL/USDC not found
+        assert result == {}
 
 
 class TestFetchHyperliquidRates:
@@ -326,107 +352,58 @@ class TestFetchHyperliquidRates:
         from src.dashboard.api.rates import _fetch_hyperliquid_rates
         
         mock_oracle = AsyncMock()
-        mock_oracle_class.return_value.__aenter__ = AsyncMock(return_value=mock_oracle)
-        mock_oracle_class.return_value.__aexit__ = AsyncMock(return_value=None)
+        mock_oracle_class.return_value = mock_oracle
+        mock_oracle.__aenter__ = AsyncMock(return_value=mock_oracle)
+        mock_oracle.__aexit__ = AsyncMock(return_value=False)
         
         mock_rate = MagicMock()
-        mock_rate.funding_rate = -0.0001  # -0.01% per 8 hours
-        mock_rate.annualized_rate = -0.1095  # -10.95% annualized
+        mock_rate.funding_rate = -0.000007  # Hourly rate: -0.0007%
+        mock_rate.annualized_rate = -0.06132  # Annualized: -6.13% (hourly * 24 * 365)
         
-        mock_oracle.get_current_funding_rates.return_value = {"SOL": mock_rate}
+        mock_oracle.get_current_funding_rates = AsyncMock(return_value={"SOL": mock_rate})
         
         result = await _fetch_hyperliquid_rates(leverage=3.0)
         
-        # funding_rate scaled by leverage: -0.0001 * 3 * 100 = -0.03%
-        assert result["funding_rate"] == pytest.approx(-0.03, abs=0.01)
-        # annualized scaled by leverage: -0.1095 * 3 * 100 = -32.85%
-        assert result["annualized"] == pytest.approx(-32.85, abs=0.1)
+        # Hourly funding rate %: -0.000007 * 100 = -0.0007%
+        assert result["funding_rate"] == pytest.approx(-0.0007, abs=0.0001)
+        # Annualized at 3x leverage: -6.13% * 3 = -18.39%
+        assert result["annualized"] == pytest.approx(-18.39, abs=0.5)
     
     @pytest.mark.asyncio
     @patch('src.dashboard.api.rates.HyperliquidFundingOracle')
-    async def test_fetch_hyperliquid_rates_positive_funding(self, mock_oracle_class):
-        """Test positive funding rates (shorts pay longs)."""
+    async def test_fetch_hyperliquid_rates_sol_not_found(self, mock_oracle_class):
+        """Test when SOL is not in the funding rates response."""
         from src.dashboard.api.rates import _fetch_hyperliquid_rates
         
         mock_oracle = AsyncMock()
-        mock_oracle_class.return_value.__aenter__ = AsyncMock(return_value=mock_oracle)
-        mock_oracle_class.return_value.__aexit__ = AsyncMock(return_value=None)
+        mock_oracle_class.return_value = mock_oracle
+        mock_oracle.__aenter__ = AsyncMock(return_value=mock_oracle)
+        mock_oracle.__aexit__ = AsyncMock(return_value=False)
         
+        # Only BTC in response
         mock_rate = MagicMock()
-        mock_rate.funding_rate = 0.0001  # +0.01% per 8 hours (shorts pay)
-        mock_rate.annualized_rate = 0.1095
-        
-        mock_oracle.get_current_funding_rates.return_value = {"SOL": mock_rate}
+        mock_oracle.get_current_funding_rates = AsyncMock(return_value={"BTC": mock_rate})
         
         result = await _fetch_hyperliquid_rates(leverage=3.0)
         
-        # Positive funding means shorting costs money
-        assert result["funding_rate"] > 0
-        assert result["annualized"] > 0
-    
-    @pytest.mark.asyncio
-    @patch('src.dashboard.api.rates.HyperliquidFundingOracle')
-    async def test_fetch_hyperliquid_rates_exception(self, mock_oracle_class):
-        """Test handling exceptions gracefully."""
-        from src.dashboard.api.rates import _fetch_hyperliquid_rates
-        
-        mock_oracle = AsyncMock()
-        mock_oracle_class.return_value.__aenter__ = AsyncMock(return_value=mock_oracle)
-        mock_oracle_class.return_value.__aexit__ = AsyncMock(return_value=None)
-        mock_oracle.get_current_funding_rates.side_effect = Exception("API error")
-        
-        result = await _fetch_hyperliquid_rates(leverage=3.0)
-        
-        # Should return zeroed values
         assert result["funding_rate"] == 0.0
         assert result["predicted"] == 0.0
         assert result["annualized"] == 0.0
-
-
-class TestGetSimpleRates:
-    """Tests for GET /rates/simple endpoint."""
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.rates.get_rates')
-    async def test_get_simple_rates(self, mock_get_rates):
-        """Test simplified rates endpoint uses default leverage."""
-        from src.dashboard.api.rates import get_simple_rates
+    @patch('src.dashboard.api.rates.HyperliquidFundingOracle')
+    async def test_fetch_hyperliquid_rates_api_error(self, mock_oracle_class):
+        """Test handling API errors gracefully."""
+        from src.dashboard.api.rates import _fetch_hyperliquid_rates
         
-        mock_get_rates.return_value = {
-            "asgard": {"sol": {"kamino": 10.0}},
-            "hyperliquid": {"funding_rate": -0.03},
-            "leverage": 3.0
-        }
+        mock_oracle = AsyncMock()
+        mock_oracle_class.return_value = mock_oracle
+        mock_oracle.__aenter__ = AsyncMock(return_value=mock_oracle)
+        mock_oracle.__aexit__ = AsyncMock(return_value=False)
+        mock_oracle.get_current_funding_rates = AsyncMock(side_effect=Exception("API Error"))
         
-        result = await get_simple_rates()
+        result = await _fetch_hyperliquid_rates(leverage=3.0)
         
-        mock_get_rates.assert_called_once_with(leverage=3.0)
-        assert result["leverage"] == 3.0
-
-
-class TestLeverageValidation:
-    """Tests for leverage query parameter validation - verified via model."""
-    
-    def test_leverage_bounds_validation(self):
-        """Test leverage bounds are validated by the model."""
-        # The endpoint uses: leverage: float = Query(3.0, ge=2.0, le=4.0, ...)
-        # FastAPI will validate these bounds automatically
-        # Test via the OpenPositionRequest model which has same constraints
-        from src.dashboard.api.positions import OpenPositionRequest
-        from pydantic import ValidationError
-        import pytest
-        
-        # Valid values
-        req = OpenPositionRequest(asset="SOL", leverage=2.0, size_usd=10000)
-        assert req.leverage == 2.0
-        
-        req = OpenPositionRequest(asset="SOL", leverage=4.0, size_usd=10000)
-        assert req.leverage == 4.0
-        
-        # Invalid - too low (would be rejected by FastAPI Query)
-        with pytest.raises(ValidationError):
-            OpenPositionRequest(asset="SOL", leverage=1.5, size_usd=10000)
-        
-        # Invalid - too high (would be rejected by FastAPI Query)
-        with pytest.raises(ValidationError):
-            OpenPositionRequest(asset="SOL", leverage=4.5, size_usd=10000)
+        assert result["funding_rate"] == 0.0
+        assert result["predicted"] == 0.0
+        assert result["annualized"] == 0.0

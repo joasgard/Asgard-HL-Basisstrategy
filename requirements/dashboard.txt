@@ -10,3 +10,4 @@ python-multipart>=0.0.6
 bcrypt>=4.0.0
 apscheduler>=3.10.0
 msgpack>=1.0.0
+privy-client>=0.5.0

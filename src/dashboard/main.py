@@ -190,13 +190,31 @@ def create_app() -> FastAPI:
     # Template routes (HTML pages)
     @app.get("/")
     async def dashboard_page(request: Request):
-        """Render main dashboard page."""
-        return templates.TemplateResponse(request, "dashboard.html")
+        """Render main dashboard page with default context."""
+        # Provide default values for template variables
+        context = {
+            "request": request,
+            "positions_count": 0,
+            "pnl_24h": 0.0,
+            "total_value": 0.0,
+            "user": None,
+            "bot_connected": False,
+            "current_funding": {},
+            "risk_preset": "balanced",
+            "max_position_size": 1000,
+            "leverage": 2,
+        }
+        return templates.TemplateResponse("dashboard.html", context)
     
     @app.get("/positions")
     async def positions_page(request: Request):
-        """Render positions page."""
-        return templates.TemplateResponse(request, "positions.html")
+        """Render positions page with default context."""
+        context = {
+            "request": request,
+            "positions": [],
+            "user": None,
+        }
+        return templates.TemplateResponse("positions.html", context)
     
     @app.get("/setup")
     async def setup_page(request: Request):

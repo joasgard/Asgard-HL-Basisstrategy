@@ -81,57 +81,63 @@ class Session:
 
 
 class PrivyAuth:
-    """Privy authentication handler."""
+    """
+    Privy authentication handler using the official SDK.
     
-    def __init__(self, app_id: str, app_secret: str):
-        self.app_id = app_id
-        self.app_secret = app_secret
-        self.api_url = "https://auth.privy.io"
+    Wraps the PrivyClient for token verification and user management.
+    """
+    
+    def __init__(self, app_id: Optional[str] = None, app_secret: Optional[str] = None):
+        """
+        Initialize Privy authentication.
+        
+        Args:
+            app_id: Privy app ID (or read from secrets)
+            app_secret: Privy app secret (or read from secrets)
+        """
+        from src.dashboard.privy_client import PrivyClient
+        
+        self._client: Optional[PrivyClient] = None
+        self._app_id = app_id
+        self._app_secret = app_secret
+    
+    @property
+    def client(self):
+        """Lazy-load the Privy client."""
+        if self._client is None:
+            from src.dashboard.privy_client import PrivyClient
+            self._client = PrivyClient(
+                app_id=self._app_id,
+                app_secret=self._app_secret
+            )
+        return self._client
     
     async def verify_token(self, token: str) -> Dict[str, Any]:
         """
-        Verify a Privy ID token (from OAuth callback).
+        Verify a Privy access token (from OAuth callback).
         
+        Args:
+            token: The Privy access token from frontend
+            
         Returns:
             User info dict with 'id', 'email', etc.
+            
+        Raises:
+            SessionError: If token is invalid
         """
-        import aiohttp
-        
-        async with aiohttp.ClientSession() as session:
-            headers = {
-                "Authorization": f"Bearer {token}",
-                "privy-app-id": self.app_id
+        try:
+            user_data = await self.client.verify_access_token(token)
+            return {
+                "id": user_data["id"],
+                "email": user_data.get("email"),
+                "wallet_address": user_data.get("wallet_address"),
             }
-            async with session.get(
-                f"{self.api_url}/api/v1/sessions/me",
-                headers=headers
-            ) as response:
-                if response.status != 200:
-                    raise SessionError("Invalid Privy token")
-                return await response.json()
+        except Exception as e:
+            raise SessionError(f"Invalid Privy token: {e}") from e
     
     async def get_user(self, user_id: str) -> Optional[Dict[str, Any]]:
         """Get user info by ID."""
-        import aiohttp
-        
-        async with aiohttp.ClientSession() as session:
-            headers = {
-                "Authorization": f"Basic {self._get_auth_header()}",
-                "privy-app-id": self.app_id
-            }
-            async with session.get(
-                f"{self.api_url}/api/v1/users/{user_id}",
-                headers=headers
-            ) as response:
-                if response.status == 200:
-                    return await response.json()
-                return None
-    
-    def _get_auth_header(self) -> str:
-        """Get base64 encoded app credentials."""
-        import base64
-        credentials = f"{self.app_id}:{self.app_secret}"
-        return base64.b64encode(credentials.encode()).decode()
+        return await self.client.get_user(user_id)
 
 
 class SessionManager:

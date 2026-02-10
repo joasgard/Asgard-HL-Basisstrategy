@@ -100,6 +100,21 @@
                         <span class="text-xs text-gray-500">Net APY at selected leverage</span>
                     </div>
                     
+                    <!-- Net APY Display -->
+                    <div class="mb-4 p-4 bg-gradient-to-r from-blue-900/50 to-purple-900/50 border border-blue-700/50 rounded-xl">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm text-blue-300">🎯 Net Strategy APY</span>
+                            <span class="text-xs text-gray-400">Best Protocol</span>
+                        </div>
+                        <div class="flex items-baseline gap-2">
+                            <span id="net-apy" class="text-4xl font-bold text-white">--</span>
+                            <span class="text-gray-400">@ <span id="net-apy-protocol">--</span></span>
+                        </div>
+                        <div class="text-xs text-gray-500 mt-1">
+                            = Asgard Lending - Borrowing Costs + Hyperliquid Funding
+                        </div>
+                    </div>
+                    
                     <div class="space-y-4" id="asgard-rates">
                         <!-- Loading State -->
                         <div id="asgard-loading" class="text-center py-8 text-gray-500">
@@ -110,46 +125,13 @@
                             <p class="text-sm">Loading rates...</p>
                         </div>
 
-                        <!-- SOL -->
-                        <div class="asgard-asset bg-gray-900/50 rounded-lg p-4 hidden">
+                        <!-- SOL/USDC Only -->
+                        <div class="asgard-asset bg-gray-900/50 rounded-lg p-4">
                             <div class="flex items-center justify-between mb-2">
-                                <span class="font-medium">SOL</span>
-                                <span class="text-xs text-gray-500">Native</span>
+                                <span class="font-medium">SOL/USDC</span>
+                                <span class="text-xs text-gray-500">Delta-Neutral</span>
                             </div>
-                            <div class="grid grid-cols-2 gap-2 text-sm venue-rates" data-asset="sol">
-                                <!-- Venues populated by JS -->
-                            </div>
-                        </div>
-
-                        <!-- jitoSOL -->
-                        <div class="asgard-asset bg-gray-900/50 rounded-lg p-4 hidden">
-                            <div class="flex items-center justify-between mb-2">
-                                <span class="font-medium">jitoSOL</span>
-                                <span class="text-xs text-blue-400">~8% staking</span>
-                            </div>
-                            <div class="grid grid-cols-2 gap-2 text-sm venue-rates" data-asset="jitosol">
-                                <!-- Venues populated by JS -->
-                            </div>
-                        </div>
-
-                        <!-- jupSOL -->
-                        <div class="asgard-asset bg-gray-900/50 rounded-lg p-4 hidden">
-                            <div class="flex items-center justify-between mb-2">
-                                <span class="font-medium">jupSOL</span>
-                                <span class="text-xs text-blue-400">~7.5% staking</span>
-                            </div>
-                            <div class="grid grid-cols-2 gap-2 text-sm venue-rates" data-asset="jupsol">
-                                <!-- Venues populated by JS -->
-                            </div>
-                        </div>
-
-                        <!-- INF -->
-                        <div class="asgard-asset bg-gray-900/50 rounded-lg p-4 hidden">
-                            <div class="flex items-center justify-between mb-2">
-                                <span class="font-medium">INF</span>
-                                <span class="text-xs text-blue-400">~7% staking</span>
-                            </div>
-                            <div class="grid grid-cols-2 gap-2 text-sm venue-rates" data-asset="inf">
+                            <div class="grid grid-cols-2 gap-2 text-sm" id="sol-rates">
                                 <!-- Venues populated by JS -->
                             </div>
                         </div>
@@ -161,20 +143,21 @@
                     <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
                         <div class="flex items-center justify-between mb-4">
                             <h2 class="text-lg font-medium">⚡ Hyperliquid</h2>
-                            <span class="text-xs text-gray-500">Funding Rate</span>
+                            <span class="text-xs text-gray-500">Short Leg Funding</span>
                         </div>
                         
                         <div class="bg-gray-900/50 rounded-lg p-6 text-center">
-                            <div class="text-sm text-gray-400 mb-2">SOL-PERP Funding Rate</div>
-                            <div class="text-4xl font-bold text-green-400" id="hl-funding">
+                            <div class="text-sm text-gray-400 mb-2">SOL-PERP Funding (Short)</div>
+                            <div class="text-4xl font-bold" id="hl-funding">
                                 <span class="animate-pulse">Loading...</span>
                             </div>
                             <div class="text-xs text-gray-500 mt-2">at <span id="hl-leverage">3.0</span>x leverage</div>
+                            <div class="text-xs mt-2" id="funding-explanation"></div>
                         </div>
 
                         <div class="mt-4 grid grid-cols-2 gap-4 text-sm">
                             <div class="bg-gray-900/30 rounded p-3">
-                                <div class="text-gray-400">Predicted (1h)</div>
+                                <div class="text-gray-400">8h Rate</div>
                                 <div class="font-mono" id="hl-predicted">-</div>
                             </div>
                             <div class="bg-gray-900/30 rounded p-3">
@@ -509,27 +492,45 @@
                 // Hide loading state
                 document.getElementById('asgard-loading').classList.add('hidden');
                 
-                // Update Asgard rates
-                for (const [asset, venues] of Object.entries(data.asgard)) {
-                    // Show the asset card
-                    const assetCard = document.querySelector(`.venue-rates[data-asset="${asset}"]`).closest('.asgard-asset');
-                    assetCard.classList.remove('hidden');
-                    
-                    // Get container for venues
-                    const container = document.querySelector(`.venue-rates[data-asset="${asset}"]`);
+                // Update SOL/USDC rates (now a flat dictionary)
+                const container = document.getElementById('sol-rates');
+                if (container) {
                     container.innerHTML = ''; // Clear existing
                     
-                    // Add venue rates
+                    const venues = data.asgard || {};
+                    const combined = data.combined || {};
+                    
+                    // Find best NET APY
+                    let bestNetApy = -Infinity;
+                    let bestProtocol = '';
+                    for (const [protocol, apy] of Object.entries(combined)) {
+                        if (apy > bestNetApy) {
+                            bestNetApy = apy;
+                            bestProtocol = protocol;
+                        }
+                    }
+                    
+                    // Update Net APY display
+                    const netApyEl = document.getElementById('net-apy');
+                    const netApyProtocolEl = document.getElementById('net-apy-protocol');
+                    if (netApyEl && bestProtocol) {
+                        netApyEl.textContent = (bestNetApy >= 0 ? '+' : '') + bestNetApy.toFixed(2) + '%';
+                        netApyEl.className = 'text-4xl font-bold ' + (bestNetApy >= 0 ? 'text-green-400' : 'text-red-400');
+                        netApyProtocolEl.textContent = bestProtocol.charAt(0).toUpperCase() + bestProtocol.slice(1);
+                    }
+                    
+                    // Add venue rates (showing both Asgard and Combined)
                     if (Object.keys(venues).length === 0) {
                         container.innerHTML = '<div class="col-span-2 text-gray-500 text-xs">No data available</div>';
                     } else {
-                        for (const [venue, apy] of Object.entries(venues)) {
+                        for (const [venue, asgardApy] of Object.entries(venues)) {
+                            const netApy = combined[venue] || asgardApy;
                             const venueEl = document.createElement('div');
                             venueEl.className = 'flex justify-between';
-                            const apyClass = apy >= 0 ? 'text-green-400' : 'text-red-400';
+                            const apyClass = netApy >= 0 ? 'text-green-400' : 'text-red-400';
                             venueEl.innerHTML = `
                                 <span class="text-gray-400 capitalize">${venue}:</span>
-                                <span class="${apyClass} font-mono">${apy.toFixed(2)}%</span>
+                                <span class="${apyClass} font-mono">${netApy.toFixed(2)}%</span>
                             `;
                             container.appendChild(venueEl);
                         }
@@ -539,11 +540,24 @@
                 // Update Hyperliquid
                 const fundingEl = document.getElementById('hl-funding');
                 const funding = data.hyperliquid.funding_rate;
-                fundingEl.textContent = funding.toFixed(4) + '%';
-                fundingEl.className = 'text-4xl font-bold ' + (funding >= 0 ? 'text-green-400' : 'text-red-400');
+                const annualized = data.hyperliquid.annualized;
                 
-                document.getElementById('hl-predicted').textContent = data.hyperliquid.predicted.toFixed(4) + '%';
-                document.getElementById('hl-annualized').textContent = data.hyperliquid.annualized.toFixed(2) + '%';
+                // For shorts: negative funding = you get paid (green), positive = you pay (red)
+                fundingEl.textContent = (annualized >= 0 ? '+' : '') + annualized.toFixed(2) + '%';
+                fundingEl.className = 'text-4xl font-bold ' + (annualized <= 0 ? 'text-green-400' : 'text-red-400');
+                
+                // Explanation text
+                const explanationEl = document.getElementById('funding-explanation');
+                if (annualized < 0) {
+                    explanationEl.innerHTML = '<span class="text-green-400">✓ Shorts get paid</span>';
+                } else if (annualized > 0) {
+                    explanationEl.innerHTML = '<span class="text-red-400">⚠ Shorts pay funding</span>';
+                } else {
+                    explanationEl.innerHTML = '<span class="text-gray-400">No funding</span>';
+                }
+                
+                document.getElementById('hl-predicted').textContent = funding.toFixed(4) + '%';
+                document.getElementById('hl-annualized').textContent = (annualized >= 0 ? '+' : '') + annualized.toFixed(2) + '%';
             } catch (e) {
                 console.error('Failed to fetch rates:', e);
                 document.getElementById('asgard-loading').innerHTML = '<p class="text-red-400">Failed to load rates</p>';

@@ -142,14 +142,15 @@ class HyperliquidFundingOracle:
                 
                 ctx = asset_ctxs[i]
                 
-                # Funding rate from context
+                # Funding rate from context (this is the HOURLY rate)
                 funding_rate = float(ctx.get("funding", 0))
                 
                 # Current timestamp
                 timestamp_ms = int(time.time() * 1000)
                 
-                # Annualize: 8-hour rate * 3 intervals/day * 365 days
-                annualized = funding_rate * 3 * 365
+                # Annualize: hourly rate * 24 hours * 365 days
+                # Hyperliquid UI shows annualized from hourly rate
+                annualized = funding_rate * 24 * 365
                 
                 funding_rates[coin] = FundingRate(
                     coin=coin,

@@ -4,7 +4,7 @@ Database schema migration system.
 
 import os
 import hashlib
-import importlib.util
+
 from pathlib import Path
 from typing import List, Optional
 from dataclasses import dataclass
@@ -177,20 +177,27 @@ class SchemaMigrator:
         Returns:
             List of errors (empty if all valid)
         """
+        import sqlite3
         errors = []
         migrations = self._load_migrations()
         
         for migration in migrations:
-            row = await self.db.fetchone(
-                "SELECT checksum FROM schema_version WHERE version = ?",
-                (migration.version,)
-            )
-            
-            if row and row["checksum"] != migration.checksum:
-                errors.append(
-                    f"Migration {migration.version} checksum mismatch: "
-                    f"expected {row['checksum']}, got {migration.checksum}"
+            try:
+                row = await self.db.fetchone(
+                    "SELECT checksum FROM schema_version WHERE version = ?",
+                    (migration.version,)
                 )
+                
+                if row and row["checksum"] != migration.checksum:
+                    errors.append(
+                        f"Migration {migration.version} checksum mismatch: "
+                        f"expected {row['checksum']}, got {migration.checksum}"
+                    )
+            except sqlite3.OperationalError as e:
+                # If schema_version table doesn't exist yet, no checksums to verify
+                if "no such table" in str(e).lower():
+                    return []
+                raise
         
         return errors
 

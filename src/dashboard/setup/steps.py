@@ -163,23 +163,31 @@ class SetupSteps:
             if progress_callback:
                 progress_callback(30)
             
-            # Create wallets via Privy
+            # Create wallets via Privy SDK
             if self.privy:
+                from src.dashboard.privy_client import PrivyClient
+                
+                # Initialize client with credentials
+                privy_client = PrivyClient(app_id=app_id, app_secret=app_secret)
+                
+                # Get current user from session or create wallets for a default user
+                # For now, we'll create wallets using the SDK's wallet creation
+                # Note: In production, wallets are typically created when a user signs up
+                # Here we're creating them as part of the setup wizard
+                
                 # Create EVM wallet
-                evm_wallet = await self.privy.create_wallet(
-                    chain_type="ethereum",
-                    app_id=app_id,
-                    app_secret=app_secret
+                evm_wallet = await privy_client.create_user_wallet(
+                    user_id="setup_wizard",  # This should be the actual user ID in production
+                    chain_type="ethereum"
                 )
                 
                 if progress_callback:
                     progress_callback(60)
                 
                 # Create Solana wallet
-                solana_wallet = await self.privy.create_wallet(
-                    chain_type="solana",
-                    app_id=app_id,
-                    app_secret=app_secret
+                solana_wallet = await privy_client.create_user_wallet(
+                    user_id="setup_wizard",
+                    chain_type="solana"
                 )
                 
                 if progress_callback:
@@ -190,6 +198,8 @@ class SetupSteps:
                 await self.db.set_config("wallet_evm_id", evm_wallet["id"])
                 await self.db.set_config("wallet_solana_address", solana_wallet["address"])
                 await self.db.set_config("wallet_solana_id", solana_wallet["id"])
+                
+                await privy_client.close()
             else:
                 # Demo mode - generate placeholder addresses
                 import secrets

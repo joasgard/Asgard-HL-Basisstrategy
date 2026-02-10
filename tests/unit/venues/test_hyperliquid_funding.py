@@ -69,8 +69,8 @@ class TestGetCurrentFundingRates:
         assert rates["SOL"].funding_rate == -0.0001
         assert rates["ETH"].funding_rate == 0.00005
         
-        # Check annualization: -0.0001 * 3 * 365 = -0.1095
-        assert rates["SOL"].annualized_rate == pytest.approx(-0.1095)
+        # Check annualization (hourly rate * 24 * 365): -0.0001 * 24 * 365 = -0.876
+        assert rates["SOL"].annualized_rate == pytest.approx(-0.876)
     
     @pytest.mark.asyncio
     async def test_get_current_funding_rates_empty(self):

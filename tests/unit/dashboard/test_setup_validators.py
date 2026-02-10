@@ -183,36 +183,51 @@ class TestValidatePrivyCredentials:
         assert "Invalid App ID" in result.error
     
     @pytest.mark.asyncio
-    async def test_valid_format_no_client(self):
-        """Test valid format without client (just validates format)."""
+    @patch('src.dashboard.privy_client.PrivyClient')
+    async def test_valid_format_no_client(self, mock_client_class):
+        """Test valid format - creates client and validates connection."""
+        mock_client = AsyncMock()
+        mock_client.list_users = AsyncMock(return_value={"users": [], "next_cursor": None})
+        mock_client.close = AsyncMock()
+        mock_client_class.return_value = mock_client
+        
         validator = SetupValidator()
         result = await validator.validate_privy_credentials("app_id_123", "secret")
         
         assert result.valid is True
+        mock_client_class.assert_called_once_with(app_id="app_id_123", app_secret="secret")
+        mock_client.list_users.assert_called_once_with(limit=1)
+        mock_client.close.assert_called_once()
     
     @pytest.mark.asyncio
-    async def test_with_client_success(self):
+    @patch('src.dashboard.privy_client.PrivyClient')
+    async def test_with_client_success(self, mock_client_class):
         """Test with client that succeeds."""
-        mock_privy = AsyncMock()
-        mock_privy.health_check = AsyncMock()
+        mock_client = AsyncMock()
+        mock_client.list_users = AsyncMock(return_value={"users": [{"id": "user1"}], "next_cursor": None})
+        mock_client.close = AsyncMock()
+        mock_client_class.return_value = mock_client
         
-        validator = SetupValidator(privy_client=mock_privy)
+        validator = SetupValidator()
         result = await validator.validate_privy_credentials("app_id", "secret")
         
         assert result.valid is True
-        mock_privy.health_check.assert_called_once()
+        mock_client.list_users.assert_called_once_with(limit=1)
     
     @pytest.mark.asyncio
-    async def test_with_client_failure(self):
+    @patch('src.dashboard.privy_client.PrivyClient')
+    async def test_with_client_failure(self, mock_client_class):
         """Test with client that fails."""
-        mock_privy = AsyncMock()
-        mock_privy.health_check = AsyncMock(side_effect=Exception("Connection failed"))
+        mock_client = AsyncMock()
+        mock_client.list_users = AsyncMock(side_effect=Exception("Connection failed"))
+        mock_client.close = AsyncMock()
+        mock_client_class.return_value = mock_client
         
-        validator = SetupValidator(privy_client=mock_privy)
+        validator = SetupValidator()
         result = await validator.validate_privy_credentials("app_id", "secret")
         
         assert result.valid is False
-        assert "Failed to connect" in result.error
+        assert "Connection failed" in result.error
 
 
 class TestValidateWalletFunding:

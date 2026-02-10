@@ -20,6 +20,13 @@ from src.dashboard.auth import (
     Session,
 )
 
+# Re-export Privy SDK client
+from src.dashboard.privy_client import (
+    PrivyClient,
+    get_privy_client,
+    AuthenticationError,
+)
+
 # Re-export cache utilities
 from src.dashboard.cache import (
     cached,
@@ -49,6 +56,10 @@ __all__ = [
     "PrivyAuth",
     "User",
     "Session",
+    # Privy SDK
+    "PrivyClient",
+    "get_privy_client",
+    "AuthenticationError",
     # Cache
     "cached",
     "TimedCache",

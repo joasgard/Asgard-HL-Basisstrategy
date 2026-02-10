@@ -210,25 +210,56 @@ class TestGetEncryptionManager:
 
 
 class TestPrivyAuth:
-    """Tests for PrivyAuth class."""
+    """Tests for PrivyAuth class using the official SDK."""
     
     def test_initialization(self):
-        """Test PrivyAuth initialization."""
+        """Test PrivyAuth initialization stores credentials for lazy loading."""
         from src.dashboard.auth import PrivyAuth
         
         auth = PrivyAuth("app_id", "app_secret")
         
-        assert auth.app_id == "app_id"
-        assert auth.app_secret == "app_secret"
-        assert auth.api_url == "https://auth.privy.io"
+        # New implementation uses lazy loading - credentials stored in _app_id/_app_secret
+        assert auth._app_id == "app_id"
+        assert auth._app_secret == "app_secret"
+        # Client is lazy-loaded
+        assert auth._client is None
     
-    def test_get_auth_header(self):
-        """Test auth header generation."""
+    @pytest.mark.asyncio
+    @patch('src.dashboard.privy_client.PrivyClient')
+    async def test_verify_token(self, mock_client_class):
+        """Test token verification delegates to SDK client."""
         from src.dashboard.auth import PrivyAuth
-        import base64
+        
+        mock_client = AsyncMock()
+        mock_client.verify_access_token = AsyncMock(return_value={
+            "id": "user_123",
+            "email": "test@example.com",
+            "wallet_address": "0x123"
+        })
+        mock_client_class.return_value = mock_client
         
         auth = PrivyAuth("app_id", "app_secret")
-        header = auth._get_auth_header()
+        result = await auth.verify_token("test_token")
         
-        expected = base64.b64encode(b"app_id:app_secret").decode()
-        assert header == expected
+        assert result["id"] == "user_123"
+        assert result["email"] == "test@example.com"
+        mock_client.verify_access_token.assert_called_once_with("test_token")
+    
+    @pytest.mark.asyncio
+    @patch('src.dashboard.privy_client.PrivyClient')
+    async def test_get_user(self, mock_client_class):
+        """Test get_user delegates to SDK client."""
+        from src.dashboard.auth import PrivyAuth
+        
+        mock_client = AsyncMock()
+        mock_client.get_user = AsyncMock(return_value={
+            "id": "user_123",
+            "email": "test@example.com"
+        })
+        mock_client_class.return_value = mock_client
+        
+        auth = PrivyAuth("app_id", "app_secret")
+        result = await auth.get_user("user_123")
+        
+        assert result["id"] == "user_123"
+        mock_client.get_user.assert_called_once_with("user_123")

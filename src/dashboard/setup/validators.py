@@ -90,7 +90,7 @@ class SetupValidator:
         app_secret: str
     ) -> ValidationResult:
         """
-        Test Privy API connectivity.
+        Test Privy API connectivity using the official SDK.
         
         Args:
             app_id: Privy app ID
@@ -112,20 +112,22 @@ class SetupValidator:
                 error="Invalid App ID format"
             )
         
-        # Test API connection if client available
-        if self.privy:
-            try:
-                # Attempt to get app info
-                await self.privy.health_check()
-                return ValidationResult(valid=True)
-            except Exception as e:
-                return ValidationResult(
-                    valid=False,
-                    error=f"Failed to connect to Privy API: {str(e)}"
-                )
-        
-        # No client, just validate format
-        return ValidationResult(valid=True)
+        # Test API connection using the SDK
+        try:
+            from src.dashboard.privy_client import PrivyClient
+            client = PrivyClient(app_id=app_id, app_secret=app_secret)
+            # Try to list users (with limit 1) to verify credentials
+            await client.list_users(limit=1)
+            await client.close()
+            return ValidationResult(
+                valid=True,
+                details={"message": "Successfully connected to Privy API"}
+            )
+        except Exception as e:
+            return ValidationResult(
+                valid=False,
+                error=f"Failed to connect to Privy API: {str(e)}"
+            )
     
     async def validate_wallet_funding(
         self,

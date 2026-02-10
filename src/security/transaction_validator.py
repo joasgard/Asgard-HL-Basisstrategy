@@ -19,7 +19,7 @@ Allowed Programs (from spec 8.3):
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
-from typing import List, Dict, Optional, Set, Any, Union
+from typing import List, Dict, Optional, Set, Any
 
 from src.config.assets import Asset
 from src.utils.logger import get_logger

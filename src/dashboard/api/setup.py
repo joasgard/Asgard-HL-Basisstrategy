@@ -4,7 +4,7 @@ Setup wizard API endpoints (Privy-based authentication).
 
 from typing import Optional
 from fastapi import APIRouter, Request, Response, HTTPException, Depends
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import RedirectResponse
 
 from src.db.database import Database, get_db
 from src.dashboard.auth import (

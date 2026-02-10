@@ -31,6 +31,9 @@ CREATE INDEX IF NOT EXISTS idx_position_jobs_status ON position_jobs(status);
 -- Index for querying pending jobs
 CREATE INDEX IF NOT EXISTS idx_position_jobs_pending ON position_jobs(status) WHERE status = 'pending';
 
--- Update schema version
-INSERT OR REPLACE INTO schema_version (version, applied_at, description)
-VALUES (3, CURRENT_TIMESTAMP, 'Add position_jobs table for async position opening');
+-- DOWN
+-- Drop position_jobs table and index
+DROP INDEX IF EXISTS idx_position_jobs_pending;
+DROP INDEX IF EXISTS idx_position_jobs_status;
+DROP INDEX IF EXISTS idx_position_jobs_user;
+DROP TABLE IF EXISTS position_jobs;
