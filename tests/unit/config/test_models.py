@@ -218,7 +218,7 @@ class TestOpportunityModel:
         assert opp.leverage == Decimal("3")
         
         # Invalid leverage (too high)
-        with pytest.raises(ValueError, match="leverage must be between 2 and 4"):
+        with pytest.raises(ValueError, match="leverage must be between 1.1 and 4"):
             ArbitrageOpportunity(
                 id="test",
                 asset=Asset.SOL,
@@ -232,6 +232,38 @@ class TestOpportunityModel:
                 score=score,
                 price_deviation=Decimal("0.001"),
             )
+        
+        # Invalid leverage (too low - below 1.1)
+        with pytest.raises(ValueError, match="leverage must be between 1.1 and 4"):
+            ArbitrageOpportunity(
+                id="test",
+                asset=Asset.SOL,
+                selected_protocol=Protocol.MARGINFI,
+                asgard_rates=asgard_rates,
+                current_funding=funding,
+                funding_volatility=Decimal("0.3"),
+                leverage=Decimal("1.0"),  # Too low
+                deployed_capital_usd=Decimal("100000"),
+                position_size_usd=Decimal("500000"),
+                score=score,
+                price_deviation=Decimal("0.001"),
+            )
+        
+        # Valid leverage at new minimum (1.1x)
+        opp_low = ArbitrageOpportunity(
+            id="test",
+            asset=Asset.SOL,
+            selected_protocol=Protocol.MARGINFI,
+            asgard_rates=asgard_rates,
+            current_funding=funding,
+            funding_volatility=Decimal("0.3"),
+            leverage=Decimal("1.1"),  # New minimum
+            deployed_capital_usd=Decimal("100000"),
+            position_size_usd=Decimal("500000"),
+            score=score,
+            price_deviation=Decimal("0.001"),
+        )
+        assert opp_low.leverage == Decimal("1.1")
 
 
 class TestPositionModels:

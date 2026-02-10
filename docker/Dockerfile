@@ -41,7 +41,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     BOT_ENV=production
 
 # Create app user (non-root for security)
-RUN groupadd -r botuser && useradd -r -g botuser -s /bin/false botuser
+# Use UID 1000 for consistency with host permissions
+RUN groupadd -r -g 1000 botuser && useradd -r -u 1000 -g botuser -s /bin/false botuser
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \

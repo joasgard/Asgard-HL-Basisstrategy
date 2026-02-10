@@ -5,7 +5,7 @@ Calculates optimal position sizes based on available capital,
 enforcing minimum/maximum constraints and handling wallet balance mismatches.
 
 The sizer ensures:
-- Minimum position size ($1000) to make trades worthwhile
+- Minimum position size ($100) to make trades worthwhile
 - Conservative deployment (10% default, 50% max) to preserve capital
 - Equal split between Asgard (Solana) and Hyperliquid (Arbitrum)
 - Proper leverage calculations (3-4x)
@@ -66,7 +66,7 @@ class PositionSizer:
     2. Apply deployment percentage (default 10%, max 50%)
     3. Calculate per-leg deployment (50/50 split)
     4. Calculate position size: deployment × leverage
-    5. Enforce minimum position size ($1000)
+    5. Enforce minimum position size ($100)
     
     Example (3x leverage, $50k balances, 10% deployment):
     - Limiting balance: $50,000
@@ -84,7 +84,7 @@ class PositionSizer:
     """
     
     # Position constraints
-    MIN_POSITION_USD = Decimal("1000")
+    MIN_POSITION_USD = Decimal("100")
     DEFAULT_DEPLOYMENT_PCT = Decimal("0.10")  # 10% conservative
     MAX_DEPLOYMENT_PCT = Decimal("0.50")      # 50% max
     

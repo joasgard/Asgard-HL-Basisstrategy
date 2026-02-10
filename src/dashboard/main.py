@@ -21,18 +21,18 @@ from fastapi.responses import RedirectResponse
 from src.dashboard.config import get_dashboard_settings
 from src.dashboard.bot_bridge import BotBridge
 from src.dashboard.dependencies import set_bot_bridge, get_bot_bridge
+from src.dashboard.events_manager import event_manager
 from src.dashboard.auth import session_manager
 from src.db.database import get_db, init_db
 from src.db.migrations import run_migrations
 
 # Import API routers
 from src.dashboard.api import status, positions, control, rates, settings as settings_api
-from src.dashboard.api import setup as setup_api
+from src.dashboard.api import setup as setup_api, auth as auth_api, balances as balances_api, events as events_api
 
 logger = logging.getLogger(__name__)
 
 # Templates - use absolute path for reliability
-import os
 _templates_dir = os.path.join(os.path.dirname(__file__), "templates")
 templates = Jinja2Templates(directory=_templates_dir)
 
@@ -60,6 +60,10 @@ async def lifespan(app: FastAPI):
     # Set database for session manager
     session_manager.set_db(db)
     
+    # Initialize event manager for SSE
+    logger.info("Initializing event manager...")
+    await event_manager.start()
+    
     # Check if setup is complete
     setup_complete = await db.get_config("setup_completed")
     is_setup_complete = setup_complete == "true"
@@ -85,6 +89,12 @@ async def lifespan(app: FastAPI):
         bridge = get_bot_bridge()
         if bridge:
             await bridge.stop()
+    except Exception:
+        pass
+    
+    # Stop event manager
+    try:
+        await event_manager.stop()
     except Exception:
         pass
     
@@ -134,6 +144,9 @@ def create_app() -> FastAPI:
     app.include_router(control.router, prefix="/api/v1")
     app.include_router(rates.router, prefix="/api/v1")
     app.include_router(settings_api.router, prefix="/api/v1")
+    app.include_router(auth_api.router)  # Auth routes
+    app.include_router(balances_api.router, prefix="/api/v1")  # Balances routes
+    app.include_router(events_api.router, prefix="/api/v1")  # Events/SSE routes
     app.include_router(setup_api.router)  # Setup routes (no prefix for /setup paths)
     
     # Health check endpoint (JSON API)

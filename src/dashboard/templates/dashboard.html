@@ -6,6 +6,7 @@
     <title>Dashboard - Delta Neutral Bot</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://unpkg.com/qrcode@1.5.3/build/qrcode.min.js"></script>
     <style>
         .tab-active {
             border-bottom: 2px solid #3b82f6;
@@ -26,6 +27,60 @@
             background: #374151;
             border-radius: 4px;
             outline: none;
+        }
+        /* Hide number input arrows */
+        #leverage-input::-webkit-outer-spin-button,
+        #leverage-input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        #leverage-input {
+            -moz-appearance: textfield;
+        }
+        /* Auth modal styles */
+        .auth-modal {
+            backdrop-filter: blur(8px);
+        }
+        .otp-input {
+            width: 48px;
+            height: 56px;
+            text-align: center;
+            font-size: 24px;
+            font-weight: bold;
+            border: 2px solid #374151;
+            border-radius: 8px;
+            background: #1f2937;
+            color: white;
+            transition: all 0.2s;
+        }
+        .otp-input:focus {
+            border-color: #3b82f6;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
+        }
+        .shake {
+            animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+        }
+        @keyframes shake {
+            10%, 90% { transform: translate3d(-1px, 0, 0); }
+            20%, 80% { transform: translate3d(2px, 0, 0); }
+            30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+            40%, 60% { transform: translate3d(4px, 0, 0); }
+        }
+        .qr-container {
+            background: white;
+            padding: 12px;
+            border-radius: 8px;
+            display: inline-block;
+        }
+        .dropdown-menu {
+            transform-origin: top right;
+            transition: transform 0.1s ease-out, opacity 0.1s ease-out;
+        }
+        .dropdown-menu.hidden {
+            transform: scale(0.95);
+            opacity: 0;
+            pointer-events: none;
         }
     </style>
 </head>
@@ -48,10 +103,105 @@
                 <p class="text-gray-400 text-sm">Asgard + Hyperliquid Funding Rate Arbitrage</p>
             </div>
             <div class="flex items-center gap-4">
-                <span class="text-sm text-gray-400">Bot: <span class="text-yellow-400">{{ bot_status }}</span></span>
-                <form action="/setup/logout" method="post">
-                    <button type="submit" class="text-sm text-gray-400 hover:text-white">Logout</button>
-                </form>
+                <span class="text-sm text-gray-400">Bot: <span class="text-yellow-400" id="bot-status">{{ bot_status or 'STANDBY' }}</span></span>
+                
+                <!-- Auth Section: Connect button OR Deposit + Settings -->
+                <div id="auth-section">
+                    <!-- Not authenticated state -->
+                    <button 
+                        id="connect-btn"
+                        onclick="openAuthModal()"
+                        class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg font-medium transition-colors"
+                    >
+                        Connect
+                    </button>
+                    
+                    <!-- Authenticated state (hidden by default) -->
+                    <div id="user-menu" class="hidden flex items-center gap-2">
+                        <button 
+                            onclick="openDepositModal()"
+                            class="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg font-medium transition-colors"
+                        >
+                            Deposit
+                        </button>
+                        <div class="relative">
+                            <button 
+                                onclick="toggleSettingsDropdown()"
+                                class="p-2 text-gray-400 hover:text-white transition-colors"
+                                id="settings-btn"
+                            >
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                </svg>
+                            </button>
+                            <!-- Settings Dropdown -->
+                            <div id="settings-dropdown" class="dropdown-menu hidden absolute right-0 mt-2 w-48 bg-gray-800 border border-gray-700 rounded-lg shadow-lg z-50">
+                                <div class="py-1">
+                                    <button onclick="viewProfile()" class="block w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white">
+                                        View Profile
+                                    </button>
+                                    <button onclick="switchTab('settings')" class="block w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white">
+                                        Settings
+                                    </button>
+                                    <div class="border-t border-gray-700 my-1"></div>
+                                    <button onclick="logout()" class="block w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-gray-700 hover:text-red-300">
+                                        Disconnect
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Funding Warning Banner (shown when authenticated but no funds) -->
+        <div id="funding-banner" class="hidden mb-6 bg-orange-900/50 border border-orange-700 rounded-lg p-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <svg class="w-6 h-6 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
+                    <span class="text-orange-200">⚠️ Fund your wallets to start trading</span>
+                </div>
+                <button onclick="openDepositModal()" class="px-4 py-2 bg-orange-600 hover:bg-orange-700 rounded-lg text-sm font-medium transition-colors">
+                    Fund Wallets
+                </button>
+            </div>
+        </div>
+
+        <!-- Wallet Balances (shown when authenticated) -->
+        <div id="wallet-balances" class="hidden mb-6">
+            <div class="bg-gray-800 rounded-xl p-4 border border-gray-700">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-sm font-medium text-gray-300">Wallet Balances</h3>
+                    <button onclick="refreshBalances()" class="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                        </svg>
+                        Refresh
+                    </button>
+                </div>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div class="bg-gray-700/50 rounded-lg p-3">
+                        <div class="text-xs text-gray-400 mb-1">SOL Balance</div>
+                        <div id="balance-sol" class="font-mono text-lg text-emerald-400">--</div>
+                    </div>
+                    <div class="bg-gray-700/50 rounded-lg p-3">
+                        <div class="text-xs text-gray-400 mb-1">USDC (Solana)</div>
+                        <div id="balance-usdc-sol" class="font-mono text-lg text-emerald-400">--</div>
+                    </div>
+                    <div class="bg-gray-700/50 rounded-lg p-3">
+                        <div class="text-xs text-gray-400 mb-1">ETH Balance</div>
+                        <div id="balance-eth" class="font-mono text-lg text-blue-400">--</div>
+                    </div>
+                    <div class="bg-gray-700/50 rounded-lg p-3">
+                        <div class="text-xs text-gray-400 mb-1">USDC (Arbitrum)</div>
+                        <div id="balance-usdc-arb" class="font-mono text-lg text-blue-400">--</div>
+                    </div>
+                </div>
+                <div id="balance-error" class="hidden mt-3 text-xs text-red-400"></div>
             </div>
         </div>
 
@@ -69,26 +219,61 @@
 
         <!-- HOME TAB -->
         <div id="content-home" class="space-y-6">
-            <!-- Leverage Selector (Persistent) -->
+            <!-- Leverage Selector + Open Position (Side by Side) -->
             <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
-                <div class="flex items-center justify-between mb-4">
-                    <h2 class="text-lg font-medium">Desired Leverage</h2>
-                    <span id="leverage-display" class="text-3xl font-bold text-blue-400">3.0x</span>
-                </div>
-                <input 
-                    type="range" 
-                    id="leverage-slider"
-                    min="2" 
-                    max="4" 
-                    step="0.1" 
-                    value="3.0"
-                    class="leverage-slider w-full"
-                    oninput="updateLeverage(this.value)"
-                >
-                <div class="flex justify-between text-sm text-gray-500 mt-2">
-                    <span>2x (Conservative)</span>
-                    <span>3x (Balanced)</span>
-                    <span>4x (Aggressive)</span>
+                <div class="flex flex-col md:flex-row gap-6">
+                    <!-- Left: Leverage Slider (Half Width on Desktop) -->
+                    <div class="flex-1">
+                        <div class="flex items-center justify-between mb-4">
+                            <h2 class="text-lg font-medium">Desired Leverage</h2>
+                            <div class="flex items-center gap-1">
+                                <input 
+                                    type="number" 
+                                    id="leverage-input"
+                                    min="1.1" 
+                                    max="4" 
+                                    step="0.1"
+                                    value="3.0"
+                                    class="w-24 text-3xl font-bold text-blue-400 bg-transparent border-b-2 border-blue-400/50 focus:border-blue-400 outline-none text-right"
+                                    onchange="updateLeverageFromInput(this.value)"
+                                    oninput="validateLeverageInput(this)"
+                                    title="Type value between 1.1 and 4.0"
+                                >
+                                <span class="text-3xl font-bold text-blue-400">x</span>
+                            </div>
+                        </div>
+                        <input 
+                            type="range" 
+                            id="leverage-slider"
+                            min="1.1" 
+                            max="4" 
+                            step="0.1" 
+                            value="3.0"
+                            class="leverage-slider w-full"
+                            oninput="updateLeverage(this.value)"
+                            title="Leverage range: 1.1x to 4x"
+                        >
+                        <div class="flex justify-between text-sm text-gray-500 mt-3">
+                            <span>1.1x</span>
+                            <span>2x</span>
+                            <span>3x</span>
+                            <span>4x</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Right: Open Position Button (Half Width on Desktop) -->
+                    <div class="flex-1 flex items-center justify-center">
+                        <button 
+                            id="open-position-btn"
+                            onclick="openPositionModal()"
+                            class="w-full h-full min-h-[80px] py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-xl font-bold text-lg transition-colors flex flex-col items-center justify-center gap-2"
+                        >
+                            <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                            </svg>
+                            <span id="open-position-text">Open Position</span>
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -129,15 +314,15 @@
                         <div class="space-y-3">
                             <div class="flex justify-between">
                                 <span class="text-gray-400">Open Positions</span>
-                                <span class="font-mono">{{ positions_count }}</span>
+                                <span class="font-mono" id="positions-count">{{ positions_count or 0 }}</span>
                             </div>
                             <div class="flex justify-between">
                                 <span class="text-gray-400">24h PnL</span>
-                                <span class="font-mono {{ 'text-green-400' if pnl_24h > 0 else 'text-red-400' if pnl_24h < 0 else '' }}">{{ pnl_24h }}</span>
+                                <span class="font-mono {{ 'text-green-400' if pnl_24h > 0 else 'text-red-400' if pnl_24h < 0 else '' }}" id="pnl-24h">{{ pnl_24h or '$0.00' }}</span>
                             </div>
                             <div class="flex justify-between">
                                 <span class="text-gray-400">Total Value</span>
-                                <span class="font-mono">${{ total_value }}</span>
+                                <span class="font-mono" id="total-value">${{ total_value or '0.00' }}</span>
                             </div>
                         </div>
                     </div>
@@ -256,15 +441,15 @@
                         <div class="space-y-3">
                             <div class="flex justify-between">
                                 <span class="text-gray-400">Open Positions</span>
-                                <span class="font-mono">{{ positions_count }}</span>
+                                <span class="font-mono">{{ positions_count or 0 }}</span>
                             </div>
                             <div class="flex justify-between">
                                 <span class="text-gray-400">24h PnL</span>
-                                <span class="font-mono {{ 'text-green-400' if pnl_24h > 0 else 'text-red-400' if pnl_24h < 0 else '' }}">{{ pnl_24h }}</span>
+                                <span class="font-mono {{ 'text-green-400' if pnl_24h > 0 else 'text-red-400' if pnl_24h < 0 else '' }}">{{ pnl_24h or '$0.00' }}</span>
                             </div>
                             <div class="flex justify-between">
                                 <span class="text-gray-400">Total Value</span>
-                                <span class="font-mono">${{ total_value }}</span>
+                                <span class="font-mono">${{ total_value or '0.00' }}</span>
                             </div>
                         </div>
                     </div>
@@ -336,44 +521,24 @@
                 </div>
             </div>
 
-            <!-- Open Position Button (Persistent on all views) -->
-            <button 
-                onclick="openPositionModal()"
-                class="w-full py-4 bg-green-600 hover:bg-green-700 rounded-xl font-bold text-lg transition-colors flex items-center justify-center gap-2"
-            >
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                </svg>
-                Open Position
-            </button>
-
             <!-- Active Positions -->
             <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
-                <h2 class="text-lg font-medium mb-4">Active Positions</h2>
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-lg font-medium">Active Positions</h2>
+                    <button onclick="fetchPositions()" class="text-sm text-blue-400 hover:text-blue-300 flex items-center gap-1">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                        </svg>
+                        Refresh
+                    </button>
+                </div>
                 <div id="positions-list">
-                    {% if positions %}
-                        <div class="space-y-3">
-                            {% for pos in positions %}
-                            <div class="bg-gray-900/50 rounded-lg p-4 flex items-center justify-between">
-                                <div>
-                                    <span class="font-medium">{{ pos.asset }}</span>
-                                    <span class="text-sm text-gray-400">@ {{ pos.leverage }}x</span>
-                                </div>
-                                <div class="text-right">
-                                    <div class="font-mono">${{ pos.size }}</div>
-                                    <div class="text-sm {{ 'text-green-400' if pos.pnl > 0 else 'text-red-400' }}">{{ pos.pnl }}</div>
-                                </div>
-                            </div>
-                            {% endfor %}
-                        </div>
-                    {% else %}
-                        <div class="text-center py-8 text-gray-500">
-                            <p>No active positions</p>
-                            <p class="text-sm mt-1">Select leverage and click "Open Position" to start</p>
-                        </div>
-                    {% endif %}
+                    <div class="text-center py-8 text-gray-500">
+                        <p>Loading positions...</p>
+                    </div>
                 </div>
             </div>
+        </div>
 
         <!-- SETTINGS TAB -->
         <div id="content-settings" class="space-y-6 hidden">
@@ -416,11 +581,12 @@
                                 type="number" 
                                 name="default_leverage"
                                 id="setting-leverage"
-                                min="2" 
+                                min="1.1" 
                                 max="4" 
                                 step="0.1"
                                 value="3.0"
                                 class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg"
+                                title="Leverage range: 1.1x to 4x"
                             >
                         </div>
                         <div>
@@ -429,23 +595,28 @@
                                 type="number" 
                                 name="max_position_size"
                                 id="setting-max-position"
-                                min="1000"
-                                step="1000"
+                                min="100"
+                                step="100"
                                 value="50000"
                                 class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg"
                             >
                         </div>
                         <div>
-                            <label class="block text-sm text-gray-400 mb-2">Min Position Size (USD)</label>
+                            <label class="block text-sm text-gray-400 mb-2">
+                                Min Position Size (USD)
+                                <span class="text-xs text-gray-500 ml-1" title="Total capital deployed across both legs (Asgard + Hyperliquid)">ⓘ</span>
+                            </label>
                             <input 
                                 type="number" 
                                 name="min_position_size"
                                 id="setting-min-position"
                                 min="100"
                                 step="100"
-                                value="1000"
+                                value="100"
                                 class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg"
+                                title="Minimum total position size (both legs combined)"
                             >
+                            <p class="text-xs text-gray-500 mt-1">Total deployed capital (both legs combined)</p>
                         </div>
                         <div>
                             <label class="block text-sm text-gray-400 mb-2">Max Positions per Asset</label>
@@ -563,6 +734,216 @@
         </div>
     </div>
 
+    <!-- ==================== AUTH MODALS ==================== -->
+
+    <!-- Email Modal -->
+    <div id="email-modal" class="auth-modal fixed inset-0 bg-black/80 hidden items-center justify-center z-50">
+        <div class="bg-gray-800 rounded-xl p-8 max-w-md w-full mx-4 border border-gray-700 relative">
+            <!-- Close Button -->
+            <button onclick="closeAuthModal()" class="absolute top-4 right-4 text-gray-400 hover:text-white">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </button>
+
+            <!-- Logo -->
+            <div class="text-center mb-6">
+                <img src="/static/asgard.png" alt="Asgard" class="w-20 h-20 mx-auto mb-4 rounded-full" onerror="this.style.display='none'">
+                <h2 class="text-2xl font-bold">Delta Neutral Bot</h2>
+                <p class="text-gray-400 mt-1">Log in or sign up</p>
+            </div>
+
+            <!-- Error Message -->
+            <div id="email-error" class="hidden mb-4 p-3 bg-red-900/50 border border-red-700 rounded-lg text-red-200 text-sm"></div>
+
+            <!-- Email Form -->
+            <form id="email-form" onsubmit="submitEmail(event)">
+                <div class="mb-4">
+                    <div class="relative">
+                        <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">✉️</span>
+                        <input 
+                            type="email" 
+                            id="email-input"
+                            placeholder="email@example.com"
+                            required
+                            class="w-full pl-10 pr-4 py-3 bg-gray-700 border border-gray-600 rounded-lg focus:border-blue-500 focus:outline-none transition-colors"
+                        >
+                    </div>
+                </div>
+
+                <button 
+                    type="submit"
+                    id="email-submit-btn"
+                    class="w-full py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-medium transition-colors"
+                >
+                    Continue
+                </button>
+
+                <!-- Stay Logged In Checkbox -->
+                <div class="mt-4 flex items-center gap-2">
+                    <input 
+                        type="checkbox" 
+                        id="stay-logged-in"
+                        class="w-4 h-4 rounded bg-gray-700 border-gray-600"
+                    >
+                    <label for="stay-logged-in" class="text-sm text-gray-400 cursor-pointer">
+                        Stay logged in for 7 days
+                    </label>
+                </div>
+            </form>
+
+            <!-- Protected by Privy -->
+            <div class="mt-6 text-center text-xs text-gray-500">
+                Protected by 🔒 <a href="https://privy.io" target="_blank" class="hover:text-gray-400">Privy</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- OTP Modal -->
+    <div id="otp-modal" class="auth-modal fixed inset-0 bg-black/80 hidden items-center justify-center z-50">
+        <div class="bg-gray-800 rounded-xl p-8 max-w-md w-full mx-4 border border-gray-700 relative">
+            <!-- Close Button -->
+            <button onclick="closeAuthModal()" class="absolute top-4 right-4 text-gray-400 hover:text-white">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </button>
+
+            <!-- Header -->
+            <div class="text-center mb-6">
+                <h2 class="text-2xl font-bold">Enter Code</h2>
+                <p class="text-gray-400 mt-1">We sent a 6-digit code to <span id="otp-email" class="text-white"></span></p>
+            </div>
+
+            <!-- Error Message -->
+            <div id="otp-error" class="hidden mb-4 p-3 bg-red-900/50 border border-red-700 rounded-lg text-red-200 text-sm text-center"></div>
+
+            <!-- OTP Inputs -->
+            <form id="otp-form" onsubmit="submitOTP(event)">
+                <div class="flex justify-center gap-2 mb-6" id="otp-inputs">
+                    <input type="text" maxlength="1" class="otp-input" data-index="0" oninput="handleOTPInput(this, 0)" onkeydown="handleOTPKeydown(event, 0)">
+                    <input type="text" maxlength="1" class="otp-input" data-index="1" oninput="handleOTPInput(this, 1)" onkeydown="handleOTPKeydown(event, 1)">
+                    <input type="text" maxlength="1" class="otp-input" data-index="2" oninput="handleOTPInput(this, 2)" onkeydown="handleOTPKeydown(event, 2)">
+                    <input type="text" maxlength="1" class="otp-input" data-index="3" oninput="handleOTPInput(this, 3)" onkeydown="handleOTPKeydown(event, 3)">
+                    <input type="text" maxlength="1" class="otp-input" data-index="4" oninput="handleOTPInput(this, 4)" onkeydown="handleOTPKeydown(event, 4)">
+                    <input type="text" maxlength="1" class="otp-input" data-index="5" oninput="handleOTPInput(this, 5)" onkeydown="handleOTPKeydown(event, 5)">
+                </div>
+
+                <button 
+                    type="submit"
+                    id="otp-submit-btn"
+                    class="w-full py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-medium transition-colors"
+                >
+                    Verify
+                </button>
+
+                <!-- Resend Link -->
+                <div class="mt-4 text-center">
+                    <button type="button" onclick="resendCode()" class="text-sm text-blue-400 hover:text-blue-300">
+                        Resend code
+                    </button>
+                </div>
+            </form>
+
+            <!-- Protected by Privy -->
+            <div class="mt-6 text-center text-xs text-gray-500">
+                Protected by 🔒 <a href="https://privy.io" target="_blank" class="hover:text-gray-400">Privy</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Deposit Modal -->
+    <div id="deposit-modal" class="auth-modal fixed inset-0 bg-black/80 hidden items-center justify-center z-50">
+        <div class="bg-gray-800 rounded-xl p-8 max-w-lg w-full mx-4 border border-gray-700 relative max-h-[90vh] overflow-y-auto">
+            <!-- Close Button -->
+            <button onclick="closeDepositModal()" class="absolute top-4 right-4 text-gray-400 hover:text-white">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </button>
+
+            <!-- Header -->
+            <div class="text-center mb-6">
+                <h2 class="text-2xl font-bold">Deposit to Start Trading</h2>
+                <p class="text-gray-400 mt-1">Fund your wallets to begin</p>
+            </div>
+
+            <!-- Solana Section -->
+            <div class="mb-6 p-4 bg-gray-700/50 rounded-xl">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-10 h-10 bg-purple-600 rounded-full flex items-center justify-center font-bold">S</div>
+                    <div>
+                        <h3 class="font-medium">Solana (Asgard)</h3>
+                        <p class="text-xs text-gray-400">Deposit SOL and USDC</p>
+                    </div>
+                </div>
+                <div class="flex flex-col sm:flex-row items-center gap-4">
+                    <div class="qr-container">
+                        <canvas id="solana-qr" width="120" height="120"></canvas>
+                    </div>
+                    <div class="flex-1 w-full">
+                        <label class="text-xs text-gray-400 mb-1 block">Address</label>
+                        <div class="flex gap-2">
+                            <input 
+                                type="text" 
+                                id="solana-address"
+                                readonly
+                                class="flex-1 px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-sm font-mono text-gray-300"
+                            >
+                            <button onclick="copyAddress('solana')" class="px-3 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg transition-colors" title="Copy">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Arbitrum Section -->
+            <div class="mb-6 p-4 bg-gray-700/50 rounded-xl">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center font-bold">A</div>
+                    <div>
+                        <h3 class="font-medium">Arbitrum (Hyperliquid)</h3>
+                        <p class="text-xs text-gray-400">Deposit USDC</p>
+                    </div>
+                </div>
+                <div class="flex flex-col sm:flex-row items-center gap-4">
+                    <div class="qr-container">
+                        <canvas id="arbitrum-qr" width="120" height="120"></canvas>
+                    </div>
+                    <div class="flex-1 w-full">
+                        <label class="text-xs text-gray-400 mb-1 block">Address</label>
+                        <div class="flex gap-2">
+                            <input 
+                                type="text" 
+                                id="arbitrum-address"
+                                readonly
+                                class="flex-1 px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-sm font-mono text-gray-300"
+                            >
+                            <button onclick="copyAddress('arbitrum')" class="px-3 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg transition-colors" title="Copy">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="space-y-3">
+                <button onclick="closeDepositModal()" class="w-full py-3 bg-green-600 hover:bg-green-700 rounded-lg font-medium transition-colors">
+                    Go to Dashboard
+                </button>
+                <button onclick="skipDeposit()" class="w-full py-3 bg-gray-700 hover:bg-gray-600 rounded-lg text-gray-300 transition-colors">
+                    I'll deposit later
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Open Position Modal -->
     <div id="position-modal" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50">
         <div class="bg-gray-800 rounded-xl p-6 max-w-md w-full mx-4 border border-gray-700">
@@ -581,16 +962,20 @@
                         <option value="INF">INF</option>
                     </select>
                 </div>
-                <div class="flex justify-between">
+                <div class="flex justify-between items-center">
                     <span class="text-gray-400">Size (USD)</span>
-                    <input 
-                        type="number" 
-                        id="modal-size"
-                        value="10000"
-                        min="1000"
-                        step="1000"
-                        class="bg-gray-700 border border-gray-600 rounded px-2 py-1 w-32 text-right"
-                    >
+                    <div class="text-right">
+                        <input 
+                            type="number" 
+                            id="modal-size"
+                            value="1000"
+                            min="100"
+                            step="100"
+                            class="bg-gray-700 border border-gray-600 rounded px-2 py-1 w-32 text-right"
+                            title="Total position size: both legs combined"
+                        >
+                        <p class="text-xs text-gray-500 mt-1">Total (both legs)</p>
+                    </div>
                 </div>
             </div>
             <div class="flex gap-3">
@@ -600,7 +985,430 @@
         </div>
     </div>
 
+    <!-- Close Position Modal -->
+    <div id="close-modal" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50">
+        <div class="bg-gray-800 rounded-xl p-6 max-w-md w-full mx-4 border border-gray-700">
+            <h2 class="text-xl font-bold mb-4">Close Position</h2>
+            <div class="space-y-3 mb-6">
+                <div class="flex justify-between">
+                    <span class="text-gray-400">Position ID</span>
+                    <span class="font-mono text-sm" id="close-position-id">--</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-400">Asset</span>
+                    <span class="font-mono" id="close-position-asset">--</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-400">Size</span>
+                    <span class="font-mono" id="close-position-size">--</span>
+                </div>
+                <div class="p-3 bg-yellow-900/30 border border-yellow-700/50 rounded-lg">
+                    <p class="text-sm text-yellow-200">
+                        ⚠️ This will close both legs of the position:
+                        <br>1. Close Hyperliquid short
+                        <br>2. Close Asgard long
+                    </p>
+                </div>
+            </div>
+            <div class="flex gap-3">
+                <button onclick="closeCloseModal()" class="flex-1 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg">Cancel</button>
+                <button onclick="confirmClosePosition()" class="flex-1 py-2 bg-red-600 hover:bg-red-700 rounded-lg font-medium">Close Position</button>
+            </div>
+        </div>
+    </div>
+
     <script>
+        // ==================== AUTH STATE ====================
+        let currentUser = null;
+        let pendingEmail = null;
+        let authModalOpen = false;
+
+        // Check auth status on page load
+        async function checkAuthStatus() {
+            try {
+                const response = await fetch('/api/v1/auth/check');
+                const data = await response.json();
+                
+                if (data.authenticated && data.user) {
+                    currentUser = data.user;
+                    updateAuthUI();
+                    
+                    // If new user or no wallets, show deposit modal
+                    if (data.user.is_new_user || !data.user.solana_address || !data.user.evm_address) {
+                        setTimeout(() => openDepositModal(), 500);
+                    }
+                }
+            } catch (e) {
+                console.error('Auth check failed:', e);
+            }
+        }
+
+        function updateAuthUI() {
+            const connectBtn = document.getElementById('connect-btn');
+            const userMenu = document.getElementById('user-menu');
+            
+            if (currentUser) {
+                connectBtn.classList.add('hidden');
+                userMenu.classList.remove('hidden');
+                
+                // Generate QR codes if addresses available
+                if (currentUser.solana_address) {
+                    generateQRCode('solana-qr', currentUser.solana_address);
+                    document.getElementById('solana-address').value = currentUser.solana_address;
+                }
+                if (currentUser.evm_address) {
+                    generateQRCode('arbitrum-qr', currentUser.evm_address);
+                    document.getElementById('arbitrum-address').value = currentUser.evm_address;
+                }
+                
+                // Fetch balances
+                fetchBalances();
+            } else {
+                connectBtn.classList.remove('hidden');
+                userMenu.classList.add('hidden');
+            }
+        }
+
+        // ==================== BALANCE FUNCTIONS ====================
+        let userBalances = null;
+        let canTrade = false;
+        
+        async function fetchBalances() {
+            if (!currentUser) return;
+            
+            try {
+                const response = await fetch('/api/v1/balances');
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        // Not authenticated, ignore
+                        return;
+                    }
+                    throw new Error('Failed to fetch balances');
+                }
+                
+                const data = await response.json();
+                userBalances = data;
+                
+                // Display balances
+                displayBalances(data);
+                
+                // Update trading status
+                canTrade = data.has_sufficient_funds;
+                updateTradingStatus(canTrade);
+                
+            } catch (e) {
+                console.error('Failed to fetch balances:', e);
+                document.getElementById('balance-error').textContent = 'Failed to load balances';
+                document.getElementById('balance-error').classList.remove('hidden');
+            }
+        }
+        
+        function displayBalances(data) {
+            const walletBalances = document.getElementById('wallet-balances');
+            walletBalances.classList.remove('hidden');
+            
+            // Solana
+            if (data.solana) {
+                document.getElementById('balance-sol').textContent = 
+                    data.solana.native_balance.toFixed(4) + ' SOL';
+                
+                const usdcSol = data.solana.tokens.find(t => t.symbol === 'USDC');
+                document.getElementById('balance-usdc-sol').textContent = 
+                    usdcSol ? '$' + usdcSol.balance.toFixed(2) : '$0.00';
+            }
+            
+            // Arbitrum
+            if (data.arbitrum) {
+                document.getElementById('balance-eth').textContent = 
+                    data.arbitrum.native_balance.toFixed(4) + ' ETH';
+                
+                const usdcArb = data.arbitrum.tokens.find(t => t.symbol === 'USDC');
+                document.getElementById('balance-usdc-arb').textContent = 
+                    usdcArb ? '$' + usdcArb.balance.toFixed(2) : '$0.00';
+            }
+            
+            // Show/hide funding banner
+            const fundingBanner = document.getElementById('funding-banner');
+            if (!data.has_sufficient_funds) {
+                fundingBanner.classList.remove('hidden');
+            } else {
+                fundingBanner.classList.add('hidden');
+            }
+        }
+        
+        function updateTradingStatus(canTrade) {
+            const btn = document.getElementById('open-position-btn');
+            const btnText = document.getElementById('open-position-text');
+            
+            if (!canTrade) {
+                btn.disabled = true;
+                btnText.textContent = 'Deposit Required to Trade';
+                btn.classList.add('bg-gray-600');
+                btn.classList.remove('bg-green-600', 'hover:bg-green-700');
+            } else {
+                btn.disabled = false;
+                btnText.textContent = 'Open Position';
+                btn.classList.remove('bg-gray-600');
+                btn.classList.add('bg-green-600', 'hover:bg-green-700');
+            }
+        }
+        
+        function refreshBalances() {
+            fetchBalances();
+        }
+
+        // ==================== MODAL FUNCTIONS ====================
+        function openAuthModal() {
+            authModalOpen = true;
+            document.getElementById('email-modal').classList.remove('hidden');
+            document.getElementById('email-modal').classList.add('flex');
+            document.getElementById('email-input').focus();
+        }
+
+        function closeAuthModal() {
+            authModalOpen = false;
+            document.getElementById('email-modal').classList.add('hidden');
+            document.getElementById('email-modal').classList.remove('flex');
+            document.getElementById('otp-modal').classList.add('hidden');
+            document.getElementById('otp-modal').classList.remove('flex');
+            resetAuthForms();
+        }
+
+        function openOTPModal() {
+            document.getElementById('email-modal').classList.add('hidden');
+            document.getElementById('email-modal').classList.remove('flex');
+            document.getElementById('otp-modal').classList.remove('hidden');
+            document.getElementById('otp-modal').classList.add('flex');
+            document.getElementById('otp-email').textContent = pendingEmail;
+            // Focus first OTP input
+            document.querySelector('.otp-input[data-index="0"]').focus();
+        }
+
+        function openDepositModal() {
+            document.getElementById('deposit-modal').classList.remove('hidden');
+            document.getElementById('deposit-modal').classList.add('flex');
+            
+            // Generate QR codes if user data available
+            if (currentUser) {
+                if (currentUser.solana_address) {
+                    generateQRCode('solana-qr', currentUser.solana_address);
+                    document.getElementById('solana-address').value = currentUser.solana_address;
+                }
+                if (currentUser.evm_address) {
+                    generateQRCode('arbitrum-qr', currentUser.evm_address);
+                    document.getElementById('arbitrum-address').value = currentUser.evm_address;
+                }
+            }
+        }
+
+        function closeDepositModal() {
+            document.getElementById('deposit-modal').classList.add('hidden');
+            document.getElementById('deposit-modal').classList.remove('flex');
+        }
+
+        function resetAuthForms() {
+            document.getElementById('email-form').reset();
+            document.getElementById('otp-form').reset();
+            document.getElementById('email-error').classList.add('hidden');
+            document.getElementById('otp-error').classList.add('hidden');
+            pendingEmail = null;
+        }
+
+        // ==================== EMAIL AUTH ====================
+        async function submitEmail(e) {
+            e.preventDefault();
+            const email = document.getElementById('email-input').value.trim();
+            const stayLoggedIn = document.getElementById('stay-logged-in').checked;
+            const errorEl = document.getElementById('email-error');
+            
+            // Basic email validation
+            if (!email || !email.includes('@')) {
+                errorEl.textContent = 'Please enter a valid email address';
+                errorEl.classList.remove('hidden');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/v1/auth/privy/initiate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, stay_logged_in: stayLoggedIn })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    pendingEmail = email;
+                    errorEl.classList.add('hidden');
+                    openOTPModal();
+                } else {
+                    errorEl.textContent = data.message || 'Failed to send OTP. Please try again.';
+                    errorEl.classList.remove('hidden');
+                }
+            } catch (e) {
+                errorEl.textContent = 'Connection failed. Please try again.';
+                errorEl.classList.remove('hidden');
+            }
+        }
+
+        // ==================== OTP HANDLING ====================
+        function handleOTPInput(input, index) {
+            const value = input.value;
+            
+            // Only allow numbers
+            if (value && !/^\d*$/.test(value)) {
+                input.value = '';
+                return;
+            }
+            
+            // Move to next input
+            if (value && index < 5) {
+                document.querySelector(`.otp-input[data-index="${index + 1}"]`).focus();
+            }
+            
+            // Auto-submit when all digits entered
+            const allInputs = document.querySelectorAll('.otp-input');
+            const code = Array.from(allInputs).map(i => i.value).join('');
+            if (code.length === 6) {
+                submitOTP(new Event('submit'));
+            }
+        }
+
+        function handleOTPKeydown(e, index) {
+            // Handle backspace
+            if (e.key === 'Backspace' && !e.target.value && index > 0) {
+                document.querySelector(`.otp-input[data-index="${index - 1}"]`).focus();
+            }
+        }
+
+        async function submitOTP(e) {
+            e.preventDefault();
+            const inputs = document.querySelectorAll('.otp-input');
+            const code = Array.from(inputs).map(i => i.value).join('');
+            const errorEl = document.getElementById('otp-error');
+            const stayLoggedIn = document.getElementById('stay-logged-in').checked;
+            
+            if (code.length !== 6) {
+                errorEl.textContent = 'Please enter all 6 digits';
+                errorEl.classList.remove('hidden');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/v1/auth/privy/verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        email: pendingEmail, 
+                        code: code,
+                        stay_logged_in: stayLoggedIn
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    currentUser = {
+                        user_id: data.user_id,
+                        email: pendingEmail,
+                        solana_address: data.solana_address,
+                        evm_address: data.evm_address,
+                        is_new_user: data.is_new_user
+                    };
+                    
+                    updateAuthUI();
+                    closeAuthModal();
+                    
+                    // Show deposit modal if required
+                    if (data.requires_deposit) {
+                        setTimeout(() => openDepositModal(), 300);
+                    }
+                } else {
+                    errorEl.textContent = data.message || 'Invalid code. Please try again.';
+                    errorEl.classList.remove('hidden');
+                    // Shake animation
+                    document.getElementById('otp-inputs').classList.add('shake');
+                    setTimeout(() => document.getElementById('otp-inputs').classList.remove('shake'), 500);
+                    // Clear inputs
+                    inputs.forEach(i => i.value = '');
+                    inputs[0].focus();
+                }
+            } catch (e) {
+                errorEl.textContent = 'Verification failed. Please try again.';
+                errorEl.classList.remove('hidden');
+            }
+        }
+
+        function resendCode() {
+            // Re-submit email
+            submitEmail(new Event('submit'));
+        }
+
+        // ==================== DEPOSIT FUNCTIONS ====================
+        function generateQRCode(canvasId, text) {
+            const canvas = document.getElementById(canvasId);
+            if (canvas && text) {
+                QRCode.toCanvas(canvas, text, { width: 120, margin: 2 }, function(error) {
+                    if (error) console.error('QR Code error:', error);
+                });
+            }
+        }
+
+        function copyAddress(type) {
+            const inputId = type === 'solana' ? 'solana-address' : 'arbitrum-address';
+            const input = document.getElementById(inputId);
+            input.select();
+            document.execCommand('copy');
+            
+            // Visual feedback
+            const btn = input.nextElementSibling;
+            const originalHTML = btn.innerHTML;
+            btn.innerHTML = '✓';
+            setTimeout(() => btn.innerHTML = originalHTML, 2000);
+        }
+
+        function skipDeposit() {
+            closeDepositModal();
+            // Show funding banner
+            document.getElementById('funding-banner').classList.remove('hidden');
+        }
+
+        // ==================== SETTINGS DROPDOWN ====================
+        function toggleSettingsDropdown() {
+            const dropdown = document.getElementById('settings-dropdown');
+            dropdown.classList.toggle('hidden');
+        }
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(e) {
+            const settingsBtn = document.getElementById('settings-btn');
+            const dropdown = document.getElementById('settings-dropdown');
+            if (!settingsBtn.contains(e.target) && !dropdown.contains(e.target)) {
+                dropdown.classList.add('hidden');
+            }
+        });
+
+        function viewProfile() {
+            document.getElementById('settings-dropdown').classList.add('hidden');
+            alert(`User: ${currentUser?.email || 'Unknown'}\nUser ID: ${currentUser?.user_id?.slice(0, 16)}...`);
+        }
+
+        async function logout() {
+            document.getElementById('settings-dropdown').classList.add('hidden');
+            
+            try {
+                await fetch('/api/v1/auth/logout', { method: 'POST' });
+            } catch (e) {
+                console.error('Logout error:', e);
+            }
+            
+            currentUser = null;
+            updateAuthUI();
+            location.reload();
+        }
+
+        // ==================== EXISTING DASHBOARD CODE ====================
+        
         // Tab switching
         function switchTab(tab) {
             document.getElementById('content-home').classList.add('hidden');
@@ -617,17 +1425,14 @@
 
         // Mobile sub-tab switching
         function switchMobileTab(tab) {
-            // Hide all mobile content
             document.getElementById('mobile-content-overview').classList.add('hidden');
             document.getElementById('mobile-content-legs').classList.add('hidden');
             
-            // Reset all mobile tabs
             document.getElementById('mobile-tab-overview').classList.remove('tab-active');
             document.getElementById('mobile-tab-overview').classList.add('text-gray-400');
             document.getElementById('mobile-tab-legs').classList.remove('tab-active');
             document.getElementById('mobile-tab-legs').classList.add('text-gray-400');
             
-            // Show selected content and activate tab
             document.getElementById('mobile-content-' + tab).classList.remove('hidden');
             document.getElementById('mobile-tab-' + tab).classList.add('tab-active');
             document.getElementById('mobile-tab-' + tab).classList.remove('text-gray-400');
@@ -638,14 +1443,51 @@
         
         function updateLeverage(value) {
             currentLeverage = parseFloat(value);
-            document.getElementById('leverage-display').textContent = currentLeverage.toFixed(1) + 'x';
-            document.getElementById('hl-leverage').textContent = currentLeverage.toFixed(1);
+            
+            // Update input field
+            document.getElementById('leverage-input').value = currentLeverage.toFixed(1);
             
             // Update settings form to match
             document.getElementById('setting-leverage').value = currentLeverage;
             
             // Fetch updated rates
             fetchRates(currentLeverage);
+        }
+        
+        function updateLeverageFromInput(value) {
+            let leverage = parseFloat(value);
+            
+            // Clamp to valid range
+            if (isNaN(leverage)) {
+                leverage = 3.0;
+            } else if (leverage < 1.1) {
+                leverage = 1.1;
+            } else if (leverage > 4.0) {
+                leverage = 4.0;
+            }
+            
+            // Round to 1 decimal
+            leverage = Math.round(leverage * 10) / 10;
+            
+            // Update slider
+            document.getElementById('leverage-slider').value = leverage;
+            
+            // Update everything else
+            updateLeverage(leverage);
+        }
+        
+        function validateLeverageInput(input) {
+            // Allow typing but show visual feedback
+            let value = parseFloat(input.value);
+            if (!isNaN(value)) {
+                if (value < 1.1 || value > 4.0) {
+                    input.classList.add('text-red-400');
+                    input.classList.remove('text-blue-400');
+                } else {
+                    input.classList.add('text-blue-400');
+                    input.classList.remove('text-red-400');
+                }
+            }
         }
 
         // Fetch rates from API
@@ -679,7 +1521,7 @@
                 // Update breakdown section
                 const asgardApy = bestProtocol ? (venues[bestProtocol] || 0) : 0;
                 const hlAnnualized = data.hyperliquid?.annualized || 0;
-                const shortApy = -hlAnnualized; // Negative funding is good for shorts
+                const shortApy = -hlAnnualized;
                 
                 const breakdownLong = document.getElementById('breakdown-long');
                 const breakdownShort = document.getElementById('breakdown-short');
@@ -723,31 +1565,40 @@
                     hlTotalEl.className = 'text-lg font-bold ' + (shortApyTotal >= 0 ? 'text-emerald-400' : 'text-rose-400');
                 }
                 
-                // Update Mobile Elements (Overview Tab)
-                const mobileNetApy = document.getElementById('mobile-net-apy');
-                const mobileNetApyProtocol = document.getElementById('mobile-net-apy-protocol');
-                const mobilePerfLeverage = document.getElementById('mobile-perf-leverage');
-                const mobileBreakdownLong = document.getElementById('mobile-breakdown-long');
-                const mobileBreakdownShort = document.getElementById('mobile-breakdown-short');
-                
-                if (mobileNetApy && bestProtocol) {
-                    mobileNetApy.textContent = (bestNetApy >= 0 ? '+' : '') + bestNetApy.toFixed(2) + '%';
-                    mobileNetApy.className = 'text-5xl font-bold ' + (bestNetApy >= 0 ? 'text-green-400' : 'text-red-400');
-                }
-                if (mobileNetApyProtocol && bestProtocol) {
-                    mobileNetApyProtocol.textContent = bestProtocol.charAt(0).toUpperCase() + bestProtocol.slice(1);
-                }
-                if (mobilePerfLeverage) mobilePerfLeverage.textContent = leverage.toFixed(1);
-                if (mobileBreakdownLong) {
-                    mobileBreakdownLong.textContent = (asgardApy >= 0 ? '+' : '') + asgardApy.toFixed(2) + '%';
-                    mobileBreakdownLong.className = 'font-mono text-lg ' + (asgardApy >= 0 ? 'text-green-400' : 'text-red-400');
-                }
-                if (mobileBreakdownShort) {
-                    mobileBreakdownShort.textContent = (shortApy >= 0 ? '+' : '') + shortApy.toFixed(2) + '%';
-                    mobileBreakdownShort.className = 'font-mono text-lg ' + (shortApy >= 0 ? 'text-green-400' : 'text-red-400');
-                }
-                
-                // Update Mobile Elements (Legs Tab - Asgard)
+                // Update Mobile Elements
+                updateMobileElements(data, bestNetApy, bestProtocol, asgardApy, shortApy, funding, annualized);
+            } catch (e) {
+                console.error('Failed to fetch rates:', e);
+            }
+        }
+
+        function updateMobileElements(data, bestNetApy, bestProtocol, asgardApy, shortApy, funding, annualized) {
+            // Mobile Overview
+            const mobileNetApy = document.getElementById('mobile-net-apy');
+            const mobileNetApyProtocol = document.getElementById('mobile-net-apy-protocol');
+            const mobilePerfLeverage = document.getElementById('mobile-perf-leverage');
+            const mobileBreakdownLong = document.getElementById('mobile-breakdown-long');
+            const mobileBreakdownShort = document.getElementById('mobile-breakdown-short');
+            
+            if (mobileNetApy && bestProtocol) {
+                mobileNetApy.textContent = (bestNetApy >= 0 ? '+' : '') + bestNetApy.toFixed(2) + '%';
+                mobileNetApy.className = 'text-5xl font-bold ' + (bestNetApy >= 0 ? 'text-green-400' : 'text-red-400');
+            }
+            if (mobileNetApyProtocol && bestProtocol) {
+                mobileNetApyProtocol.textContent = bestProtocol.charAt(0).toUpperCase() + bestProtocol.slice(1);
+            }
+            if (mobilePerfLeverage) mobilePerfLeverage.textContent = currentLeverage.toFixed(1);
+            if (mobileBreakdownLong) {
+                mobileBreakdownLong.textContent = (asgardApy >= 0 ? '+' : '') + asgardApy.toFixed(2) + '%';
+                mobileBreakdownLong.className = 'font-mono text-lg ' + (asgardApy >= 0 ? 'text-green-400' : 'text-red-400');
+            }
+            if (mobileBreakdownShort) {
+                mobileBreakdownShort.textContent = (shortApy >= 0 ? '+' : '') + shortApy.toFixed(2) + '%';
+                mobileBreakdownShort.className = 'font-mono text-lg ' + (shortApy >= 0 ? 'text-green-400' : 'text-red-400');
+            }
+            
+            // Mobile Legs
+            if (data.asgard_details) {
                 const mobileAsgardLending = document.getElementById('mobile-asgard-lending-apy');
                 const mobileAsgardBorrowing = document.getElementById('mobile-asgard-borrowing-apy');
                 const mobileAsgardTotal = document.getElementById('mobile-asgard-total-apy');
@@ -758,25 +1609,30 @@
                     mobileAsgardTotal.textContent = (asgardApy >= 0 ? '+' : '') + asgardApy.toFixed(2) + '%';
                     mobileAsgardTotal.className = 'text-lg font-bold ' + (asgardApy >= 0 ? 'text-emerald-400' : 'text-rose-400');
                 }
-                
-                // Update Mobile Elements (Legs Tab - Hyperliquid)
-                const mobileHlFunding = document.getElementById('mobile-hl-funding-rate');
-                const mobileHlAnnual = document.getElementById('mobile-hl-annualized');
-                const mobileHlTotal = document.getElementById('mobile-hl-total-apy');
-                
-                if (mobileHlFunding) mobileHlFunding.textContent = funding.toFixed(4) + '%';
-                if (mobileHlAnnual) mobileHlAnnual.textContent = (annualized >= 0 ? '+' : '') + annualized.toFixed(2) + '%';
-                if (mobileHlTotal) {
-                    mobileHlTotal.textContent = (shortApy >= 0 ? '+' : '') + shortApy.toFixed(2) + '%';
-                    mobileHlTotal.className = 'text-lg font-bold ' + (shortApy >= 0 ? 'text-emerald-400' : 'text-rose-400');
-                }
-            } catch (e) {
-                console.error('Failed to fetch rates:', e);
+            }
+            
+            const mobileHlFunding = document.getElementById('mobile-hl-funding-rate');
+            const mobileHlAnnual = document.getElementById('mobile-hl-annualized');
+            const mobileHlTotal = document.getElementById('mobile-hl-total-apy');
+            
+            if (mobileHlFunding) mobileHlFunding.textContent = funding.toFixed(4) + '%';
+            if (mobileHlAnnual) mobileHlAnnual.textContent = (annualized >= 0 ? '+' : '') + annualized.toFixed(2) + '%';
+            if (mobileHlTotal) {
+                const shortApyTotal = -annualized;
+                mobileHlTotal.textContent = (shortApyTotal >= 0 ? '+' : '') + shortApyTotal.toFixed(2) + '%';
+                mobileHlTotal.className = 'text-lg font-bold ' + (shortApyTotal >= 0 ? 'text-emerald-400' : 'text-rose-400');
             }
         }
 
         // Position modal
         function openPositionModal() {
+            // Check if user can trade
+            if (!canTrade) {
+                alert('Please deposit funds to your wallets before opening a position.\n\nMinimum required:\n- 0.05 SOL for gas\n- $10 USDC on Solana\n- $10 USDC on Arbitrum');
+                openDepositModal();
+                return;
+            }
+            
             document.getElementById('modal-leverage').textContent = currentLeverage.toFixed(1) + 'x';
             document.getElementById('position-modal').classList.remove('hidden');
             document.getElementById('position-modal').classList.add('flex');
@@ -806,7 +1662,6 @@
                 
                 if (response.ok && result.success) {
                     closePositionModal();
-                    // Show job status and start polling
                     showJobStatus(result.job_id);
                 } else {
                     alert('Failed to open position: ' + (result.message || 'Unknown error'));
@@ -838,7 +1693,6 @@
                 </div>
             `;
             
-            // Start polling
             pollJobStatus(jobId);
             jobPollInterval = setInterval(() => pollJobStatus(jobId), 2000);
         }
@@ -851,7 +1705,7 @@
                 const statusEl = document.getElementById('job-status');
                 const spinnerEl = document.getElementById('job-spinner');
                 
-                if (!statusEl) return; // Modal closed
+                if (!statusEl) return;
                 
                 statusEl.textContent = getStatusMessage(job.status, job.error_stage);
                 
@@ -863,7 +1717,7 @@
                     
                     setTimeout(() => {
                         closePositionModal();
-                        location.reload(); // Refresh to show new position
+                        location.reload();
                     }, 1500);
                 } else if (job.status === 'failed') {
                     clearInterval(jobPollInterval);
@@ -899,11 +1753,219 @@
             return messages[status] || status;
         }
 
+        // ==================== POSITION MANAGEMENT ====================
+        
+        let currentPositions = [];
+        let positionToClose = null;
+        
+        async function fetchPositions() {
+            const positionsList = document.getElementById('positions-list');
+            
+            try {
+                const response = await fetch('/api/v1/positions');
+                
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        positionsList.innerHTML = `
+                            <div class="text-center py-8 text-gray-500">
+                                <p>Please connect to view positions</p>
+                            </div>
+                        `;
+                        return;
+                    }
+                    throw new Error('Failed to fetch positions');
+                }
+                
+                const positions = await response.json();
+                currentPositions = positions;
+                renderPositions(positions);
+                
+            } catch (e) {
+                console.error('Failed to fetch positions:', e);
+                positionsList.innerHTML = `
+                    <div class="text-center py-8 text-gray-500">
+                        <p>Bot unavailable</p>
+                        <p class="text-sm mt-1">Positions will appear when the bot is running</p>
+                    </div>
+                `;
+            }
+        }
+        
+        function renderPositions(positions) {
+            const positionsList = document.getElementById('positions-list');
+            
+            if (!positions || positions.length === 0) {
+                positionsList.innerHTML = `
+                    <div class="text-center py-8 text-gray-500">
+                        <p>No active positions</p>
+                        <p class="text-sm mt-1">Select leverage and click "Open Position" to start</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            let html = '<div class="space-y-3">';
+            
+            positions.forEach(pos => {
+                const pnlClass = pos.total_pnl_usd > 0 ? 'text-green-400' : pos.total_pnl_usd < 0 ? 'text-red-400' : 'text-gray-400';
+                const pnlSign = pos.total_pnl_usd > 0 ? '+' : '';
+                const healthStatus = pos.health_status || 'healthy';
+                const healthColor = healthStatus === 'healthy' ? 'text-green-400' : healthStatus === 'at_risk' ? 'text-yellow-400' : 'text-red-400';
+                
+                html += `
+                    <div class="bg-gray-900/50 rounded-lg p-4" data-position-id="${pos.position_id}">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="flex items-center gap-2">
+                                <span class="font-medium">${pos.asset}</span>
+                                <span class="text-sm text-gray-400">@ ${pos.leverage}x</span>
+                                <span class="text-xs ${healthColor} position-health">● ${healthStatus}</span>
+                            </div>
+                            <button 
+                                onclick="openCloseModal('${pos.position_id}')"
+                                class="px-3 py-1 bg-red-600/80 hover:bg-red-600 rounded text-sm font-medium transition-colors"
+                            >
+                                Close
+                            </button>
+                        </div>
+                        <div class="flex justify-between text-sm">
+                            <span class="text-gray-400">Size</span>
+                            <span class="font-mono">$${pos.deployed_usd ? pos.deployed_usd.toLocaleString() : '0'}</span>
+                        </div>
+                        <div class="flex justify-between text-sm mt-1">
+                            <span class="text-gray-400">PnL</span>
+                            <span class="font-mono position-pnl ${pnlClass}">${pnlSign}$${pos.total_pnl_usd ? pos.total_pnl_usd.toLocaleString() : '0'}</span>
+                        </div>
+                        <div class="flex justify-between text-xs text-gray-500 mt-1">
+                            <span>Delta: ${pos.delta ? pos.delta.toFixed(4) : '0'}</span>
+                            <span class="position-hf">HF: ${pos.asgard_hf ? pos.asgard_hf.toFixed(2) : '--'}</span>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += '</div>';
+            positionsList.innerHTML = html;
+        }
+        
+        function openCloseModal(positionId) {
+            const position = currentPositions.find(p => p.position_id === positionId);
+            if (!position) return;
+            
+            positionToClose = position;
+            
+            document.getElementById('close-position-id').textContent = positionId.slice(0, 8) + '...';
+            document.getElementById('close-position-asset').textContent = position.asset;
+            document.getElementById('close-position-size').textContent = '$' + (position.deployed_usd || 0).toLocaleString();
+            
+            document.getElementById('close-modal').classList.remove('hidden');
+            document.getElementById('close-modal').classList.add('flex');
+        }
+        
+        function closeCloseModal() {
+            document.getElementById('close-modal').classList.add('hidden');
+            document.getElementById('close-modal').classList.remove('flex');
+            positionToClose = null;
+        }
+        
+        async function confirmClosePosition() {
+            if (!positionToClose) return;
+            
+            const positionId = positionToClose.position_id;
+            closeCloseModal();
+            
+            try {
+                const response = await fetch(`/api/v1/positions/${positionId}/close`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok && result.success) {
+                    showCloseJobStatus(result.job_id, positionId);
+                } else {
+                    alert('Failed to close position: ' + (result.message || 'Unknown error'));
+                }
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+        
+        function showCloseJobStatus(jobId, positionId) {
+            const modal = document.getElementById('close-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            
+            modal.innerHTML = `
+                <div class="bg-gray-800 rounded-xl p-6 max-w-md w-full mx-4 border border-gray-700">
+                    <h2 class="text-xl font-bold mb-4">Closing Position...</h2>
+                    <div class="space-y-3 mb-6">
+                        <div class="flex items-center gap-3">
+                            <div id="close-spinner" class="animate-spin h-5 w-5 border-2 border-red-500 border-t-transparent rounded-full"></div>
+                            <span id="close-job-status">Initializing...</span>
+                        </div>
+                        <div class="text-sm text-gray-400">Position: ${positionId.slice(0, 8)}...</div>
+                        <div class="text-sm text-gray-400">Job ID: ${jobId}</div>
+                    </div>
+                    <button onclick="closeCloseModal(); fetchPositions();" class="w-full py-2 bg-gray-700 hover:bg-gray-600 rounded-lg">Close</button>
+                </div>
+            `;
+            
+            // Start polling
+            pollCloseJobStatus(jobId);
+            const pollInterval = setInterval(() => pollCloseJobStatus(jobId, pollInterval), 2000);
+        }
+        
+        async function pollCloseJobStatus(jobId, interval) {
+            try {
+                const response = await fetch(`/api/v1/positions/jobs/${jobId}`);
+                const job = await response.json();
+                
+                const statusEl = document.getElementById('close-job-status');
+                const spinnerEl = document.getElementById('close-spinner');
+                
+                if (!statusEl) {
+                    clearInterval(interval);
+                    return;
+                }
+                
+                const messages = {
+                    'pending': 'Waiting to start...',
+                    'running': 'Closing position...',
+                    'completed': 'Position closed successfully!',
+                    'failed': 'Failed to close position'
+                };
+                
+                statusEl.textContent = messages[job.status] || job.status;
+                
+                if (job.status === 'completed') {
+                    clearInterval(interval);
+                    spinnerEl.classList.remove('animate-spin');
+                    spinnerEl.classList.add('bg-green-500', 'rounded-full');
+                    spinnerEl.innerHTML = '✓';
+                    
+                    setTimeout(() => {
+                        closeCloseModal();
+                        fetchPositions();
+                    }, 1500);
+                } else if (job.status === 'failed') {
+                    clearInterval(interval);
+                    spinnerEl.classList.remove('animate-spin');
+                    spinnerEl.classList.add('bg-red-500', 'rounded-full');
+                    spinnerEl.innerHTML = '✗';
+                    
+                    statusEl.innerHTML = `<span class="text-red-400">Failed: ${job.error || 'Unknown error'}</span>`;
+                }
+            } catch (e) {
+                console.error('Failed to poll close job status:', e);
+            }
+        }
+
         // Settings and Presets
         const DEFAULTS = {
             default_leverage: 3.0,
             max_position_size: 50000,
-            min_position_size: 1000,
+            min_position_size: 100,  // Total deployed capital (both legs combined)
             max_positions_per_asset: 1,
             min_opportunity_apy: 1.0,
             max_funding_volatility: 50,
@@ -918,13 +1980,11 @@
         function loadPreset(num) {
             selectedPreset = num;
             
-            // Update UI
             document.querySelectorAll('.preset-btn').forEach(btn => {
                 btn.classList.remove('ring-2', 'ring-blue-500');
             });
             document.querySelector(`[data-preset="${num}"]`).classList.add('ring-2', 'ring-blue-500');
             
-            // Load from localStorage
             const saved = localStorage.getItem(`preset-${num}`);
             if (saved) {
                 const config = JSON.parse(saved);
@@ -936,7 +1996,6 @@
             const config = collectSettings();
             localStorage.setItem(`preset-${selectedPreset}`, JSON.stringify(config));
             
-            // Update description
             const desc = `Leverage: ${config.default_leverage}x, Max: $${config.max_position_size}`;
             document.getElementById(`preset-${selectedPreset}-desc`).textContent = desc;
             
@@ -974,10 +2033,9 @@
             document.getElementById('setting-auto-exit').checked = config.enable_auto_exit;
             document.getElementById('setting-circuit-breakers').checked = config.enable_circuit_breakers;
             
-            // Update leverage slider to match
             currentLeverage = config.default_leverage;
             document.getElementById('leverage-slider').value = currentLeverage;
-            document.getElementById('leverage-display').textContent = currentLeverage.toFixed(1) + 'x';
+            document.getElementById('leverage-input').value = currentLeverage.toFixed(1);
         }
 
         // Form submission
@@ -1002,8 +2060,153 @@
             }
         });
 
-        // Load presets on page load
+        // ==================== SSE (Server-Sent Events) ====================
+        let eventSource = null;
+        
+        function connectEventStream() {
+            if (eventSource) {
+                eventSource.close();
+            }
+            
+            try {
+                eventSource = new EventSource('/api/v1/events/stream');
+                
+                eventSource.onopen = () => {
+                    console.log('SSE: Connected to event stream');
+                };
+                
+                eventSource.onmessage = (e) => {
+                    try {
+                        const event = JSON.parse(e.data);
+                        handleServerEvent(event);
+                    } catch (err) {
+                        console.error('SSE: Failed to parse event', err);
+                    }
+                };
+                
+                eventSource.onerror = (e) => {
+                    console.error('SSE: Connection error', e);
+                    // Auto-reconnect after 5 seconds
+                    setTimeout(() => {
+                        if (eventSource.readyState === EventSource.CLOSED) {
+                            console.log('SSE: Attempting to reconnect...');
+                            connectEventStream();
+                        }
+                    }, 5000);
+                };
+                
+            } catch (err) {
+                console.error('SSE: Failed to connect', err);
+            }
+        }
+        
+        function handleServerEvent(event) {
+            console.log('SSE Event:', event.type, event.data);
+            
+            switch (event.type) {
+                case 'position_opened':
+                    // Refresh positions list
+                    fetchPositions();
+                    // Show notification
+                    showNotification(`Position opened: ${event.data.asset} @ ${event.data.leverage}x`, 'success');
+                    break;
+                    
+                case 'position_closed':
+                    // Refresh positions list
+                    fetchPositions();
+                    // Show notification
+                    const pnl = event.data.total_pnl || 0;
+                    const pnlText = pnl >= 0 ? `+$${pnl.toFixed(2)}` : `-$${Math.abs(pnl).toFixed(2)}`;
+                    showNotification(`Position closed. PnL: ${pnlText}`, pnl >= 0 ? 'success' : 'warning');
+                    break;
+                    
+                case 'position_update':
+                    // Update specific position in the list
+                    updatePositionInList(event.data);
+                    break;
+                    
+                case 'rate_update':
+                    // Could update rates in real-time
+                    break;
+                    
+                case 'bot_status':
+                    // Update bot status indicator
+                    updateBotStatus(event.data.status, event.data.message);
+                    break;
+                    
+                case 'balance_update':
+                    // Refresh balances
+                    fetchBalances();
+                    break;
+                    
+                case 'ping':
+                    // Keepalive, no action needed
+                    break;
+                    
+                case 'error':
+                    console.error('Server error:', event.data.message);
+                    showNotification(`Error: ${event.data.message}`, 'error');
+                    break;
+            }
+        }
+        
+        function updatePositionInList(positionData) {
+            // Find and update the position card if it exists
+            // This is a partial update without full re-render
+            const positionCards = document.querySelectorAll('[data-position-id]');
+            positionCards.forEach(card => {
+                if (card.dataset.positionId === positionData.position_id) {
+                    // Update PnL display
+                    const pnlEl = card.querySelector('.position-pnl');
+                    if (pnlEl && positionData.total_pnl !== undefined) {
+                        const pnl = positionData.total_pnl;
+                        pnlEl.textContent = (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2);
+                        pnlEl.className = 'font-mono position-pnl ' + (pnl >= 0 ? 'text-green-400' : 'text-red-400');
+                    }
+                    
+                    // Update health factor
+                    const hfEl = card.querySelector('.position-hf');
+                    if (hfEl && positionData.asgard_hf !== undefined) {
+                        hfEl.textContent = 'HF: ' + positionData.asgard_hf.toFixed(2);
+                    }
+                }
+            });
+        }
+        
+        function updateBotStatus(status, message) {
+            const statusEl = document.getElementById('bot-status');
+            if (statusEl) {
+                statusEl.textContent = status.toUpperCase();
+                statusEl.className = status === 'running' ? 'text-green-400' : 
+                                     status === 'paused' ? 'text-yellow-400' : 'text-gray-400';
+            }
+        }
+        
+        function showNotification(message, type = 'info') {
+            // Create notification element
+            const notification = document.createElement('div');
+            const colors = {
+                success: 'bg-green-600',
+                warning: 'bg-yellow-600',
+                error: 'bg-red-600',
+                info: 'bg-blue-600'
+            };
+            
+            notification.className = `fixed bottom-4 right-4 ${colors[type] || colors.info} text-white px-6 py-3 rounded-lg shadow-lg z-50 transition-opacity duration-500`;
+            notification.textContent = message;
+            
+            document.body.appendChild(notification);
+            
+            // Fade out and remove after 4 seconds
+            setTimeout(() => {
+                notification.style.opacity = '0';
+                setTimeout(() => notification.remove(), 500);
+            }, 4000);
+        }
+
+        // Load presets and init on page load
         window.addEventListener('load', () => {
+            // Load presets
             for (let i = 1; i <= 3; i++) {
                 const saved = localStorage.getItem(`preset-${i}`);
                 if (saved) {
@@ -1016,6 +2219,27 @@
             
             // Initial rates fetch
             fetchRates(currentLeverage);
+            
+            // Check auth status
+            checkAuthStatus();
+            
+            // Fetch positions
+            fetchPositions();
+            
+            // Connect to SSE
+            connectEventStream();
+            
+            // Fallback: Auto-refresh positions every 30 seconds (in case SSE fails)
+            setInterval(fetchPositions, 30000);
+        });
+
+        // Close modals on escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeAuthModal();
+                closeDepositModal();
+                closePositionModal();
+            }
         });
     </script>
 </body>

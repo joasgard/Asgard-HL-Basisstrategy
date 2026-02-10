@@ -13,7 +13,7 @@ router = APIRouter(tags=["rates"])
 
 @router.get("/rates")
 async def get_rates(
-    leverage: float = Query(3.0, ge=2.0, le=4.0, description="Desired leverage multiplier")
+    leverage: float = Query(3.0, ge=1.1, le=4.0, description="Desired leverage multiplier (1.1x - 4x)")
 ) -> Dict[str, Any]:
     """
     Get current rates for SOL/USDC delta-neutral strategy.

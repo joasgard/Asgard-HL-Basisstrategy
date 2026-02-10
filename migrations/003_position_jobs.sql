@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS position_jobs (
     started_at TIMESTAMP,  -- When job started executing
     completed_at TIMESTAMP, -- When job finished
     
-    FOREIGN KEY (user_id) REFERENCES users(user_id)
+    FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
 -- Index for querying user's jobs

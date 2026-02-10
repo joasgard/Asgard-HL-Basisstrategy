@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from src.dashboard.auth import require_viewer, get_current_user
+from src.dashboard.auth import require_viewer
 from src.dashboard.dependencies import get_bot_bridge, require_bot_bridge
 from src.shared.schemas import User
 

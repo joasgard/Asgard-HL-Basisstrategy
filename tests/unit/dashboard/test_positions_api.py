@@ -417,33 +417,41 @@ class TestOpenPositionRequest:
         from src.dashboard.api.positions import OpenPositionRequest
         from pydantic import ValidationError
         
-        # Too low
+        # Too low (below 1.1)
         with pytest.raises(ValidationError):
-            OpenPositionRequest(asset="SOL", leverage=1.5, size_usd=10000)
+            OpenPositionRequest(asset="SOL", leverage=1.0, size_usd=10000)
         
         # Too high
         with pytest.raises(ValidationError):
             OpenPositionRequest(asset="SOL", leverage=4.5, size_usd=10000)
         
-        # Valid boundaries
-        req_min = OpenPositionRequest(asset="SOL", leverage=2.0, size_usd=10000)
-        assert req_min.leverage == 2.0
+        # Valid boundaries (new range: 1.1x - 4x)
+        req_min = OpenPositionRequest(asset="SOL", leverage=1.1, size_usd=10000)
+        assert req_min.leverage == 1.1
         
         req_max = OpenPositionRequest(asset="SOL", leverage=4.0, size_usd=10000)
         assert req_max.leverage == 4.0
+        
+        # Middle value that was previously invalid
+        req_mid = OpenPositionRequest(asset="SOL", leverage=1.5, size_usd=10000)
+        assert req_mid.leverage == 1.5
     
     def test_size_validation(self):
         """Test size_usd validation."""
         from src.dashboard.api.positions import OpenPositionRequest
         from pydantic import ValidationError
         
-        # Too low
+        # Too low (below $100 minimum)
         with pytest.raises(ValidationError):
-            OpenPositionRequest(asset="SOL", leverage=3.0, size_usd=500)
+            OpenPositionRequest(asset="SOL", leverage=3.0, size_usd=50)
         
-        # Valid
-        request = OpenPositionRequest(asset="SOL", leverage=3.0, size_usd=1000)
-        assert request.size_usd == 1000
+        # Valid at new minimum
+        request = OpenPositionRequest(asset="SOL", leverage=3.0, size_usd=100)
+        assert request.size_usd == 100
+        
+        # Valid at previous minimum
+        request2 = OpenPositionRequest(asset="SOL", leverage=3.0, size_usd=1000)
+        assert request2.size_usd == 1000
 
 
 class TestOpenPositionResponse:

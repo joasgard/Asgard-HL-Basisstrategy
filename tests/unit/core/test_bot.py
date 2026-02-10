@@ -402,7 +402,8 @@ class TestPublicAPI:
     def test_get_positions(self, mock_bot):
         """Test get_positions method."""
         mock_position = MagicMock()
-        mock_bot._positions = {"pos1": mock_position}
+        # Use user-scoped structure: user_id -> position_id -> position
+        mock_bot._positions = {"default": {"pos1": mock_position}}
         
         positions = mock_bot.get_positions()
         
@@ -441,6 +442,7 @@ class TestRecovery:
         """Test state recovery on startup."""
         position = MagicMock()
         position.position_id = "recovered_pos"
+        position.user_id = "test_user"
         position.is_closed = False
         
         mock_bot._state = AsyncMock()
@@ -448,4 +450,6 @@ class TestRecovery:
         
         await mock_bot._recover_state()
         
-        assert "recovered_pos" in mock_bot._positions
+        # Check nested structure: user_id -> position_id
+        assert "test_user" in mock_bot._positions
+        assert "recovered_pos" in mock_bot._positions["test_user"]

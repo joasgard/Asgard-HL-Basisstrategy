@@ -1,25 +1,11 @@
 """
 Asset definitions and metadata for delta neutral arbitrage.
 """
-from enum import Enum
 from typing import Dict, List
 from dataclasses import dataclass
 
-
-class Asset(str, Enum):
-    """Supported assets for long positions."""
-    SOL = "SOL"
-    JITOSOL = "jitoSOL"
-    JUPSOL = "jupSOL"
-    INF = "INF"
-
-
-class Protocol(int, Enum):
-    """Supported lending protocols on Asgard."""
-    MARGINFI = 0
-    KAMINO = 1
-    SOLEND = 2
-    DRIFT = 3
+# Import enums from models (source of truth)
+from src.models.common import Asset, Protocol
 
 
 @dataclass(frozen=True)

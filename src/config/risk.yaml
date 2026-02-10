@@ -9,12 +9,14 @@ risk_limits:
   
   # Leverage
   default_leverage: 3.0
-  min_leverage: 2.0
+  min_leverage: 1.1
   max_leverage: 4.0
   enforce_equal_leverage: true
   
   # Position Sizing
-  min_position_usd: 1000
+  # Minimum position size refers to TOTAL deployed capital (both legs combined)
+  # Example: $100 position = $50 Asgard long + $50 Hyperliquid short (at 2x leverage)
+  min_position_usd: 100
   default_deployment_pct: 0.10  # 10% of available capital
   max_deployment_pct: 0.50      # 50% max
 

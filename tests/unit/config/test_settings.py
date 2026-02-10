@@ -146,7 +146,7 @@ def test_risk_limits():
     
     assert limits["default_leverage"] == 3.0
     assert limits["max_leverage"] == 4.0
-    assert limits["min_position_usd"] == 1000
+    assert limits["min_position_usd"] == 100
 
 
 def test_funding_config():

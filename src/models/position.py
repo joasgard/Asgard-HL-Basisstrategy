@@ -213,6 +213,7 @@ class CombinedPosition(BaseModel):
     
     # Identification
     position_id: PositionId = Field(description="Unique position ID")
+    user_id: Optional[str] = Field(default=None, description="Owner user ID (for multi-tenant)")
     
     # Legs
     asgard: AsgardPosition = Field(description="Long leg on Asgard")

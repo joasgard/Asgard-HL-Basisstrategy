@@ -1,7 +1,7 @@
 """
 Solana RPC client with retry logic.
 """
-from typing import Optional, List, Dict, Any
+from typing import Optional, Dict, Any
 
 from solana.rpc.async_api import AsyncClient
 from solana.rpc.commitment import Confirmed

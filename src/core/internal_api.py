@@ -351,6 +351,65 @@ async def open_position_internal(
         }
 
 
+@internal_app.post("/internal/positions/{position_id}/close")
+async def close_position_internal(
+    position_id: str,
+    request: dict,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    """
+    Close a delta-neutral position.
+    
+    Request body:
+    {
+        "reason": "manual"  // optional, default: "manual"
+    }
+    
+    Returns:
+    {
+        "success": true/false,
+        "position_id": "...",
+        "error": "..."  // only if failed
+    }
+    """
+    verify_internal_token(credentials)
+    bot = get_bot()
+    
+    try:
+        from src.models.position import ExitReason
+        
+        reason_str = request.get("reason", "manual")
+        try:
+            reason = ExitReason(reason_str)
+        except ValueError:
+            reason = ExitReason.MANUAL
+        
+        result = await bot._position_manager.close_position(position_id, reason)
+        
+        if result.success:
+            return {
+                "success": True,
+                "position_id": position_id,
+                "closed_at": datetime.utcnow().isoformat()
+            }
+        else:
+            return {
+                "success": False,
+                "position_id": position_id,
+                "error": result.error
+            }
+            
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to close position {position_id}: {e}", exc_info=True)
+        return {
+            "success": False,
+            "position_id": position_id,
+            "error": str(e)
+        }
+
+
 @internal_app.websocket("/internal/events")
 async def events_websocket(websocket: WebSocket):
     """WebSocket for real-time events."""

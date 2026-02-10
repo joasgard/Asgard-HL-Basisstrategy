@@ -167,10 +167,11 @@ class StatePersistence:
     
     async def _create_tables(self):
         """Create database tables."""
-        # Positions table
+        # Positions table (user-scoped for multi-tenant support)
         await self._db.execute("""
             CREATE TABLE IF NOT EXISTS positions (
                 id TEXT PRIMARY KEY,
+                user_id TEXT,  -- NULL for legacy single-tenant positions
                 data TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -201,6 +202,14 @@ class StatePersistence:
         await self._db.execute("""
             CREATE INDEX IF NOT EXISTS idx_positions_closed 
             ON positions(is_closed)
+        """)
+        await self._db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_positions_user 
+            ON positions(user_id)
+        """)
+        await self._db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_positions_user_active 
+            ON positions(user_id, is_closed) WHERE is_closed = 0
         """)
         await self._db.execute("""
             CREATE INDEX IF NOT EXISTS idx_action_log_timestamp 
@@ -235,6 +244,7 @@ class StatePersistence:
             
             data = {
                 "position_id": position.position_id,
+                "user_id": position.user_id,
                 "asset": asset_val,
                 "asgard": self._position_to_dict(position.asgard),
                 "hyperliquid": self._position_to_dict(position.hyperliquid),
@@ -251,11 +261,12 @@ class StatePersistence:
             
             await self._db.execute(
                 """
-                INSERT OR REPLACE INTO positions (id, data, updated_at, is_closed)
-                VALUES (?, ?, ?, ?)
+                INSERT OR REPLACE INTO positions (id, user_id, data, updated_at, is_closed)
+                VALUES (?, ?, ?, ?, ?)
                 """,
                 (
                     position.position_id,
+                    position.user_id,
                     json_data,
                     datetime.utcnow().isoformat(),
                     0 if position.status == "open" else 1,
@@ -273,12 +284,14 @@ class StatePersistence:
     async def load_positions(
         self,
         include_closed: bool = False,
+        user_id: Optional[str] = None,
     ) -> List[CombinedPosition]:
         """
         Load positions from the database.
         
         Args:
             include_closed: Whether to include closed positions
+            user_id: Filter by user ID (None for all users in single-tenant mode)
             
         Returns:
             List of positions
@@ -287,14 +300,29 @@ class StatePersistence:
             raise RuntimeError("Database not initialized. Call setup() first.")
         
         try:
-            if include_closed:
-                cursor = await self._db.execute(
-                    "SELECT data FROM positions ORDER BY created_at DESC"
-                )
+            # Build query with optional user filter
+            if user_id:
+                # Multi-tenant: filter by user
+                if include_closed:
+                    cursor = await self._db.execute(
+                        "SELECT data FROM positions WHERE user_id = ? ORDER BY created_at DESC",
+                        (user_id,)
+                    )
+                else:
+                    cursor = await self._db.execute(
+                        "SELECT data FROM positions WHERE user_id = ? AND is_closed = 0 ORDER BY created_at DESC",
+                        (user_id,)
+                    )
             else:
-                cursor = await self._db.execute(
-                    "SELECT data FROM positions WHERE is_closed = 0 ORDER BY created_at DESC"
-                )
+                # Single-tenant (legacy): all positions
+                if include_closed:
+                    cursor = await self._db.execute(
+                        "SELECT data FROM positions ORDER BY created_at DESC"
+                    )
+                else:
+                    cursor = await self._db.execute(
+                        "SELECT data FROM positions WHERE is_closed = 0 ORDER BY created_at DESC"
+                    )
             
             rows = await cursor.fetchall()
             positions = []
@@ -314,16 +342,28 @@ class StatePersistence:
             logger.error(f"Failed to load positions: {e}")
             return []
     
-    async def get_position(self, position_id: str) -> Optional[CombinedPosition]:
-        """Get a specific position by ID."""
+    async def get_position(self, position_id: str, user_id: Optional[str] = None) -> Optional[CombinedPosition]:
+        """
+        Get a specific position by ID.
+        
+        Args:
+            position_id: Position ID to retrieve
+            user_id: Optional user ID filter for multi-tenant validation
+        """
         if self._db is None:
             raise RuntimeError("Database not initialized. Call setup() first.")
         
         try:
-            cursor = await self._db.execute(
-                "SELECT data FROM positions WHERE id = ?",
-                (position_id,)
-            )
+            if user_id:
+                cursor = await self._db.execute(
+                    "SELECT data FROM positions WHERE id = ? AND user_id = ?",
+                    (position_id, user_id)
+                )
+            else:
+                cursor = await self._db.execute(
+                    "SELECT data FROM positions WHERE id = ?",
+                    (position_id,)
+                )
             row = await cursor.fetchone()
             
             if row:
@@ -648,6 +688,7 @@ class StatePersistence:
         
         combined = CombinedPosition(
             position_id=data.get("position_id", ""),
+            user_id=data.get("user_id"),
             asgard=asgard_position,
             hyperliquid=hyperliquid_position,
             reference=reference,

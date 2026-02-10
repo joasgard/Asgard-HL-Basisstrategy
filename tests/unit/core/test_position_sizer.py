@@ -13,7 +13,7 @@ class TestPositionSizerInitialization:
         """Test PositionSizer with default values."""
         sizer = PositionSizer()
         
-        assert sizer.min_position_usd == Decimal("1000")
+        assert sizer.min_position_usd == Decimal("100")
         assert sizer.default_deployment_pct == Decimal("0.10")
         assert sizer.max_deployment_pct == Decimal("0.50")
     

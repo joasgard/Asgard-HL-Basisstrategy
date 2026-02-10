@@ -14,9 +14,10 @@ router = APIRouter(tags=["settings"])
 
 class StrategySettings(BaseModel):
     """Strategy configuration settings."""
-    default_leverage: float = Field(3.0, ge=2.0, le=4.0)
-    max_position_size: int = Field(50000, ge=1000)
-    min_position_size: int = Field(1000, ge=100)
+    default_leverage: float = Field(3.0, ge=1.1, le=4.0)
+    max_position_size: int = Field(50000, ge=100)
+    # Minimum position size = total deployed capital (both legs combined)
+    min_position_size: int = Field(100, ge=100)
     max_positions_per_asset: int = Field(1, ge=1, le=5)
     min_opportunity_apy: float = Field(1.0, ge=0)
     max_funding_volatility: float = Field(50.0, ge=0, le=100)

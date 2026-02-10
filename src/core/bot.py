@@ -44,6 +44,7 @@ from src.chain.solana import SolanaClient
 from src.chain.arbitrum import ArbitrumClient
 from src.config.assets import Asset
 from src.config.settings import get_settings
+from src.core.kill_switch import KillSwitchMonitor, KillSwitchTrigger
 from src.core.lst_monitor import LSTMonitor
 from src.core.opportunity_detector import OpportunityDetector
 from src.core.pause_controller import PauseController, PauseScope, CircuitBreakerType
@@ -161,11 +162,13 @@ class DeltaNeutralBot:
         self._lst_monitor: Optional[LSTMonitor] = None
         self._solana_client: Optional[SolanaClient] = None
         self._arbitrum_client: Optional[ArbitrumClient] = None
+        self._kill_switch: Optional[KillSwitchMonitor] = None
         
         # State
         self._running = False
         self._shutdown_event = asyncio.Event()
-        self._positions: Dict[str, CombinedPosition] = {}
+        # User-scoped positions: user_id -> {position_id -> CombinedPosition}
+        self._positions: Dict[str, Dict[str, CombinedPosition]] = {}
         self._stats = BotStats()
         
         # Callbacks
@@ -223,6 +226,11 @@ class DeltaNeutralBot:
         )
         await self._position_manager.__aenter__()
         
+        # Initialize kill switch monitor
+        self._kill_switch = KillSwitchMonitor()
+        self._kill_switch.on_triggered(self._on_kill_switch_triggered)
+        await self._kill_switch.start()
+        
         # Initialize opportunity detector
         # Get the market data and oracle from position manager if available
         from src.venues.asgard.market_data import AsgardMarketData
@@ -252,6 +260,10 @@ class DeltaNeutralBot:
         self._running = False
         self._shutdown_event.set()
         
+        # Stop kill switch monitor
+        if self._kill_switch:
+            await self._kill_switch.stop()
+        
         # Close position manager
         if self._position_manager:
             await self._position_manager.__aexit__(None, None, None)
@@ -263,6 +275,40 @@ class DeltaNeutralBot:
         self._stats.stop_time = datetime.utcnow()
         
         logger.info(f"Bot stopped. Uptime: {self._stats.uptime_formatted}")
+    
+    async def _on_kill_switch_triggered(self, reason: str):
+        """
+        Handle kill switch trigger.
+        
+        Pauses the bot (stops new positions) but does NOT close existing positions.
+        Users must manually close positions via dashboard or API.
+        """
+        logger.critical("=" * 60)
+        logger.critical("KILL SWITCH TRIGGERED - PAUSING BOT")
+        logger.critical("=" * 60)
+        
+        # Pause the bot (stop new positions)
+        api_key = self.config.admin_api_key or get_settings().admin_api_key
+        if api_key and self._pause_controller:
+            try:
+                self._pause_controller.pause(
+                    api_key=api_key,
+                    reason=f"Kill switch: {reason}",
+                    scope=PauseScope.ALL
+                )
+                
+                # Get open positions count (all users)
+                open_count = sum(len(user_positions) for user_positions in self._positions.values())
+                
+                logger.critical(f"Bot PAUSED. {open_count} positions STILL OPEN.")
+                logger.critical("Positions remain open and continue earning funding.")
+                logger.critical("Use dashboard or API to close positions manually.")
+                logger.critical("=" * 60)
+                
+            except Exception as e:
+                logger.error(f"Failed to pause bot after kill switch: {e}")
+        else:
+            logger.error("Cannot pause: admin_api_key or pause_controller not available")
     
     def _setup_signal_handlers(self):
         """Setup signal handlers for graceful shutdown."""
@@ -391,8 +437,9 @@ class DeltaNeutralBot:
         # Check circuit breakers
         self._pause_controller.check_and_recover()
         
-        # Monitor each position
-        for position_id, position in list(self._positions.items()):
+        # Monitor each position (all users)
+        all_positions = self.get_positions()
+        for position_id, position in list(all_positions.items()):
             try:
                 await self._monitor_position(position)
             except Exception as e:
@@ -448,8 +495,9 @@ class DeltaNeutralBot:
             logger.debug("Entry paused, skipping opportunity scan")
             return
         
-        # Check if we have capacity for new positions
-        if len(self._positions) >= self.config.max_concurrent_positions:
+        # Check if we have capacity for new positions (all users)
+        total_positions = sum(len(user_positions) for user_positions in self._positions.values())
+        if total_positions >= self.config.max_concurrent_positions:
             logger.debug("Max positions reached, skipping scan")
             return
         
@@ -512,7 +560,11 @@ class DeltaNeutralBot:
             
             if result.success and result.position:
                 position = result.position
-                self._positions[position.position_id] = position
+                # Store in user-scoped dict
+                user_id = position.user_id or "default"
+                if user_id not in self._positions:
+                    self._positions[user_id] = {}
+                self._positions[user_id][position.position_id] = position
                 self._stats.positions_opened += 1
                 
                 # Save state
@@ -540,7 +592,12 @@ class DeltaNeutralBot:
             result = await self._position_manager.close_position(position.position_id)
             
             if result:
-                del self._positions[position.position_id]
+                user_id = position.user_id or "default"
+                if user_id in self._positions and position.position_id in self._positions[user_id]:
+                    del self._positions[user_id][position.position_id]
+                    # Clean up empty user entries
+                    if not self._positions[user_id]:
+                        del self._positions[user_id]
                 self._stats.positions_closed += 1
                 
                 # Update state
@@ -572,17 +629,28 @@ class DeltaNeutralBot:
         # For now, return the expected APY from opportunity
         return position.expected_apy if hasattr(position, 'expected_apy') else Decimal("0")
     
-    async def _recover_state(self):
-        """Recover state from previous run."""
+    async def _recover_state(self, user_id: Optional[str] = None):
+        """
+        Recover state from previous run.
+        
+        Args:
+            user_id: Optional user ID to filter recovery (None for all users)
+        """
         logger.info("Recovering state from previous run...")
         
-        positions = await self._state.load_positions()
+        positions = await self._state.load_positions(user_id=user_id)
+        recovered_count = 0
         for position in positions:
             if not position.is_closed:
-                self._positions[position.position_id] = position
-                logger.info(f"Recovered position: {position.position_id}")
+                pid = position.user_id or user_id or "default"
+                if pid not in self._positions:
+                    self._positions[pid] = {}
+                self._positions[pid][position.position_id] = position
+                recovered_count += 1
+                logger.info(f"Recovered position: {position.position_id} (user: {pid})")
         
-        logger.info(f"Recovered {len(self._positions)} active positions")
+        total_positions = sum(len(user_positions) for user_positions in self._positions.values())
+        logger.info(f"Recovered {total_positions} active positions")
     
     # Public API
     
@@ -590,9 +658,25 @@ class DeltaNeutralBot:
         """Get bot statistics."""
         return self._stats
     
-    def get_positions(self) -> Dict[str, CombinedPosition]:
-        """Get current positions."""
-        return self._positions.copy()
+    def get_positions(self, user_id: Optional[str] = None) -> Dict[str, CombinedPosition]:
+        """
+        Get current positions.
+        
+        Args:
+            user_id: Filter by user ID (None for all positions in single-tenant mode)
+            
+        Returns:
+            Dict of position_id -> CombinedPosition
+        """
+        if user_id:
+            # Return positions for specific user
+            return self._positions.get(user_id, {}).copy()
+        else:
+            # Flatten all positions (single-tenant compatibility)
+            all_positions = {}
+            for user_positions in self._positions.values():
+                all_positions.update(user_positions)
+            return all_positions
     
     def add_opportunity_callback(self, callback: Callable[[ArbitrageOpportunity], None]):
         """Add callback for opportunity detection."""

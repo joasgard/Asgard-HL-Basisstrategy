@@ -80,7 +80,7 @@ class OpportunityDetector:
         Args:
             asgard_market_data: AsgardMarketData instance. Creates new if None.
             hyperliquid_oracle: HyperliquidFundingOracle instance. Creates new if None.
-            leverage: Position leverage (2-4x, default 3x)
+            leverage: Position leverage (1.1x - 4x, default 3x)
             deployed_capital_usd: Capital to deploy per opportunity
         """
         self.asgard = asgard_market_data

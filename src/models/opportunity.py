@@ -85,8 +85,8 @@ class ArbitrageOpportunity(BaseModel):
     @field_validator("leverage")
     @classmethod
     def validate_leverage(cls, v: Decimal) -> Decimal:
-        if not Decimal("2") <= v <= Decimal("4"):
-            raise ValueError("leverage must be between 2 and 4")
+        if not Decimal("1.1") <= v <= Decimal("4"):
+            raise ValueError("leverage must be between 1.1 and 4")
         return v
     
     @property

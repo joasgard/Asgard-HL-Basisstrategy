@@ -7,7 +7,6 @@ import asyncio
 import time
 import logging
 from typing import Dict, Any, Optional
-from decimal import Decimal
 import httpx
 
 from src.shared.schemas import BotStats, PositionSummary, PositionDetail, PauseState
@@ -105,12 +104,15 @@ class BotBridge:
         except httpx.TimeoutException as e:
             raise BotUnavailableError(f"Bot request timeout: {e}")
     
-    async def get_positions(self) -> Dict[str, PositionSummary]:
+    async def get_positions(self, user_id: str = None) -> Dict[str, PositionSummary]:
         """
         Get positions with caching.
         Returns stale data on timeout rather than fail.
+        
+        Args:
+            user_id: Optional user ID filter for multi-tenant mode
         """
-        cache_key = "positions"
+        cache_key = f"positions_{user_id or 'all'}"
         
         # Fast path: return cached data if fresh
         cached = self._get_cached(cache_key)
@@ -121,7 +123,8 @@ class BotBridge:
         # Slow path: fetch from bot with short timeout
         async def _fetch():
             async with self._lock:
-                response = await self._request("GET", "/internal/positions")
+                params = {"user_id": user_id} if user_id else {}
+                response = await self._request("GET", "/internal/positions", params=params)
                 data = response.json()
                 
                 positions = {
@@ -211,15 +214,16 @@ class BotBridge:
             self.invalidate_cache("pause_state")
         return result
     
-    async def open_position(self, asset: str, leverage: float, size_usd: float, protocol: str = None) -> dict:
+    async def open_position(self, asset: str, leverage: float, size_usd: float, protocol: str = None, user_id: str = None) -> dict:
         """
         Open a new delta-neutral position.
         
         Args:
             asset: Asset symbol (SOL, jitoSOL, jupSOL, INF)
-            leverage: Leverage multiplier (2.0 - 4.0)
+            leverage: Leverage multiplier (1.1 - 4.0)
             size_usd: Position size in USD
             protocol: Optional protocol override (kamino, drift, marginfi, solend)
+            user_id: User ID for multi-tenant mode
             
         Returns:
             dict with success status and position details
@@ -227,7 +231,8 @@ class BotBridge:
         payload = {
             "asset": asset,
             "leverage": leverage,
-            "size_usd": size_usd
+            "size_usd": size_usd,
+            "user_id": user_id
         }
         if protocol:
             payload["protocol"] = protocol
@@ -236,6 +241,30 @@ class BotBridge:
             "POST",
             "/internal/positions/open",
             json=payload
+        )
+        result = response.json()
+        
+        # Invalidate positions cache on success
+        if result.get("success"):
+            self.invalidate_cache("positions")
+        
+        return result
+    
+    async def close_position(self, position_id: str, reason: str = "manual") -> dict:
+        """
+        Close a delta-neutral position.
+        
+        Args:
+            position_id: ID of position to close
+            reason: Reason for closing (manual, stop_loss, take_profit, etc.)
+            
+        Returns:
+            dict with success status
+        """
+        response = await self._request(
+            "POST",
+            f"/internal/positions/{position_id}/close",
+            json={"reason": reason}
         )
         result = response.json()
         

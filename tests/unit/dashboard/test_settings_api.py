@@ -169,7 +169,7 @@ class TestStrategySettings:
         
         assert settings.default_leverage == 3.0
         assert settings.max_position_size == 50000
-        assert settings.min_position_size == 1000
+        assert settings.min_position_size == 100
         assert settings.max_positions_per_asset == 1
         assert settings.min_opportunity_apy == 1.0
         assert settings.max_funding_volatility == 50.0
@@ -192,40 +192,48 @@ class TestStrategySettings:
         assert settings.max_position_size == 100000
         assert settings.enable_auto_exit is False
         # Other values should be defaults
-        assert settings.min_position_size == 1000
+        assert settings.min_position_size == 100
     
     def test_leverage_validation(self):
-        """Test leverage validation constraints."""
+        """Test leverage validation constraints (1.1x - 4x)."""
         from src.dashboard.api.settings import StrategySettings
         from pydantic import ValidationError
         
-        # Too low
+        # Too low (below 1.1)
         with pytest.raises(ValidationError):
             StrategySettings(default_leverage=1.0)
         
-        # Too high
+        # Too high (above 4)
         with pytest.raises(ValidationError):
             StrategySettings(default_leverage=5.0)
         
-        # Valid boundary values
-        settings_min = StrategySettings(default_leverage=2.0)
-        assert settings_min.default_leverage == 2.0
+        # Valid boundary values (new range: 1.1x - 4x)
+        settings_min = StrategySettings(default_leverage=1.1)
+        assert settings_min.default_leverage == 1.1
         
         settings_max = StrategySettings(default_leverage=4.0)
         assert settings_max.default_leverage == 4.0
+        
+        # Middle value that was previously invalid
+        settings_mid = StrategySettings(default_leverage=1.5)
+        assert settings_mid.default_leverage == 1.5
     
     def test_max_position_size_validation(self):
-        """Test max_position_size validation."""
+        """Test max_position_size validation (min $100)."""
         from src.dashboard.api.settings import StrategySettings
         from pydantic import ValidationError
         
-        # Too low
+        # Too low (below $100 minimum)
         with pytest.raises(ValidationError):
-            StrategySettings(max_position_size=500)
+            StrategySettings(max_position_size=50)
         
-        # Valid
-        settings = StrategySettings(max_position_size=1000)
-        assert settings.max_position_size == 1000
+        # Valid at new minimum
+        settings = StrategySettings(max_position_size=100)
+        assert settings.max_position_size == 100
+        
+        # Valid at higher value
+        settings2 = StrategySettings(max_position_size=1000)
+        assert settings2.max_position_size == 1000
 
 
 class TestSettingsResponse:

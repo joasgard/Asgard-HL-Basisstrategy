@@ -242,7 +242,9 @@ class TestEmergencyHealthFactor:
             bot = DeltaNeutralBot(config=config)
             await bot.setup()
             
-            bot._positions[critical_health_position.position_id] = critical_health_position
+            # Add position using user-scoped structure (user_id -> position_id -> position)
+            user_id = critical_health_position.user_id or "default"
+            bot._positions[user_id] = {critical_health_position.position_id: critical_health_position}
             
             # Run monitor cycle
             await bot._monitor_position(critical_health_position)
@@ -303,7 +305,9 @@ class TestEmergencyHealthFactor:
             bot = DeltaNeutralBot(config=config)
             await bot.setup()
             
-            bot._positions[critical_margin_position.position_id] = critical_margin_position
+            # Add position using user-scoped structure
+            user_id = critical_margin_position.user_id or "default"
+            bot._positions[user_id] = {critical_margin_position.position_id: critical_margin_position}
             
             # Run monitor cycle
             await bot._monitor_position(critical_margin_position)
@@ -377,7 +381,9 @@ class TestEmergencyLSTDepeg:
             bot = DeltaNeutralBot(config=config)
             await bot.setup()
             
-            bot._positions[lst_position.position_id] = lst_position
+            # Add position using user-scoped structure
+            user_id = lst_position.user_id or "default"
+            bot._positions[user_id] = {lst_position.position_id: lst_position}
             
             # Run monitor cycle
             await bot._monitor_position(lst_position)
@@ -439,7 +445,9 @@ class TestEmergencyLSTDepeg:
             bot = DeltaNeutralBot(config=config)
             await bot.setup()
             
-            bot._positions[lst_position.position_id] = lst_position
+            # Add position using user-scoped structure
+            user_id = lst_position.user_id or "default"
+            bot._positions[user_id] = {lst_position.position_id: lst_position}
             
             # Run monitor cycle
             await bot._monitor_position(lst_position)
@@ -499,7 +507,9 @@ class TestEmergencyPriceDeviation:
             bot = DeltaNeutralBot(config=config)
             await bot.setup()
             
-            bot._positions[healthy_position.position_id] = healthy_position
+            # Add position using user-scoped structure
+            user_id = healthy_position.user_id or "default"
+            bot._positions[user_id] = {healthy_position.position_id: healthy_position}
             
             # Run monitor cycle
             await bot._monitor_position(healthy_position)
@@ -561,7 +571,9 @@ class TestEmergencyChainOutage:
             bot = DeltaNeutralBot(config=config)
             await bot.setup()
             
-            bot._positions[healthy_position.position_id] = healthy_position
+            # Add position using user-scoped structure
+            user_id = healthy_position.user_id or "default"
+            bot._positions[user_id] = {healthy_position.position_id: healthy_position}
             
             # Run monitor cycle
             await bot._monitor_position(healthy_position)
@@ -616,7 +628,9 @@ class TestEmergencyChainOutage:
             bot = DeltaNeutralBot(config=config)
             await bot.setup()
             
-            bot._positions[healthy_position.position_id] = healthy_position
+            # Add position using user-scoped structure
+            user_id = healthy_position.user_id or "default"
+            bot._positions[user_id] = {healthy_position.position_id: healthy_position}
             
             # Run monitor cycle
             await bot._monitor_position(healthy_position)
@@ -673,7 +687,9 @@ class TestCircuitBreakerTriggers:
             bot = DeltaNeutralBot(config=config)
             await bot.setup()
             
-            bot._positions[critical_health_position.position_id] = critical_health_position
+            # Add position using user-scoped structure
+            user_id = critical_health_position.user_id or "default"
+            bot._positions[user_id] = {critical_health_position.position_id: critical_health_position}
             
             # Run monitor cycle
             await bot._monitor_position(critical_health_position)
@@ -732,7 +748,9 @@ class TestEmergencyExitPriority:
             bot = DeltaNeutralBot(config=config)
             await bot.setup()
             
-            bot._positions[healthy_position.position_id] = healthy_position
+            # Add position using user-scoped structure
+            user_id = healthy_position.user_id or "default"
+            bot._positions[user_id] = {healthy_position.position_id: healthy_position}
             
             # Run monitor cycle
             await bot._monitor_position(healthy_position)

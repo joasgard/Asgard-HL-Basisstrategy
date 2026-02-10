@@ -61,23 +61,44 @@ env.bak/
 .env.staging
 !.env.example
 
-# Secrets directory - contains API keys and private keys
-# Only allow: .gitkeep, README.md, *.example templates
+# ============================================
+# SECURITY: Secrets Directory
+# ============================================
+# This directory contains API keys and credentials.
+# 
+# IMPORTANT: Order matters in .gitignore - last match wins
+# The structure below ensures example templates are not ignored
+
+# 1. First: Ignore ALL files in secrets directory
 secrets/*
+
+# 2. Explicit per-file ignores (defense in depth)
+# These ensure specific sensitive files are never committed
+# even if other patterns change
+secrets/asgard_api_key.txt
+secrets/privy_app_id.txt
+secrets/privy_app_secret.txt
+secrets/privy_auth.pem
+secrets/server_secret.txt
+secrets/admin_api_key.txt
+secrets/solana_rpc_url.txt
+secrets/arbitrum_rpc_url.txt
+secrets/solana_wallet_address.txt
+secrets/hyperliquid_wallet_address.txt
+secrets/wallet_address.txt
+secrets/sentry_dsn.txt
+
+# 3. ALLOW example templates and documentation (must be LAST)
 !secrets/.gitkeep
 !secrets/README.md
 !secrets/*.example
 
-# Key files (common patterns for private keys)
+# Key files anywhere in repo (common patterns for private keys)
+# These are broad patterns that match private key filenames
 *.key
 *.pem
 *.p12
 *.pfx
-*private*
-*secret*
-*apikey*
-*api-key*
-*credential*
 
 # Wallet files
 wallet.json

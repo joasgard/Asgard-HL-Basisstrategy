@@ -1,11 +1,21 @@
 # Delta Neutral Bot - Technical Specification v3.5 (SaaS)
 
 **Product**: Delta Neutral Funding Rate Arbitrage Bot  
-**Deployment Model**: Single-tenant SaaS (Docker per user)  
+**Deployment Model**: Multi-user Authentication with Single-Tenant Execution (Hybrid SaaS)  
 **Wallet Infrastructure**: Privy Embedded Wallets (server-side signing)  
 **Authentication**: Privy Email-Only with Custom Modals (v3.5)  
 **Primary Interface**: Web Dashboard with Connect → Email → OTP → Deposit Flow  
 **Version**: 3.5 (Custom Privy Auth Flow)
+
+> **⚠️ Architecture Clarification:**
+> 
+> Current implementation is **multi-user auth + single-tenant execution**:
+> - ✅ Multiple users can authenticate via Privy
+> - ✅ Each user has their own wallets and settings
+> - ⚠️ Position execution is NOT multi-tenant (single bot instance)
+> - ⚠️ NOT a true multi-tenant SaaS (one deployment per user required)
+>
+> For true multi-tenant SaaS (one instance serving many users), see Section 11 "Future SaaS Enhancements".
 
 > **v3.5 Change Log:**
 > - **Authentication**: New custom modal flow (email-only, inline OTP, deposit modal)
@@ -829,12 +839,14 @@ The authorization key is critical - losing it means losing wallet access through
 
 ### 6.1 Kill Switch Options
 
-| Method | Speed | Use Case |
-|--------|-------|----------|
-| Docker stop | Immediate | Complete container termination |
-| API endpoint | <1s | Remote/scripted stop |
-| File-based | 5s | Dashboard inaccessible |
-| Position close | 30-120s | Graceful exit |
+| Method | Speed | Use Case | Effect |
+|--------|-------|----------|--------|
+| Docker stop | Immediate | Complete container termination | Bot stops, positions stay open |
+| API endpoint | <1s | Remote/scripted stop | Bot pauses, positions stay open |
+| File-based | 5s | Dashboard inaccessible | Bot pauses, positions stay open |
+| Manual close | 30-120s/position | Exit specific positions | Actually closes positions |
+
+**Important:** Kill switches PAUSE the bot (stop new positions) but do NOT close existing positions. Positions must be closed manually or via the close position API.
 
 ### 6.2 Implementation
 
@@ -845,30 +857,44 @@ docker stop -t 30 delta-neutral-bot
 # SIGKILL after 30s if not exited
 ```
 
-**API Endpoint:**
+**API Endpoint - Pause:**
 ```python
-@app.post("/api/v1/control/emergency-stop")
-async def emergency_stop(
-    request: EmergencyStopRequest,
+@app.post("/api/v1/control/pause")
+async def pause_bot(
+    request: PauseRequest,
     current_user: User = Depends(get_current_user)
 ):
-    """Emergency stop all operations."""
-    await audit_log.record("emergency_stop", user=current_user)
-    
-    # Signal bot to stop
-    await bot.emergency_stop(reason=request.reason)
-    
-    # Attempt position closure if requested
-    if request.close_positions:
-        await position_manager.close_all_positions()
-    
-    return {"status": "stopped"}
+    """Pause bot operations (stop new positions)."""
+    await bot.pause(reason=request.reason)
+    return {"status": "paused", "message": "Bot paused. Existing positions remain open."}
+```
+
+**API Endpoint - Close Position (works even when bot paused):**
+```python
+@app.post("/api/v1/positions/{position_id}/close")
+async def close_position(
+    position_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Close a specific position. Works even if bot is paused/stopped.
+    This is the ONLY way to actually close positions.
+    """
+    result = await position_manager.close_position(position_id)
+    return {"success": result.success, "position_id": position_id}
 ```
 
 **File-Based Kill Switch:**
 ```python
 class KillSwitchMonitor:
-    """Monitors for emergency stop file."""
+    """
+    Monitors for emergency stop file.
+    
+    When triggered: PAUSES bot (stops new positions)
+    Does NOT: Close existing positions
+    
+    Use case: Stop the bleeding during bad market data / API issues
+    """
     
     KILL_SWITCH_PATH = "/data/emergency.stop"
     CHECK_INTERVAL = 5
@@ -876,12 +902,53 @@ class KillSwitchMonitor:
     async def monitor(self):
         while self.running:
             if os.path.exists(self.KILL_SWITCH_PATH):
-                logger.critical("Kill switch detected - emergency stop!")
-                await bot.emergency_stop(reason="Kill switch file detected")
+                logger.critical("Kill switch detected - EMERGENCY PAUSE!")
+                await bot.pause(reason="Kill switch file detected")
                 os.remove(self.KILL_SWITCH_PATH)  # Clean up
+                
+                # Log that positions are still open
+                open_positions = await bot.get_positions()
+                logger.warning(f"Bot paused. {len(open_positions)} positions STILL OPEN.")
+                logger.info("Use dashboard or API to close positions manually.")
                 break
             await asyncio.sleep(self.CHECK_INTERVAL)
 ```
+
+### 6.3 Manual Position Close (Bot-Independent)
+
+**Critical Feature:** Users can close positions even if the bot is stopped/paused.
+
+```python
+class PositionCloseService:
+    """
+    Standalone service for closing positions.
+    Does not depend on bot running state.
+    """
+    
+    async def close_position(self, position_id: str) -> CloseResult:
+        """
+        Close a position directly via venue APIs.
+        Works even if bot is stopped.
+        """
+        position = await self.db.get_position(position_id)
+        
+        # Close Hyperliquid short
+        hl_result = await self.hyperliquid.close_short(position)
+        
+        # Close Asgard long
+        asgard_result = await self.asgard.close_position(position)
+        
+        return CloseResult(
+            hyperliquid=hl_result,
+            asgard=asgard_result
+        )
+```
+
+**Dashboard Close Button:**
+- Available even when bot shows "PAUSED" or "STOPPED"
+- User confirms via modal
+- Async job executes closure directly
+- Status polling shows progress
 
 ---
 
@@ -1074,14 +1141,28 @@ async def event_stream(request: Request):
 | POST | `/api/v1/control/stop` | Stop bot |
 | POST | `/api/v1/control/emergency-stop` | Emergency stop |
 
-#### Real-time Data
+#### Real-time Data (SSE)
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/v1/events` | SSE stream for live updates |
+| GET | `/api/v1/events/stream` | **SSE stream** for live updates (position opened/closed, PnL, rates) |
+| GET | `/api/v1/events/status` | Event system status (subscriber count) |
 | GET | `/api/v1/status` | Bot status |
 | GET | `/api/v1/positions` | Current positions |
+| GET | `/api/v1/positions/jobs/{job_id}` | Job status for open/close operations |
 | GET | `/api/v1/balances` | Wallet balances |
-| GET | `/api/v1/funding-rates` | Current funding rates |
+| GET | `/api/v1/rates` | Current funding rates |
+
+**SSE Event Types:**
+```
+position_opened  → New position created
+position_closed  → Position closed with PnL
+position_update  → PnL or health factor changed
+rate_update      → Funding rates updated
+bot_status       → Bot paused/resumed/connected
+balance_update   → Wallet balance changed
+ping             → Keepalive (every 30s)
+error            → Error notification
+```
 
 ---
 
@@ -1287,9 +1368,207 @@ CREATE TABLE audit_log (
 );
 ```
 
+### 11.4 Known Schema Issues (SaaS Migration)
+
+> **⚠️ Critical Bug - Migration 003:**
+> 
+> File: `migrations/003_position_jobs.sql` line 22
+> ```sql
+> FOREIGN KEY (user_id) REFERENCES users(user_id)  -- WRONG
+> ```
+> Should be:
+> ```sql
+> FOREIGN KEY (user_id) REFERENCES users(id)      -- CORRECT
+> ```
+> 
+> **Impact:** Database constraint errors when creating position jobs for any user.
+> **Fix Status:** Needs migration fix - either patch 003 or create 005 fix migration.
+> **Priority:** HIGH - blocks SaaS deployment.
+
 ---
 
-## 12. Testing Strategy
+## 12. Future SaaS Enhancements
+
+> **Current Architecture:** Multi-user auth + single-tenant execution (hybrid).
+> This section documents what is needed for true multi-tenant SaaS.
+
+### 12.1 Architecture Gap Analysis
+
+| Component | Current | True SaaS Required | Effort |
+|-----------|---------|-------------------|--------|
+| **Authentication** | ✅ Privy multi-user | ✅ Already done | - |
+| **Position Storage** | ❌ Global `Dict[str, Position]` | ✅ `Dict[user_id, Dict[str, Position]]` | 3-5 days |
+| **Bot Execution** | ❌ Single bot loop | ✅ Per-user bot instances or multi-tenant scheduler | 1-2 weeks |
+| **Settings Storage** | ❌ Global config | ✅ Per-user leverage/risk settings | 3-5 days |
+| **Database** | ⚠️ SQLite (single user) | ✅ PostgreSQL with user-scoped tables | 1 week |
+| **Billing/Usage** | ❌ Not implemented | ✅ Plan limits, usage tracking | 2-3 weeks |
+| **Isolated Execution** | ❌ Shared process | ✅ Container-per-user or sandboxed | 2-3 weeks |
+
+### 12.2 Option A: Single-Tenant Per User (Current Path)
+
+**Model:** One Docker container per user.
+
+```
+User A → Container A (bot + dashboard) → User A's positions
+User B → Container B (bot + dashboard) → User B's positions
+User C → Container C (bot + dashboard) → User C's positions
+```
+
+**Pros:**
+- Perfect isolation (security, resource limits)
+- Simple to understand and debug
+- Can customize per user
+- Easy to migrate to self-hosted
+
+**Cons:**
+- Higher infrastructure costs
+- More complex orchestration needed
+- Slower user onboarding (container spin-up time)
+- Harder to manage at scale
+
+**Implementation:**
+- Keep current architecture
+- Add orchestrator to spin up/down containers per user
+- Each container has own SQLite DB
+- Shared Privy app (already implemented)
+
+### 12.3 Option B: True Multi-Tenant (Future)
+
+**Model:** Single deployment serves all users with data isolation.
+
+```
+                    ┌─────────────────────────────────┐
+                    │         Load Balancer           │
+                    └─────────────┬───────────────────┘
+                                  │
+                    ┌─────────────▼───────────────────┐
+                    │     FastAPI Dashboard           │
+                    │  (auth, settings, API)          │
+                    └─────────────┬───────────────────┘
+                                  │
+          ┌───────────────────────┼───────────────────────┐
+          │                       │                       │
+          ▼                       ▼                       ▼
+   ┌─────────────┐        ┌─────────────┐        ┌─────────────┐
+   │  User Bot   │        │  User Bot   │        │  User Bot   │
+   │  Instance A │        │  Instance B │        │  Instance C │
+   └──────┬──────┘        └──────┬──────┘        └──────┬──────┘
+          │                       │                       │
+          └───────────────────────┼───────────────────────┘
+                                  │
+                    ┌─────────────▼───────────────────┐
+                    │    PostgreSQL + Row-Level       │
+                    │    Security (per-user data)     │
+                    └─────────────────────────────────┘
+```
+
+**Required Changes:**
+
+#### 1. Database Schema Fixes
+
+```sql
+-- Fix migration 003 (urgent)
+ALTER TABLE position_jobs DROP CONSTRAINT fk_position_jobs_user;
+ALTER TABLE position_jobs ADD CONSTRAINT fk_position_jobs_user 
+    FOREIGN KEY (user_id) REFERENCES users(id);
+
+-- Add user_id to all relevant tables
+ALTER TABLE positions ADD COLUMN user_id TEXT REFERENCES users(id);
+ALTER TABLE config ADD COLUMN user_id TEXT REFERENCES users(id);
+
+-- Add row-level security for PostgreSQL
+CREATE POLICY user_positions_isolation ON positions
+    USING (user_id = current_setting('app.current_user_id'));
+```
+
+#### 2. Position Manager Refactor
+
+```python
+class MultiTenantPositionManager:
+    """Per-user position storage with isolation."""
+    
+    def __init__(self):
+        # user_id -> {position_id -> CombinedPosition}
+        self._positions: Dict[str, Dict[str, CombinedPosition]] = {}
+    
+    def get_positions(self, user_id: str) -> Dict[str, CombinedPosition]:
+        """Get positions only for the specified user."""
+        return self._positions.get(user_id, {})
+    
+    def add_position(self, user_id: str, position: CombinedPosition):
+        """Add position scoped to user."""
+        if user_id not in self._positions:
+            self._positions[user_id] = {}
+        self._positions[user_id][position.position_id] = position
+```
+
+#### 3. Bot Execution Model
+
+```python
+class PerUserBotScheduler:
+    """Manages bot instances per user."""
+    
+    def __init__(self):
+        self._user_bots: Dict[str, DeltaNeutralBot] = {}
+        self._executor = ThreadPoolExecutor(max_workers=100)
+    
+    async def start_user_bot(self, user_id: str, config: UserConfig):
+        """Start a dedicated bot for a user."""
+        bot = DeltaNeutralBot(
+            user_id=user_id,
+            position_manager=self._get_user_position_manager(user_id),
+            config=config
+        )
+        self._user_bots[user_id] = bot
+        await bot.start()
+    
+    async def stop_user_bot(self, user_id: str):
+        """Stop a user's bot."""
+        if user_id in self._user_bots:
+            await self._user_bots[user_id].stop()
+            del self._user_bots[user_id]
+```
+
+#### 4. Settings Isolation
+
+```python
+class PerUserSettings:
+    """User-scoped configuration with defaults."""
+    
+    DEFAULTS = {
+        "max_leverage": 4.0,
+        "min_leverage": 2.0,
+        "default_leverage": 3.0,
+        "max_position_size_usd": 10000,
+        "max_positions_per_asset": 2
+    }
+    
+    async def get_setting(self, user_id: str, key: str) -> Any:
+        """Get setting for user, fallback to default."""
+        user_config = await self.db.get_user_config(user_id)
+        return user_config.get(key, self.DEFAULTS[key])
+```
+
+### 12.4 Migration Path
+
+**Phase 1 (Current):** Fix critical bugs, deploy as single-tenant-per-user
+- Fix FK bug in migration 003
+- Complete test coverage
+- Docker hardening
+
+**Phase 2:** Shared infrastructure with container-per-user
+- Add orchestrator service
+- Implement container lifecycle management
+- Add usage tracking for billing
+
+**Phase 3:** True multi-tenant (optional, based on scale needs)
+- Migrate to PostgreSQL
+- Implement per-user bot scheduler
+- Add row-level security
+
+---
+
+## 13. Testing Strategy
 
 ### 12.1 Test Infrastructure
 
@@ -1419,5 +1698,13 @@ BasisStrategy/
 ---
 
 *Document Version: 3.5 (Custom Privy Auth Flow)*  
-*Last Updated: 2026-02-06*  
+*Last Updated: 2026-02-10*  
 *Auth Specification: [PRIVY_AUTH_SPEC.md](../PRIVY_AUTH_SPEC.md)*
+
+---
+
+## Document Change Log
+
+| Version | Date | Changes |
+|---------|------|---------|
+| v3.5.1 | 2026-02-10 | Added Section 11.4 (Known Schema Issues), Section 12 (Future SaaS Enhancements), clarified hybrid multi-user/single-tenant architecture |
