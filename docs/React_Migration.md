@@ -21,7 +21,7 @@ Migrating the Delta Neutral Bot dashboard from server-rendered Jinja2 templates 
 
 ## Phase 1: Setup & Infrastructure
 
-**Status:** `[~]` In Progress
+**Status:** `[x]` Complete (functional, styling polish later)
 
 ### 1.1 Project Setup
 - [x] Create `frontend/` directory at project root
@@ -63,20 +63,21 @@ Migrating the Delta Neutral Bot dashboard from server-rendered Jinja2 templates 
 
 ## Phase 2: API Refactoring
 
-**Status:** `[ ]` Not Started
+**Status:** `[~]` In Progress
 
-### 2.1 Backend API Conversion
-- [ ] Audit all Jinja2 template routes in `main.py`
-- [ ] Convert each route to JSON API:
-  - [ ] Remove `TemplateResponse` returns
-  - [ ] Add proper JSON response models
-  - [ ] Keep existing business logic
-- [ ] Routes to convert:
-  - [ ] `/` (dashboard home)
-  - [ ] `/funding` (funding rates page)
-  - [ ] `/positions` (positions page)
-  - [ ] `/strategy` (strategy page)
-  - [ ] `/setup/*` (setup wizard pages)
+### 2.1 Backend API Conversion - React SPA
+- [x] Audit all Jinja2 template routes in `main.py`
+- [ ] Convert template routes to serve React SPA:
+  - [ ] Remove all `TemplateResponse` routes
+  - [ ] Serve `frontend/dist/index.html` for all non-API routes (SPA catch-all)
+  - [ ] Mount `frontend/dist` as static files at `/`
+- [ ] Routes to remove (now handled by React Router):
+  - [ ] `/` (dashboard home) → React handles this
+  - [ ] `/funding` → React handles this
+  - [ ] `/positions` → React handles this
+  - [ ] `/strategy` → React handles this
+  - [ ] `/login` → Privy SDK handles this
+  - [ ] `/setup/*` → Privy SDK handles wallet creation
 
 ### 2.2 Authentication API Updates
 - [ ] Update `/api/v1/auth/me` to return full user object
@@ -85,17 +86,17 @@ Migrating the Delta Neutral Bot dashboard from server-rendered Jinja2 templates 
 - [ ] Test: Auth flow returns valid tokens
 
 ### 2.3 API Client Layer
-- [ ] Create `src/api/client.ts` with axios instance
-- [ ] Add request/response interceptors
-- [ ] Implement error handling
-- [ ] Add API types/interfaces
-- [ ] Create service modules:
-  - [ ] `auth.ts`
-  - [ ] `positions.ts`
-  - [ ] `rates.ts`
-  - [ ] `settings.ts`
-  - [ ] `balances.ts`
-  - [ ] `control.ts`
+- [x] Create `src/api/client.ts` with axios instance
+- [x] Add request/response interceptors
+- [x] Implement error handling
+- [x] Add API types/interfaces
+- [x] Create service modules:
+  - [ ] `auth.ts` (using Privy SDK instead)
+  - [x] `positions.ts`
+  - [x] `rates.ts`
+  - [x] `settings.ts`
+  - [ ] `balances.ts` (TODO)
+  - [ ] `control.ts` (TODO)
 - [ ] Write tests: Mock API calls, verify error handling
 
 ### 2.4 Real-Time Updates
