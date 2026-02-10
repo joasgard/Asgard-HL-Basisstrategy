@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+/* Base styles - ensure background is set */
+html {
+  background-color: #111827;
+}
+
 @theme {
   --color-gray-900: #111827;
   --color-gray-800: #1f2937;
