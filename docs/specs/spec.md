@@ -1,11 +1,18 @@
-# Delta Neutral Bot - Technical Specification v3.4 (SaaS)
+# Delta Neutral Bot - Technical Specification v3.5 (SaaS)
 
 **Product**: Delta Neutral Funding Rate Arbitrage Bot  
 **Deployment Model**: Single-tenant SaaS (Docker per user)  
 **Wallet Infrastructure**: Privy Embedded Wallets (server-side signing)  
-**Authentication**: Privy OAuth (Shared App)  
-**Primary Interface**: Web Dashboard with 3-Step Setup + Action Hub  
-**Version**: 3.4 (Simplified Dashboard-First UX)  
+**Authentication**: Privy Email-Only with Custom Modals (v3.5)  
+**Primary Interface**: Web Dashboard with Connect → Email → OTP → Deposit Flow  
+**Version**: 3.5 (Custom Privy Auth Flow)
+
+> **v3.5 Change Log:**
+> - **Authentication**: New custom modal flow (email-only, inline OTP, deposit modal)
+> - **Header**: Connect button → Deposit + Settings dropdown after login
+> - **Session**: "Stay logged in" option (7 days vs 24 hours)
+> - **New User Flow**: Automatic deposit modal with QR codes for both chains
+> - **See**: [PRIVY_AUTH_SPEC.md](../PRIVY_AUTH_SPEC.md) for detailed auth specification  
 
 ---
 
@@ -196,54 +203,155 @@ A delta-neutral funding rate arbitrage system deployed as single-tenant containe
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 3.2 Authentication Flow (Pre-configured Privy OAuth)
+### 3.2 Authentication Flow (Privy Email-Only v3.5)
 
-> **v3.3 Update:** Privy app is pre-configured by operator. Users just authenticate.
+> **v3.5 Update:** New authentication flow with custom modals. Email-only (no Google/Twitter), inline OTP verification, deposit modal for new users.
 
-**First-Time Setup:**
-1. User accesses dashboard → redirected to `/setup`
-2. Click "Login with Privy" → OAuth popup (email, Google, or Twitter/X)
-3. Server receives Privy user ID from callback
-4. Server derives KEK from HMAC(privy_user_id, server_secret)
-5. DEK generated, encrypted with KEK, stored in `user_keys` table
-6. Session cookie issued (HTTP-only, Secure, SameSite=Strict)
-7. Complete remaining setup steps (wallets, funding, exchange, strategy)
-8. All credentials encrypted with DEK on final launch
+**Authentication Flow:**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  DASHBOARD HEADER                                               │
+├─────────────────────────────────────────────────────────────────┤
+│  Delta Neutral Bot                           [Connect]          │
+│                                    ↓                            │
+│                            Click Connect                        │
+│                                    ↓                            │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │  EMAIL LOGIN MODAL                                       │   │
+│  │  [X]                                                     │   │
+│  │                                                          │   │
+│  │       [Asgard.png Logo]                                  │   │
+│  │                                                          │   │
+│  │     Delta Neutral Bot                                    │   │
+│  │     Log in or sign up                                    │   │
+│  │                                                          │   │
+│  │     ┌─────────────────────────┐                          │   │
+│  │     │ ✉️  email@example.com   │                          │   │
+│  │     └─────────────────────────┘                          │   │
+│  │                                                          │   │
+│  │           [Continue]                                     │   │
+│  │                                                          │   │
+│  │     ☐ Stay logged in (for 7 days)                        │   │
+│  │                                                          │   │
+│  │     Protected by 🔒 Privy                                │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                                    ↓                            │
+│                           Submit Email                          │
+│                                    ↓                            │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │  OTP VERIFICATION MODAL                                  │   │
+│  │  [←] [X]                                                 │   │
+│  │                                                          │   │
+│  │              [✉️]                                        │   │
+│  │                                                          │   │
+│  │     Enter confirmation code                              │   │
+│  │     Please check your email for a code from privy.io     │   │
+│  │                                                          │   │
+│  │     [□] [□] [□] [□] [□] [□]                              │   │
+│  │                                                          │   │
+│  │     Didn't get an email? Resend code (60s)               │   │
+│  │                                                          │   │
+│  │     Protected by 🔒 Privy                                │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                                    ↓                            │
+│                         Enter 6-Digit Code                      │
+│                                    ↓                            │
+│                         Check: New or Existing?                 │
+│                                    ↓                            │
+│              ┌─────────────────────┼─────────────────────┐     │
+│              │                     │                     │     │
+│         Existing User          New User              Existing   │
+│              │                     │                     │       │
+│              ▼                     ▼                     ▼       │
+│  ┌─────────────────┐    ┌─────────────────────────┐    ┌──────┐│
+│  │ Check Balance   │    │ DEPOSIT MODAL           │    │ Dash-││
+│  │                 │    │                         │    │ board││
+│  │ Funded? → Go to │    │  Deposit to Start       │    │      ││
+│  │ Dashboard       │    │  Trading            [X] │    │      ││
+│  │                 │    │                         │    │      ││
+│  │ Not funded? →   │    │  [◎] Solana (Asgard)    │    │      ││
+│  │ Show Deposit    │    │  [QR Code]              │    │      ││
+│  │ Modal           │    │  0x1234...5678 [Copy]   │    │      ││
+│  └─────────────────┘    │                         │    │      ││
+│                         │  [◉] Hyperliquid         │    │      ││
+│                         │  [QR Code]              │    │      ││
+│                         │  0x5678...1234 [Copy]   │    │      ││
+│                         │                         │    │      ││
+│                         │     [Go to Dashboard]   │    │      ││
+│                         └─────────────────────────┘    └──────┘│
+└─────────────────────────────────────────────────────────────────┘
+
+POST-LOGIN HEADER STATE:
+┌─────────────────────────────────────────────────────────────────┐
+│  Delta Neutral Bot                         [Deposit] [⚙️]        │
+│                                              ↓ Dropdown          │
+│                                              ├─ View Profile     │
+│                                              ├─ Settings         │
+│                                              └─ Disconnect       │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**First-Time Setup (New User):**
+1. User clicks "Connect" in dashboard header
+2. Email login modal opens (blur backdrop, centered)
+3. User enters email, clicks "Continue"
+4. Privy sends OTP to email
+5. OTP modal appears with 6-digit input
+6. User enters code, Privy validates
+7. Backend creates user record with Privy user ID
+8. Backend calls Privy to create Solana + EVM wallets
+9. Wallets stored in `users` table (addresses are public)
+10. **NEW:** Deposit modal shows for new users
+    - Display both wallet addresses with QR codes
+    - Solana address (for Asgard) + Arbitrum address (for Hyperliquid)
+    - "Go to Dashboard" button (can skip deposit)
+11. Session cookie issued (HTTP-only, Secure, SameSite=Strict)
+    - Duration: 7 days if "Stay logged in" checked, else 24 hours
 
 **Returning User:**
-1. Access dashboard → click "Login with Privy"
-2. Authenticate via OAuth (same account = same wallets)
-3. Server derives same KEK from user ID + server secret
-4. Decrypt DEK from database
-5. Session issued with unlocked encryption manager
+1. Click "Connect" → Email modal → OTP modal
+2. Backend finds existing user by Privy user ID
+3. Check wallet balances on-chain
+4. If funded → Go directly to dashboard
+5. If not funded → Show deposit modal
+6. Session issued with unlocked encryption manager
 
-**Why This Works:**
-- Privy app is shared across all users (configured by operator)
-- Each user gets unique wallets via their Privy user ID
-- KEK derivation ensures encryption isolation per user
-- Account recovery handled by Privy (email-based)
+**Key Implementation Details:**
 
-**Session Management:**
+| Aspect | Implementation |
+|--------|---------------|
+| **SDK** | Privy JavaScript SDK (`@privy-io/privy-browser`) via CDN |
+| **UI** | Custom HTML/CSS modals (not Privy pre-built) |
+| **Session** | JWT in httpOnly cookie (7 days or 24 hours) |
+| **Wallets** | Auto-created on first login (Solana + Arbitrum) |
+| **Address Display** | Full 42-character address + QR code |
+| **Resend Cooldown** | 60 seconds |
+| **Logo** | Asgard.png in modal header |
+| **Badge** | "Protected by Privy" at bottom |
+
+**Backend Endpoints:**
 ```python
+# Authentication
+POST /api/v1/auth/privy/initiate     # Start email auth, returns session
+POST /api/v1/auth/privy/verify       # Verify OTP code
+POST /api/v1/auth/refresh            # Refresh session
+POST /api/v1/auth/logout             # Clear session
+GET  /api/v1/auth/me                 # Get current user + wallet addresses
+
+# Session Management
 class SessionManager:
-    SESSION_TIMEOUT_MINUTES = 30
-    MAX_SESSION_HOURS = 8
-    
-    def _derive_kek(self, privy_user_id: str, server_secret: str) -> bytes:
-        """Derive KEK from Privy user ID and server secret."""
-        return hmac.new(
-            server_secret.encode(),
-            privy_user_id.encode(),
-            hashlib.sha256
-        ).digest()
+    SESSION_SHORT_HOURS = 24      # Unchecked "Stay logged in"
+    SESSION_LONG_DAYS = 7         # Checked "Stay logged in"
     
     async def create_session(
         self, 
         privy_user_id: str,
         email: str,
+        stay_logged_in: bool,
         server_secret: str
     ) -> Session:
-        """Create new session after successful Privy auth."""
+        """Create new session after successful Privy OTP verification."""
         session_id = secrets.token_urlsafe(32)
         csrf_token = secrets.token_urlsafe(32)
         
@@ -251,24 +359,59 @@ class SessionManager:
         kek = self._derive_kek(privy_user_id, server_secret)
         encrypted_dek = await self._get_or_create_dek(privy_user_id, kek)
         
-        # Store session metadata (no KEK!)
+        # Calculate expiration based on "Stay logged in"
+        if stay_logged_in:
+            expires_at = now() + timedelta(days=self.SESSION_LONG_DAYS)
+        else:
+            expires_at = now() + timedelta(hours=self.SESSION_SHORT_HOURS)
+        
+        # Store session
         await self.db.execute(
             """INSERT INTO sessions 
                (id, privy_user_id, email, created_at, expires_at, csrf_token) 
                VALUES (?, ?, ?, ?, ?, ?)""",
-            (session_id, privy_user_id, email, 
-             now(), now() + timedelta(hours=8), csrf_token)
+            (session_id, privy_user_id, email, now(), expires_at, csrf_token)
         )
         
-        session = Session(
-            id=session_id,
-            privy_user_id=privy_user_id,
-            email=email,
-            csrf_token=csrf_token
-        )
-        session.encryption_manager.unlock_with_dek(encrypted_dek, kek)
-        return session
+        return Session(...)
 ```
+
+**Database Schema (Updated):**
+```sql
+-- Users table (stores wallet addresses, public info)
+CREATE TABLE users (
+    id TEXT PRIMARY KEY,           -- Privy user ID
+    email TEXT UNIQUE,              -- User's email (from Privy)
+    solana_address TEXT,           -- Solana wallet address
+    evm_address TEXT,              -- EVM/Arbitrum wallet address
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_login TIMESTAMP,
+    is_new_user BOOLEAN DEFAULT TRUE  -- For showing deposit modal
+);
+
+-- Sessions table (unchanged)
+CREATE TABLE sessions (
+    id TEXT PRIMARY KEY,
+    privy_user_id TEXT REFERENCES users(id),
+    email TEXT,
+    created_at TIMESTAMP,
+    expires_at TIMESTAMP,
+    csrf_token TEXT
+);
+```
+
+**Security Considerations:**
+1. **httpOnly Cookies** - Session token not accessible via JavaScript
+2. **CSRF Protection** - CSRF token required for state-changing requests
+3. **Rate Limiting** - 5 OTP attempts per 15 minutes
+4. **Input Validation** - Email format validation, OTP 6-digit numeric
+5. **CSP Headers** - Content Security Policy for Privy scripts
+6. **User Isolation** - Users can only see their own wallet addresses via `/auth/me`
+
+**Previous Authentication (v3.3 and earlier):**
+- Used Privy OAuth with Google/Twitter options
+- Required redirect to Privy's hosted page
+- See [PRIVY_AUTH_SPEC.md](../PRIVY_AUTH_SPEC.md) for detailed comparison
 
 ### 3.3 Privy OAuth Providers
 
@@ -1275,5 +1418,6 @@ BasisStrategy/
 
 ---
 
-*Document Version: 3.4 (Dashboard-First UX)*  
-*Last Updated: 2026-02-06*
+*Document Version: 3.5 (Custom Privy Auth Flow)*  
+*Last Updated: 2026-02-06*  
+*Auth Specification: [PRIVY_AUTH_SPEC.md](../PRIVY_AUTH_SPEC.md)*

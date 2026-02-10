@@ -1,11 +1,11 @@
 # Delta Neutral Bot - Implementation Tracker
 
 **Project:** Asgard + Hyperliquid Delta Neutral Funding Rate Arbitrage Bot  
-**Spec:** [docs/specs/spec.md](../specs/spec.md) (v3.4 - Dashboard-First UX)  
+**Spec:** [docs/specs/spec.md](../specs/spec.md) (v3.5 - Custom Privy Auth Flow)  
 **Strategy:** Equal Leverage Delta Neutral (3-4x, default 3x)  
 **Deployment:** Single-tenant Docker with Privy embedded wallets  
-**Auth:** Privy OAuth (shared app) - NO CONFIGURATION NEEDED  
-**UX:** 3-step setup → Dashboard with Funding + Launch buttons
+**Auth:** Privy Email-Only with Custom Modals (v3.5)  
+**UX:** Connect → Email → OTP → Deposit (new users) → Dashboard
 
 ---
 
@@ -109,15 +109,60 @@ The core trading engine is **COMPLETE** with 555 tests passing. This was built i
 
 ### 🚧 Section 3: Authentication & Encryption [CRITICAL]
 
+#### 3.1 Core Security (BUILT) ✅
+
 | Component | Location | Status | Notes |
 |-----------|----------|--------|-------|
 | **Encryption module** | `src/security/encryption.py` | `[x]` | AES-256-GCM + HMAC ✅ |
-| **Privy OAuth** | `src/dashboard/auth.py` | `[x]` | Shared app, email/Google/Twitter ✅ |
 | **Server-secret KEK** | `src/dashboard/auth.py` | `[x]` | HMAC(user_id, server_secret) ✅ |
-| **Session manager** | `src/dashboard/auth.py` | `[x]` | 30min timeout ✅ |
 | **CSRF protection** | `src/dashboard/auth.py` | `[x]` | Token validation ✅ |
 | **Session cookies** | `src/dashboard/auth.py` | `[x]` | HTTP-only, Secure ✅ |
-| **Account recovery** | N/A | `[x]` | **Handled by Privy** ✅ |
+
+#### 3.2 New Privy Auth Flow (v3.5) [IN PROGRESS]
+
+> **v3.5 Update:** New custom modal-based authentication with email-only login, inline OTP, and deposit modal. See [PRIVY_AUTH_SPEC.md](../PRIVY_AUTH_SPEC.md) for full specification.
+
+| Component | Location | Status | Notes |
+|-----------|----------|--------|-------|
+| **Users table migration** | `migrations/004_users_table.sql` | `[ ]` | Store wallet addresses, email, is_new_user |
+| **Privy JS SDK integration** | `templates/dashboard.html` | `[ ]` | Add `@privy-io/privy-browser` CDN |
+| **Connect button** | `templates/dashboard.html` | `[ ]` | Header "Connect" button |
+| **Email modal** | `templates/auth.html` | `[ ]` | Custom email entry modal (Image 3 style) |
+| **OTP modal** | `templates/auth.html` | `[ ]` | 6-digit code entry (Image 4 style) |
+| **Deposit modal** | `templates/auth.html` | `[ ]` | New user deposit with QR codes (both chains) |
+| **QR code generation** | `static/js/qrcode.min.js` | `[ ]` | Client-side QR generation |
+| **POST /auth/privy/initiate** | `src/dashboard/api/auth.py` | `[ ]` | Start auth, return session |
+| **POST /auth/privy/verify** | `src/dashboard/api/auth.py` | `[ ]` | Verify OTP, create user if new |
+| **POST /auth/logout** | `src/dashboard/api/auth.py` | `[ ]` | Clear session cookie |
+| **GET /auth/me** | `src/dashboard/api/auth.py` | `[ ]` | Return user + wallet addresses |
+| **Wallet creation** | `src/dashboard/privy_client.py` | `[ ]` | Auto-create Solana + EVM on signup |
+| **Balance checker** | `src/dashboard/api/balances.py` | `[ ]` | Check on-chain balances |
+| **Session middleware** | `src/dashboard/middleware.py` | `[ ]` | Validate JWT, attach user |
+| **Header state management** | `templates/dashboard.html` | `[ ]` | Connect → Deposit + Settings dropdown |
+| **"Stay logged in" option** | `templates/auth.html` | `[ ]` | 7 days vs 24 hours session |
+| **Rate limiting** | `src/dashboard/api/auth.py` | `[ ]` | 5 OTP attempts per 15 min |
+| **Email validation** | `src/dashboard/api/auth.py` | `[ ]` | Format validation |
+| **Error handling** | `templates/auth.html` | `[ ]` | Inline errors, shake animation |
+| **Protected by Privy badge** | `templates/auth.html` | `[ ]` | Footer badge on all modals |
+
+**Auth Flow State Machine:**
+```
+[Connect] → [Email Modal] → [OTP Modal] → (New? → [Deposit Modal]) → [Dashboard]
+                                              ↓
+                                         (Existing? → Check Balance → [Dashboard or Deposit])
+```
+
+**Deposit Modal Requirements:**
+- Display Solana address with QR code (Asgard)
+- Display Arbitrum address with QR code (Hyperliquid)
+- Full 42-character addresses with copy buttons
+- "Go to Dashboard" button (skip deposit)
+- Show for new users OR existing users with $0 balance
+
+**Previous Auth (v3.3 and earlier):**
+- Used Privy OAuth with Google/Twitter options
+- Required redirect to Privy's hosted page
+- **Status:** Replaced by new flow above | `[~]` Deprecated
 
 ---
 
@@ -142,12 +187,26 @@ The core trading engine is **COMPLETE** with 555 tests passing. This was built i
 
 | Component | Location | Status | Notes |
 |-----------|----------|--------|-------|
-| **Top Ribbon** | `templates/dashboard.html` | `[ ]` | Two big buttons: FUND + LAUNCH |
+| **Header - Before Login** | `templates/dashboard.html` | `[ ]` | "Connect" button (top right) |
+| **Header - After Login** | `templates/dashboard.html` | `[ ]` | "Deposit" button + Settings ⚙️ |
+| **Settings Dropdown** | `templates/dashboard.html` | `[ ]` | View Profile, Settings, Disconnect |
 | **🔴 FUND WALLETS button** | `templates/dashboard.html` | `[ ]` | Opens funding modal/page |
 | **🟢 LAUNCH STRATEGY button** | `templates/dashboard.html` | `[ ]` | Opens strategy config modal |
 | **Trade Status Display** | `templates/components/` | `[ ]` | Bot status, positions, PnL |
 | **Wallet Balances** | `templates/components/` | `[ ]` | Real-time balance display |
 | **SSE Updates** | `src/dashboard/api/events.py` | `[ ]` | Real-time trade updates |
+
+**Header State Change:**
+```
+BEFORE LOGIN:                    AFTER LOGIN:
+┌──────────────────┐            ┌──────────────────────────┐
+│     Connect      │     →      │  Deposit  [⚙️]           │
+└──────────────────┘            └──────────────────────────┘
+                                 Dropdown:
+                                 - View Profile
+                                 - Settings
+                                 - Disconnect
+```
 
 **Dashboard Layout:**
 ```
@@ -267,12 +326,25 @@ GET  /api/v1/balances           # Wallet balances
 
 ## ✅ COMPLETED
 
-### Setup & Auth
-- [x] Privy OAuth login
+### Setup & Auth (v3.4 and earlier)
 - [x] Server-secret KEK derivation (HMAC)
-- [x] Session management (30min timeout)
+- [x] Encryption module (AES-256-GCM)
+- [x] CSRF protection
+- [x] Session cookies (HTTP-only, Secure)
 - [x] 3-step wizard (Auth → Wallets → Exchange)
 - [x] Optional API keys (wallet auth works without)
+- [~] **Privy OAuth login (v3.3)** - Being replaced by new email-only flow
+
+### 🚧 NEW: Privy Email Auth (v3.5) - Implementation Queue
+- [ ] Users table migration
+- [ ] Privy JS SDK integration
+- [ ] Email modal (custom UI)
+- [ ] OTP modal (6-digit inline)
+- [ ] Deposit modal (QR codes for both chains)
+- [ ] Connect → Deposit header transition
+- [ ] Settings dropdown menu
+- [ ] Session duration (7 days / 24 hours)
+- [ ] Rate limiting (5 OTP / 15 min)
 
 ### Dashboard v2.0 - 2 Tab Layout
 - [x] **Home Tab**
@@ -511,5 +583,6 @@ ADMIN_API_KEY=$(openssl rand -hex 32)
 ---
 
 *Last Updated: 2026-02-06*  
-*Tracker Version: 8.0 (Dashboard-First UX)*  
-*Spec Reference: docs/specs/spec.md v3.4*
+*Tracker Version: 8.1 (Privy Custom Auth Flow)*  
+*Spec Reference: docs/specs/spec.md v3.5*
+*Auth Spec: docs/PRIVY_AUTH_SPEC.md*
