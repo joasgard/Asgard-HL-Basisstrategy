@@ -1,25 +1,24 @@
 -- Migration: Add position_jobs table for async position opening
 -- Version: 3
--- Date: 2026-02-07
+-- PostgreSQL version
 
 -- Table for tracking async position opening jobs
 CREATE TABLE IF NOT EXISTS position_jobs (
     job_id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
     status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'completed', 'failed', 'cancelled')),
-    params TEXT NOT NULL,  -- JSON of OpenPositionRequest
-    result TEXT,           -- JSON result on completion
-    error TEXT,            -- Error message if failed
-    error_stage TEXT,      -- Where it failed (preflight, asgard_open, hyperliquid_open, validation)
-    position_id TEXT,      -- Set on success
-    asgard_pda TEXT,       -- Asgard position PDA if opened
-    unwind_attempted BOOLEAN DEFAULT 0,  -- Whether unwind was attempted on failure
-    unwind_successful BOOLEAN,           -- Whether unwind succeeded
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    started_at TIMESTAMP,  -- When job started executing
-    completed_at TIMESTAMP, -- When job finished
-    
-    FOREIGN KEY (user_id) REFERENCES users(id)
+    params JSONB NOT NULL,
+    result JSONB,
+    error TEXT,
+    error_stage TEXT,
+    position_id TEXT,
+    asgard_pda TEXT,
+    unwind_attempted BOOLEAN DEFAULT false,
+    unwind_successful BOOLEAN,
+    created_at TIMESTAMP DEFAULT NOW(),
+    started_at TIMESTAMP,
+    completed_at TIMESTAMP
+    -- FK to users(id) added in migration 004 after users table exists
 );
 
 -- Index for querying user's jobs

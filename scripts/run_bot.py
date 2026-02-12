@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
-"""Simple script to run the Delta Neutral Bot."""
+"""Simple script to run the Asgard Basis bot."""
 
 import asyncio
 import signal
-from src.core.bot import DeltaNeutralBot, BotConfig
-from src.config.settings import get_settings
+from bot.core.bot import DeltaNeutralBot, BotConfig
+from bot.core.internal_api import internal_app, set_bot_instance
+from shared.config.settings import get_settings
 
 
 async def main():
-    """Run the bot."""
+    """Run the bot and internal API server."""
     # Load config from settings
     settings = get_settings()
-    
+
     config = BotConfig(
         admin_api_key=settings.admin_api_key,
         max_concurrent_positions=5,
@@ -19,25 +20,46 @@ async def main():
         enable_auto_exit=True,
         enable_circuit_breakers=True,
     )
-    
-    # Create and run bot
+
+    # Create bot
     bot = DeltaNeutralBot(config)
-    
+
     # Setup signal handlers for graceful shutdown
+    shutdown_event = asyncio.Event()
+
     def signal_handler(sig, frame):
         print("\nShutdown signal received, stopping bot...")
-        asyncio.create_task(bot.shutdown())
-    
+        shutdown_event.set()
+
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
-    
+
     # Run bot with setup
     async with bot:
-        await bot.run()
+        # Register bot instance with internal API
+        set_bot_instance(bot)
+
+        # Start internal API server (for dashboard communication)
+        import uvicorn
+        api_config = uvicorn.Config(
+            internal_app,
+            host="127.0.0.1",
+            port=8000,
+            log_level="info",
+        )
+        api_server = uvicorn.Server(api_config)
+
+        print("Internal API serving on http://127.0.0.1:8000")
+
+        # Run bot and API server concurrently
+        await asyncio.gather(
+            bot.run(),
+            api_server.serve(),
+        )
 
 
 if __name__ == "__main__":
-    print("Starting Delta Neutral Bot...")
+    print("Starting Asgard Basis bot...")
     print("Press Ctrl+C to stop gracefully")
     try:
         asyncio.run(main())

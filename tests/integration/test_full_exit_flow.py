@@ -9,15 +9,15 @@ from decimal import Decimal
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.core.bot import DeltaNeutralBot, BotConfig
-from src.core.risk_engine import ExitReason, RiskLevel, ExitDecision
-from src.models.position import (
+from bot.core.bot import DeltaNeutralBot, BotConfig
+from bot.core.risk_engine import ExitReason, RiskLevel, ExitDecision
+from shared.models.position import (
     AsgardPosition, 
     HyperliquidPosition, 
     CombinedPosition,
     PositionReference
 )
-from src.models.common import Asset, Protocol
+from shared.models.common import Asset, Protocol
 
 
 @pytest.fixture
@@ -64,8 +64,8 @@ def mock_open_position():
 
 @pytest.fixture
 def mock_positions(mock_open_position):
-    """Create a dict of mock positions."""
-    return {mock_open_position.position_id: mock_open_position}
+    """Create a dict of mock positions (nested by user_id)."""
+    return {"default": {mock_open_position.position_id: mock_open_position}}
 
 
 class TestFullExitFlow:
@@ -75,15 +75,15 @@ class TestFullExitFlow:
     async def test_successful_exit_flow(self, mock_open_position):
         """Test successful end-to-end position exit."""
         
-        with patch('src.core.bot.StatePersistence') as mock_state, \
-             patch('src.core.bot.SolanaClient'), \
-             patch('src.core.bot.ArbitrumClient'), \
-             patch('src.core.bot.RiskEngine'), \
-             patch('src.core.bot.PositionSizer'), \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController'), \
-             patch('src.core.bot.PositionManager') as mock_pm_class, \
-             patch('src.core.bot.OpportunityDetector'):
+        with patch('bot.core.bot.StatePersistence') as mock_state, \
+             patch('bot.core.bot.SolanaClient'), \
+             patch('bot.core.bot.ArbitrumClient'), \
+             patch('bot.core.bot.RiskEngine'), \
+             patch('bot.core.bot.PositionSizer'), \
+             patch('bot.core.bot.LSTMonitor'), \
+             patch('bot.core.bot.PauseController'), \
+             patch('bot.core.bot.PositionManager') as mock_pm_class, \
+             patch('bot.core.bot.OpportunityDetector'):
             
             mock_state_instance = AsyncMock()
             mock_state.return_value = mock_state_instance
@@ -99,13 +99,13 @@ class TestFullExitFlow:
             await bot.setup()
             
             # Set up the position
-            bot._positions[mock_open_position.position_id] = mock_open_position
-            
+            bot._positions.setdefault("default", {})[mock_open_position.position_id] = mock_open_position
+
             # Execute exit
             await bot._execute_exit(mock_open_position, "test_exit")
-            
+
             # Verify position was removed
-            assert len(bot._positions) == 0
+            assert sum(len(v) for v in bot._positions.values()) == 0
             assert bot._stats.positions_closed == 1
             
             # Verify state was updated
@@ -120,15 +120,15 @@ class TestFullExitFlow:
     async def test_exit_hyperliquid_first_then_asgard(self, mock_open_position):
         """Test that exit closes Hyperliquid before Asgard (spec 5.2)."""
         
-        with patch('src.core.bot.StatePersistence') as mock_state, \
-             patch('src.core.bot.SolanaClient'), \
-             patch('src.core.bot.ArbitrumClient'), \
-             patch('src.core.bot.RiskEngine'), \
-             patch('src.core.bot.PositionSizer'), \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController'), \
-             patch('src.core.bot.PositionManager') as mock_pm_class, \
-             patch('src.core.bot.OpportunityDetector'):
+        with patch('bot.core.bot.StatePersistence') as mock_state, \
+             patch('bot.core.bot.SolanaClient'), \
+             patch('bot.core.bot.ArbitrumClient'), \
+             patch('bot.core.bot.RiskEngine'), \
+             patch('bot.core.bot.PositionSizer'), \
+             patch('bot.core.bot.LSTMonitor'), \
+             patch('bot.core.bot.PauseController'), \
+             patch('bot.core.bot.PositionManager') as mock_pm_class, \
+             patch('bot.core.bot.OpportunityDetector'):
             
             mock_state_instance = AsyncMock()
             mock_state.return_value = mock_state_instance
@@ -143,11 +143,11 @@ class TestFullExitFlow:
             bot = DeltaNeutralBot(config=config)
             await bot.setup()
             
-            bot._positions[mock_open_position.position_id] = mock_open_position
-            
+            bot._positions.setdefault("default", {})[mock_open_position.position_id] = mock_open_position
+
             # Execute exit
             await bot._execute_exit(mock_open_position, "test_exit")
-            
+
             # Note: The position manager is responsible for the ordering,
             # we just verify it was called
             mock_pm_instance.close_position.assert_called_once_with(
@@ -160,15 +160,15 @@ class TestFullExitFlow:
     async def test_exit_with_close_failure(self, mock_open_position):
         """Test exit when close operation fails."""
         
-        with patch('src.core.bot.StatePersistence') as mock_state, \
-             patch('src.core.bot.SolanaClient'), \
-             patch('src.core.bot.ArbitrumClient'), \
-             patch('src.core.bot.RiskEngine'), \
-             patch('src.core.bot.PositionSizer'), \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController'), \
-             patch('src.core.bot.PositionManager') as mock_pm_class, \
-             patch('src.core.bot.OpportunityDetector'):
+        with patch('bot.core.bot.StatePersistence') as mock_state, \
+             patch('bot.core.bot.SolanaClient'), \
+             patch('bot.core.bot.ArbitrumClient'), \
+             patch('bot.core.bot.RiskEngine'), \
+             patch('bot.core.bot.PositionSizer'), \
+             patch('bot.core.bot.LSTMonitor'), \
+             patch('bot.core.bot.PauseController'), \
+             patch('bot.core.bot.PositionManager') as mock_pm_class, \
+             patch('bot.core.bot.OpportunityDetector'):
             
             mock_state_instance = AsyncMock()
             mock_state.return_value = mock_state_instance
@@ -183,13 +183,13 @@ class TestFullExitFlow:
             bot = DeltaNeutralBot(config=config)
             await bot.setup()
             
-            bot._positions[mock_open_position.position_id] = mock_open_position
-            
+            bot._positions.setdefault("default", {})[mock_open_position.position_id] = mock_open_position
+
             # Execute exit - should fail
             await bot._execute_exit(mock_open_position, "test_exit")
-            
+
             # Verify position is still tracked
-            assert len(bot._positions) == 1
+            assert sum(len(v) for v in bot._positions.values()) == 1
             assert bot._stats.positions_closed == 0
             
             # Verify state was NOT updated
@@ -201,15 +201,15 @@ class TestFullExitFlow:
     async def test_exit_due_to_negative_apy(self, mock_open_position):
         """Test exit triggered by negative APY condition."""
         
-        with patch('src.core.bot.StatePersistence') as mock_state, \
-             patch('src.core.bot.SolanaClient'), \
-             patch('src.core.bot.ArbitrumClient'), \
-             patch('src.core.bot.RiskEngine') as mock_risk_class, \
-             patch('src.core.bot.PositionSizer'), \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController') as mock_pause_class, \
-             patch('src.core.bot.PositionManager') as mock_pm_class, \
-             patch('src.core.bot.OpportunityDetector'):
+        with patch('bot.core.bot.StatePersistence') as mock_state, \
+             patch('bot.core.bot.SolanaClient'), \
+             patch('bot.core.bot.ArbitrumClient'), \
+             patch('bot.core.bot.RiskEngine') as mock_risk_class, \
+             patch('bot.core.bot.PositionSizer'), \
+             patch('bot.core.bot.LSTMonitor'), \
+             patch('bot.core.bot.PauseController') as mock_pause_class, \
+             patch('bot.core.bot.PositionManager') as mock_pm_class, \
+             patch('bot.core.bot.OpportunityDetector'):
             
             mock_state_instance = AsyncMock()
             mock_state.return_value = mock_state_instance
@@ -240,13 +240,13 @@ class TestFullExitFlow:
             bot = DeltaNeutralBot(config=config)
             await bot.setup()
             
-            bot._positions[mock_open_position.position_id] = mock_open_position
-            
+            bot._positions.setdefault("default", {})[mock_open_position.position_id] = mock_open_position
+
             # Run monitor cycle which should detect exit condition
             await bot._monitor_position(mock_open_position)
-            
+
             # Verify exit was executed
-            assert len(bot._positions) == 0
+            assert sum(len(v) for v in bot._positions.values()) == 0
             assert bot._stats.positions_closed == 1
             
             await bot.shutdown()
@@ -255,15 +255,15 @@ class TestFullExitFlow:
     async def test_exit_due_to_funding_flip(self, mock_open_position):
         """Test exit triggered by funding rate flip."""
         
-        with patch('src.core.bot.StatePersistence') as mock_state, \
-             patch('src.core.bot.SolanaClient'), \
-             patch('src.core.bot.ArbitrumClient'), \
-             patch('src.core.bot.RiskEngine') as mock_risk_class, \
-             patch('src.core.bot.PositionSizer'), \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController') as mock_pause_class, \
-             patch('src.core.bot.PositionManager') as mock_pm_class, \
-             patch('src.core.bot.OpportunityDetector'):
+        with patch('bot.core.bot.StatePersistence') as mock_state, \
+             patch('bot.core.bot.SolanaClient'), \
+             patch('bot.core.bot.ArbitrumClient'), \
+             patch('bot.core.bot.RiskEngine') as mock_risk_class, \
+             patch('bot.core.bot.PositionSizer'), \
+             patch('bot.core.bot.LSTMonitor'), \
+             patch('bot.core.bot.PauseController') as mock_pause_class, \
+             patch('bot.core.bot.PositionManager') as mock_pm_class, \
+             patch('bot.core.bot.OpportunityDetector'):
             
             mock_state_instance = AsyncMock()
             mock_state.return_value = mock_state_instance
@@ -297,13 +297,13 @@ class TestFullExitFlow:
             bot = DeltaNeutralBot(config=config)
             await bot.setup()
             
-            bot._positions[mock_open_position.position_id] = mock_open_position
-            
+            bot._positions.setdefault("default", {})[mock_open_position.position_id] = mock_open_position
+
             # Run monitor cycle
             await bot._monitor_position(mock_open_position)
-            
+
             # Verify exit was executed
-            assert len(bot._positions) == 0
+            assert sum(len(v) for v in bot._positions.values()) == 0
             
             await bot.shutdown()
 
@@ -325,15 +325,15 @@ class TestExitCallbacks:
             callback_position = position
             callback_reason = reason
         
-        with patch('src.core.bot.StatePersistence') as mock_state, \
-             patch('src.core.bot.SolanaClient'), \
-             patch('src.core.bot.ArbitrumClient'), \
-             patch('src.core.bot.RiskEngine'), \
-             patch('src.core.bot.PositionSizer'), \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController'), \
-             patch('src.core.bot.PositionManager') as mock_pm_class, \
-             patch('src.core.bot.OpportunityDetector'):
+        with patch('bot.core.bot.StatePersistence') as mock_state, \
+             patch('bot.core.bot.SolanaClient'), \
+             patch('bot.core.bot.ArbitrumClient'), \
+             patch('bot.core.bot.RiskEngine'), \
+             patch('bot.core.bot.PositionSizer'), \
+             patch('bot.core.bot.LSTMonitor'), \
+             patch('bot.core.bot.PauseController'), \
+             patch('bot.core.bot.PositionManager') as mock_pm_class, \
+             patch('bot.core.bot.OpportunityDetector'):
             
             mock_state_instance = AsyncMock()
             mock_state.return_value = mock_state_instance
@@ -349,11 +349,11 @@ class TestExitCallbacks:
             bot.add_position_closed_callback(callback)
             await bot.setup()
             
-            bot._positions[mock_open_position.position_id] = mock_open_position
-            
+            bot._positions.setdefault("default", {})[mock_open_position.position_id] = mock_open_position
+
             # Execute exit
             await bot._execute_exit(mock_open_position, "manual_exit")
-            
+
             # Verify callback was triggered
             assert callback_triggered is True
             assert callback_position is not None
@@ -374,15 +374,15 @@ class TestExitCallbacks:
         def callback2(position, reason):
             callbacks_triggered.append("callback2")
         
-        with patch('src.core.bot.StatePersistence') as mock_state, \
-             patch('src.core.bot.SolanaClient'), \
-             patch('src.core.bot.ArbitrumClient'), \
-             patch('src.core.bot.RiskEngine'), \
-             patch('src.core.bot.PositionSizer'), \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController'), \
-             patch('src.core.bot.PositionManager') as mock_pm_class, \
-             patch('src.core.bot.OpportunityDetector'):
+        with patch('bot.core.bot.StatePersistence') as mock_state, \
+             patch('bot.core.bot.SolanaClient'), \
+             patch('bot.core.bot.ArbitrumClient'), \
+             patch('bot.core.bot.RiskEngine'), \
+             patch('bot.core.bot.PositionSizer'), \
+             patch('bot.core.bot.LSTMonitor'), \
+             patch('bot.core.bot.PauseController'), \
+             patch('bot.core.bot.PositionManager') as mock_pm_class, \
+             patch('bot.core.bot.OpportunityDetector'):
             
             mock_state_instance = AsyncMock()
             mock_state.return_value = mock_state_instance
@@ -399,11 +399,11 @@ class TestExitCallbacks:
             bot.add_position_closed_callback(callback2)
             await bot.setup()
             
-            bot._positions[mock_open_position.position_id] = mock_open_position
-            
+            bot._positions.setdefault("default", {})[mock_open_position.position_id] = mock_open_position
+
             # Execute exit
             await bot._execute_exit(mock_open_position, "test")
-            
+
             # Verify both callbacks were triggered
             assert "callback1" in callbacks_triggered
             assert "callback2" in callbacks_triggered
@@ -456,15 +456,15 @@ class TestExitWithDifferentAssets:
             status="open",
         )
         
-        with patch('src.core.bot.StatePersistence') as mock_state, \
-             patch('src.core.bot.SolanaClient'), \
-             patch('src.core.bot.ArbitrumClient'), \
-             patch('src.core.bot.RiskEngine'), \
-             patch('src.core.bot.PositionSizer'), \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController'), \
-             patch('src.core.bot.PositionManager') as mock_pm_class, \
-             patch('src.core.bot.OpportunityDetector'):
+        with patch('bot.core.bot.StatePersistence') as mock_state, \
+             patch('bot.core.bot.SolanaClient'), \
+             patch('bot.core.bot.ArbitrumClient'), \
+             patch('bot.core.bot.RiskEngine'), \
+             patch('bot.core.bot.PositionSizer'), \
+             patch('bot.core.bot.LSTMonitor'), \
+             patch('bot.core.bot.PauseController'), \
+             patch('bot.core.bot.PositionManager') as mock_pm_class, \
+             patch('bot.core.bot.OpportunityDetector'):
             
             mock_state_instance = AsyncMock()
             mock_state.return_value = mock_state_instance
@@ -479,13 +479,13 @@ class TestExitWithDifferentAssets:
             bot = DeltaNeutralBot(config=config)
             await bot.setup()
             
-            bot._positions[position.position_id] = position
-            
+            bot._positions.setdefault("default", {})[position.position_id] = position
+
             # Execute exit
             await bot._execute_exit(position, "test_exit")
-            
+
             # Verify position was removed
-            assert len(bot._positions) == 0
+            assert sum(len(v) for v in bot._positions.values()) == 0
             
             await bot.shutdown()
 
@@ -497,15 +497,15 @@ class TestExitWhilePaused:
     async def test_exit_not_executed_while_paused(self, mock_open_position):
         """Test that auto-exit doesn't happen when bot is paused."""
         
-        with patch('src.core.bot.StatePersistence') as mock_state, \
-             patch('src.core.bot.SolanaClient'), \
-             patch('src.core.bot.ArbitrumClient'), \
-             patch('src.core.bot.RiskEngine') as mock_risk_class, \
-             patch('src.core.bot.PositionSizer'), \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController') as mock_pause_class, \
-             patch('src.core.bot.PositionManager') as mock_pm_class, \
-             patch('src.core.bot.OpportunityDetector'):
+        with patch('bot.core.bot.StatePersistence') as mock_state, \
+             patch('bot.core.bot.SolanaClient'), \
+             patch('bot.core.bot.ArbitrumClient'), \
+             patch('bot.core.bot.RiskEngine') as mock_risk_class, \
+             patch('bot.core.bot.PositionSizer'), \
+             patch('bot.core.bot.LSTMonitor'), \
+             patch('bot.core.bot.PauseController') as mock_pause_class, \
+             patch('bot.core.bot.PositionManager') as mock_pm_class, \
+             patch('bot.core.bot.OpportunityDetector'):
             
             mock_state_instance = AsyncMock()
             mock_state.return_value = mock_state_instance
@@ -532,12 +532,12 @@ class TestExitWhilePaused:
             bot = DeltaNeutralBot(config=config)
             await bot.setup()
             
-            bot._positions[mock_open_position.position_id] = mock_open_position
-            
+            bot._positions.setdefault("default", {})[mock_open_position.position_id] = mock_open_position
+
             # Run monitor cycle while paused
             await bot._monitor_cycle()
-            
+
             # Verify position was NOT closed (monitor cycle skipped)
-            assert len(bot._positions) == 1
+            assert sum(len(v) for v in bot._positions.values()) == 1
             
             await bot.shutdown()

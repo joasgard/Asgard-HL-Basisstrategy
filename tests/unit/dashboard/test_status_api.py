@@ -12,10 +12,10 @@ class TestHealthCheck:
     """Tests for GET /health endpoint."""
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.status.get_bot_bridge')
+    @patch('backend.dashboard.api.status.get_bot_bridge')
     async def test_health_healthy(self, mock_get_bridge):
         """Test health check when both services are healthy."""
-        from src.dashboard.api.status import api_health_check
+        from backend.dashboard.api.status import api_health_check
         
         mock_bridge = AsyncMock()
         mock_bridge.health_check.return_value = True
@@ -27,10 +27,10 @@ class TestHealthCheck:
         assert result["bot"]["status"] == "healthy"
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.status.get_bot_bridge')
+    @patch('backend.dashboard.api.status.get_bot_bridge')
     async def test_health_bot_unavailable(self, mock_get_bridge):
         """Test health check when bot is unavailable."""
-        from src.dashboard.api.status import api_health_check
+        from backend.dashboard.api.status import api_health_check
         
         mock_bridge = AsyncMock()
         mock_bridge.health_check.return_value = False
@@ -42,10 +42,10 @@ class TestHealthCheck:
         assert result["bot"]["status"] == "unavailable"
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.status.get_bot_bridge')
+    @patch('backend.dashboard.api.status.get_bot_bridge')
     async def test_health_bot_exception(self, mock_get_bridge):
         """Test health check when bot throws exception."""
-        from src.dashboard.api.status import api_health_check
+        from backend.dashboard.api.status import api_health_check
         
         mock_bridge = AsyncMock()
         mock_bridge.health_check.side_effect = Exception("Connection error")
@@ -61,11 +61,11 @@ class TestGetStatus:
     """Tests for GET /status endpoint."""
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.status.require_bot_bridge')
+    @patch('backend.dashboard.api.status.require_bot_bridge')
     async def test_get_status_success(self, mock_require_bridge):
         """Test getting detailed bot status."""
-        from src.dashboard.api.status import get_status
-        from src.shared.schemas import BotStats, PauseState, PauseScope
+        from backend.dashboard.api.status import get_status
+        from shared.common.schemas import BotStats, PauseState, PauseScope
         
         mock_bridge = AsyncMock()
         
@@ -102,11 +102,11 @@ class TestGetStatus:
         assert result["pause_state"]["paused"] is False
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.status.require_bot_bridge')
+    @patch('backend.dashboard.api.status.require_bot_bridge')
     async def test_get_status_paused(self, mock_require_bridge):
         """Test status when bot is paused."""
-        from src.dashboard.api.status import get_status
-        from src.shared.schemas import BotStats, PauseState, PauseScope
+        from backend.dashboard.api.status import get_status
+        from shared.common.schemas import BotStats, PauseState, PauseScope
         
         mock_bridge = AsyncMock()
         
@@ -139,10 +139,10 @@ class TestGetStatus:
         assert result["pause_state"]["reason"] == "Maintenance"
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.status.require_bot_bridge')
+    @patch('backend.dashboard.api.status.require_bot_bridge')
     async def test_get_status_exception(self, mock_require_bridge):
         """Test handling exception when getting status."""
-        from src.dashboard.api.status import get_status
+        from backend.dashboard.api.status import get_status
         
         mock_bridge = AsyncMock()
         mock_bridge.get_stats.side_effect = Exception("Connection error")
@@ -158,11 +158,11 @@ class TestGetStats:
     """Tests for GET /stats endpoint."""
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.status.require_bot_bridge')
+    @patch('backend.dashboard.api.status.require_bot_bridge')
     async def test_get_stats_success(self, mock_require_bridge):
         """Test getting bot statistics."""
-        from src.dashboard.api.status import get_stats
-        from src.shared.schemas import BotStats
+        from backend.dashboard.api.status import get_stats
+        from shared.common.schemas import BotStats
         
         mock_bridge = AsyncMock()
         
@@ -186,10 +186,10 @@ class TestGetStats:
         assert result["errors_count"] == 2
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.status.require_bot_bridge')
+    @patch('backend.dashboard.api.status.require_bot_bridge')
     async def test_get_stats_exception(self, mock_require_bridge):
         """Test handling exception when getting stats."""
-        from src.dashboard.api.status import get_stats
+        from backend.dashboard.api.status import get_stats
         
         mock_bridge = AsyncMock()
         mock_bridge.get_stats.side_effect = Exception("Connection error")
@@ -205,11 +205,11 @@ class TestGetPauseState:
     """Tests for GET /pause-state endpoint."""
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.status.require_bot_bridge')
+    @patch('backend.dashboard.api.status.require_bot_bridge')
     async def test_get_pause_state_running(self, mock_require_bridge):
         """Test getting pause state when running."""
-        from src.dashboard.api.status import get_pause_state
-        from src.shared.schemas import PauseState, PauseScope
+        from backend.dashboard.api.status import get_pause_state
+        from shared.common.schemas import PauseState, PauseScope
         
         mock_bridge = AsyncMock()
         
@@ -230,11 +230,11 @@ class TestGetPauseState:
         assert result["scope"] == "all"
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.status.require_bot_bridge')
+    @patch('backend.dashboard.api.status.require_bot_bridge')
     async def test_get_pause_state_paused(self, mock_require_bridge):
         """Test getting pause state when paused."""
-        from src.dashboard.api.status import get_pause_state
-        from src.shared.schemas import PauseState, PauseScope
+        from backend.dashboard.api.status import get_pause_state
+        from shared.common.schemas import PauseState, PauseScope
         
         mock_bridge = AsyncMock()
         
@@ -259,10 +259,10 @@ class TestGetPauseState:
         assert "rate_limit" in result["active_breakers"]
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.status.require_bot_bridge')
+    @patch('backend.dashboard.api.status.require_bot_bridge')
     async def test_get_pause_state_exception(self, mock_require_bridge):
         """Test handling exception when getting pause state."""
-        from src.dashboard.api.status import get_pause_state
+        from backend.dashboard.api.status import get_pause_state
         
         mock_bridge = AsyncMock()
         mock_bridge.get_pause_state.side_effect = Exception("Connection error")

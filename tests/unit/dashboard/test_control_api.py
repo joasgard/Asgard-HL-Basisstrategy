@@ -12,11 +12,11 @@ class TestPauseBot:
     """Tests for POST /pause endpoint."""
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.control.require_bot_bridge')
-    @patch('src.dashboard.api.control.get_dashboard_settings')
+    @patch('backend.dashboard.api.control.require_bot_bridge')
+    @patch('backend.dashboard.api.control.get_dashboard_settings')
     async def test_pause_success(self, mock_get_settings, mock_require_bridge):
         """Test pausing bot successfully."""
-        from src.dashboard.api.control import pause_bot, PauseRequest
+        from backend.dashboard.api.control import pause_bot, PauseRequest
         
         # Mock bot bridge
         mock_bridge = AsyncMock()
@@ -45,11 +45,11 @@ class TestPauseBot:
         )
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.control.require_bot_bridge')
-    @patch('src.dashboard.api.control.get_dashboard_settings')
+    @patch('backend.dashboard.api.control.require_bot_bridge')
+    @patch('backend.dashboard.api.control.get_dashboard_settings')
     async def test_pause_with_scope(self, mock_get_settings, mock_require_bridge):
         """Test pausing with different scopes."""
-        from src.dashboard.api.control import pause_bot, PauseRequest
+        from backend.dashboard.api.control import pause_bot, PauseRequest
         
         mock_bridge = AsyncMock()
         mock_bridge.pause.return_value = True
@@ -83,11 +83,11 @@ class TestPauseBot:
         )
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.control.require_bot_bridge')
-    @patch('src.dashboard.api.control.get_dashboard_settings')
+    @patch('backend.dashboard.api.control.require_bot_bridge')
+    @patch('backend.dashboard.api.control.get_dashboard_settings')
     async def test_pause_failure(self, mock_get_settings, mock_require_bridge):
         """Test handling pause failure."""
-        from src.dashboard.api.control import pause_bot, PauseRequest
+        from backend.dashboard.api.control import pause_bot, PauseRequest
         
         mock_bridge = AsyncMock()
         mock_bridge.pause.return_value = False
@@ -107,11 +107,11 @@ class TestPauseBot:
         assert "failed" in result.message.lower()
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.control.require_bot_bridge')
-    @patch('src.dashboard.api.control.get_dashboard_settings')
+    @patch('backend.dashboard.api.control.require_bot_bridge')
+    @patch('backend.dashboard.api.control.get_dashboard_settings')
     async def test_pause_exception(self, mock_get_settings, mock_require_bridge):
         """Test handling exception during pause."""
-        from src.dashboard.api.control import pause_bot, PauseRequest
+        from backend.dashboard.api.control import pause_bot, PauseRequest
         
         mock_bridge = AsyncMock()
         mock_bridge.pause.side_effect = Exception("Connection error")
@@ -136,11 +136,11 @@ class TestResumeBot:
     """Tests for POST /resume endpoint."""
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.control.require_bot_bridge')
-    @patch('src.dashboard.api.control.get_dashboard_settings')
+    @patch('backend.dashboard.api.control.require_bot_bridge')
+    @patch('backend.dashboard.api.control.get_dashboard_settings')
     async def test_resume_success(self, mock_get_settings, mock_require_bridge):
         """Test resuming bot successfully."""
-        from src.dashboard.api.control import resume_bot, ResumeRequest
+        from backend.dashboard.api.control import resume_bot, ResumeRequest
         
         mock_bridge = AsyncMock()
         mock_bridge.resume.return_value = True
@@ -161,11 +161,11 @@ class TestResumeBot:
         mock_bridge.resume.assert_called_once_with(api_key="test_key")
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.control.require_bot_bridge')
-    @patch('src.dashboard.api.control.get_dashboard_settings')
+    @patch('backend.dashboard.api.control.require_bot_bridge')
+    @patch('backend.dashboard.api.control.get_dashboard_settings')
     async def test_resume_failure(self, mock_get_settings, mock_require_bridge):
         """Test handling resume failure."""
-        from src.dashboard.api.control import resume_bot, ResumeRequest
+        from backend.dashboard.api.control import resume_bot, ResumeRequest
         
         mock_bridge = AsyncMock()
         mock_bridge.resume.return_value = False
@@ -185,11 +185,11 @@ class TestResumeBot:
         assert "failed" in result.message.lower()
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.control.require_bot_bridge')
-    @patch('src.dashboard.api.control.get_dashboard_settings')
+    @patch('backend.dashboard.api.control.require_bot_bridge')
+    @patch('backend.dashboard.api.control.get_dashboard_settings')
     async def test_resume_exception(self, mock_get_settings, mock_require_bridge):
         """Test handling exception during resume."""
-        from src.dashboard.api.control import resume_bot, ResumeRequest
+        from backend.dashboard.api.control import resume_bot, ResumeRequest
         
         mock_bridge = AsyncMock()
         mock_bridge.resume.side_effect = Exception("Connection error")
@@ -214,11 +214,11 @@ class TestEmergencyStop:
     """Tests for POST /emergency-stop endpoint."""
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.control.require_bot_bridge')
-    @patch('src.dashboard.api.control.get_dashboard_settings')
+    @patch('backend.dashboard.api.control.require_bot_bridge')
+    @patch('backend.dashboard.api.control.get_dashboard_settings')
     async def test_emergency_stop_success(self, mock_get_settings, mock_require_bridge):
         """Test emergency stop successfully."""
-        from src.dashboard.api.control import emergency_stop
+        from backend.dashboard.api.control import emergency_stop
         
         mock_bridge = AsyncMock()
         mock_bridge.pause.return_value = True
@@ -242,11 +242,11 @@ class TestEmergencyStop:
         )
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.control.require_bot_bridge')
-    @patch('src.dashboard.api.control.get_dashboard_settings')
+    @patch('backend.dashboard.api.control.require_bot_bridge')
+    @patch('backend.dashboard.api.control.get_dashboard_settings')
     async def test_emergency_stop_failure(self, mock_get_settings, mock_require_bridge):
         """Test handling emergency stop failure."""
-        from src.dashboard.api.control import emergency_stop
+        from backend.dashboard.api.control import emergency_stop
         
         mock_bridge = AsyncMock()
         mock_bridge.pause.return_value = False
@@ -265,11 +265,11 @@ class TestEmergencyStop:
         assert "failed" in result.message.lower()
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.control.require_bot_bridge')
-    @patch('src.dashboard.api.control.get_dashboard_settings')
+    @patch('backend.dashboard.api.control.require_bot_bridge')
+    @patch('backend.dashboard.api.control.get_dashboard_settings')
     async def test_emergency_stop_exception(self, mock_get_settings, mock_require_bridge):
         """Test handling exception during emergency stop."""
-        from src.dashboard.api.control import emergency_stop
+        from backend.dashboard.api.control import emergency_stop
         
         mock_bridge = AsyncMock()
         mock_bridge.pause.side_effect = Exception("Connection error")
@@ -293,7 +293,7 @@ class TestPauseRequest:
     
     def test_default_values(self):
         """Test default values for PauseRequest."""
-        from src.dashboard.api.control import PauseRequest
+        from backend.dashboard.api.control import PauseRequest
         
         request = PauseRequest(reason="Test")
         
@@ -302,7 +302,7 @@ class TestPauseRequest:
     
     def test_custom_scope(self):
         """Test PauseRequest with custom scope."""
-        from src.dashboard.api.control import PauseRequest
+        from backend.dashboard.api.control import PauseRequest
         
         request = PauseRequest(reason="Test", scope="entry")
         
@@ -310,7 +310,7 @@ class TestPauseRequest:
     
     def test_valid_scopes(self):
         """Test all valid pause scopes."""
-        from src.dashboard.api.control import PauseRequest
+        from backend.dashboard.api.control import PauseRequest
         
         scopes = ["all", "entry", "exit", "asgard", "hyperliquid"]
         
@@ -324,7 +324,7 @@ class TestResumeRequest:
     
     def test_creation(self):
         """Test creating ResumeRequest."""
-        from src.dashboard.api.control import ResumeRequest
+        from backend.dashboard.api.control import ResumeRequest
         
         request = ResumeRequest()
         

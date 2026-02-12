@@ -1,0 +1,198 @@
+# Production Docker Compose
+# Usage: docker compose -f docker-compose.prod.yml up -d
+
+version: '3.8'
+
+services:
+  # ===========================================================================
+  # PostgreSQL
+  # ===========================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: basis-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: basis
+      POSTGRES_USER: basis
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U basis -d basis"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
+
+  # ===========================================================================
+  # Redis
+  # ===========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: basis-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis-data:/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+
+  # ===========================================================================
+  # Application (uvicorn with workers)
+  # ===========================================================================
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: production
+    image: delta-neutral-bot:latest
+    container_name: basis-app
+    restart: unless-stopped
+
+    # Security hardening
+    read_only: true
+    user: "1000:1000"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    command: >
+      uvicorn backend.dashboard.main:app
+      --host 0.0.0.0
+      --port 8080
+      --workers ${UVICORN_WORKERS:-2}
+      --log-level warning
+      --proxy-headers
+      --forwarded-allow-ips=172.20.0.0/16
+
+    environment:
+      - DASHBOARD_ENV=production
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgresql://basis:${POSTGRES_PASSWORD}@postgres:5432/basis
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - SOLANA_RPC_URL=${SOLANA_RPC_URL}
+      - ARBITRUM_RPC_URL=${ARBITRUM_RPC_URL:-https://arb1.arbitrum.io/rpc}
+      - VITE_PRIVY_APP_ID=${VITE_PRIVY_APP_ID}
+
+    volumes:
+      - bot-data:/app/data
+      - bot-logs:/app/logs
+      - ${SECRETS_DIR:-./secrets}:/app/secrets:ro
+      - type: tmpfs
+        target: /tmp
+        tmpfs:
+          size: 100M
+      - type: tmpfs
+        target: /home/botuser/.cache
+        tmpfs:
+          size: 50M
+
+    networks:
+      - internal
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/live", "--max-time", "4"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "2.0"
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ===========================================================================
+  # Nginx Reverse Proxy
+  # ===========================================================================
+  nginx:
+    image: nginx:alpine
+    container_name: basis-nginx
+    restart: unless-stopped
+
+    depends_on:
+      app:
+        condition: service_healthy
+
+    ports:
+      - "80:80"
+      - "443:443"
+
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ${SSL_CERT_DIR:-./certs}:/etc/nginx/ssl:ro
+
+    networks:
+      - internal
+
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.5"
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  postgres-data:
+    driver: local
+  redis-data:
+    driver: local
+  bot-data:
+    driver: local
+  bot-logs:
+    driver: local
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  internal:
+    driver: bridge

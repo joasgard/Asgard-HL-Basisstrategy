@@ -1,0 +1,18 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "asgard-shared"
+version = "0.1.0"
+description = "Asgard Basis - Shared Components"
+requires-python = ">=3.9"
+dependencies = [
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "aiosqlite>=0.19.0",
+    "cryptography>=41.0.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["db", "models", "common", "security", "config", "utils", "chain"]

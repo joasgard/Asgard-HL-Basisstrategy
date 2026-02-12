@@ -14,16 +14,16 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.config.assets import Asset
-from src.core.fill_validator import (
+from shared.config.assets import Asset
+from bot.core.fill_validator import (
     FillInfo,
     FillValidator,
     PositionReference,
     ValidationResult,
 )
-from src.models.common import Protocol
-from src.models.funding import AsgardRates, FundingRate
-from src.models.opportunity import ArbitrageOpportunity, OpportunityScore
+from shared.models.common import Protocol
+from shared.models.funding import AsgardRates, FundingRate
+from shared.models.opportunity import ArbitrageOpportunity, OpportunityScore
 
 
 # Fixtures
@@ -458,7 +458,7 @@ class TestCreatePositionReference:
     
     def test_create_from_consensus(self):
         """Test creating PositionReference from ConsensusResult."""
-        from src.core.price_consensus import ConsensusResult
+        from bot.core.price_consensus import ConsensusResult
         
         validator = FillValidator()
         

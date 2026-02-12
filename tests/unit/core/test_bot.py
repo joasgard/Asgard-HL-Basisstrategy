@@ -5,16 +5,16 @@ from decimal import Decimal
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.core.bot import (
+from bot.core.bot import (
     DeltaNeutralBot,
     BotConfig,
     BotStats,
 )
-from src.core.pause_controller import PauseScope, CircuitBreakerType
-from src.core.risk_engine import ExitReason
-from src.models.opportunity import ArbitrageOpportunity
-from src.models.position import CombinedPosition, AsgardPosition, HyperliquidPosition
-from src.models.common import Asset, Protocol
+from bot.core.pause_controller import PauseScope, CircuitBreakerType
+from bot.core.risk_engine import ExitReason
+from shared.models.opportunity import ArbitrageOpportunity
+from shared.models.position import CombinedPosition, AsgardPosition, HyperliquidPosition
+from shared.models.common import Asset, Protocol
 
 
 @pytest.fixture
@@ -31,16 +31,15 @@ def bot_config():
 @pytest.fixture
 def mock_bot(bot_config):
     """Create a bot with mocked dependencies."""
-    with patch('src.core.bot.StatePersistence') as mock_state, \
-         patch('src.core.bot.SolanaClient'), \
-         patch('src.core.bot.ArbitrumClient'), \
-         patch('src.core.bot.RiskEngine'), \
-         patch('src.core.bot.PositionSizer'), \
-         patch('src.core.bot.LSTMonitor'), \
-         patch('src.core.bot.PauseController'), \
-         patch('src.core.bot.PositionManager') as mock_pm, \
-         patch('src.core.bot.OpportunityDetector'):
-        
+    with patch('bot.core.bot.StatePersistence') as mock_state, \
+         patch('bot.core.bot.SolanaClient'), \
+         patch('bot.core.bot.ArbitrumClient'), \
+         patch('bot.core.bot.RiskEngine'), \
+         patch('bot.core.bot.PositionSizer'), \
+         patch('bot.core.bot.PauseController'), \
+         patch('bot.core.bot.PositionManager') as mock_pm, \
+         patch('bot.core.bot.OpportunityDetector'):
+
         # Setup mock position manager
         mock_pm_instance = AsyncMock()
         mock_pm.return_value = mock_pm_instance
@@ -56,14 +55,13 @@ class TestBotInitialization:
     
     def test_default_initialization(self):
         """Test bot with default config."""
-        with patch('src.core.bot.StatePersistence'), \
-             patch('src.core.bot.SolanaClient'), \
-             patch('src.core.bot.ArbitrumClient'), \
-             patch('src.core.bot.RiskEngine'), \
-             patch('src.core.bot.PositionSizer'), \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController'), \
-             patch('src.core.bot.PositionManager') as mock_pm:
+        with patch('bot.core.bot.StatePersistence'), \
+             patch('bot.core.bot.SolanaClient'), \
+             patch('bot.core.bot.ArbitrumClient'), \
+             patch('bot.core.bot.RiskEngine'), \
+             patch('bot.core.bot.PositionSizer'), \
+             patch('bot.core.bot.PauseController'), \
+             patch('bot.core.bot.PositionManager') as mock_pm:
             
             mock_pm_instance = AsyncMock()
             mock_pm.return_value = mock_pm_instance
@@ -75,14 +73,13 @@ class TestBotInitialization:
     
     def test_custom_config(self, bot_config):
         """Test bot with custom config."""
-        with patch('src.core.bot.StatePersistence'), \
-             patch('src.core.bot.SolanaClient'), \
-             patch('src.core.bot.ArbitrumClient'), \
-             patch('src.core.bot.RiskEngine'), \
-             patch('src.core.bot.PositionSizer'), \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController'), \
-             patch('src.core.bot.PositionManager') as mock_pm:
+        with patch('bot.core.bot.StatePersistence'), \
+             patch('bot.core.bot.SolanaClient'), \
+             patch('bot.core.bot.ArbitrumClient'), \
+             patch('bot.core.bot.RiskEngine'), \
+             patch('bot.core.bot.PositionSizer'), \
+             patch('bot.core.bot.PauseController'), \
+             patch('bot.core.bot.PositionManager') as mock_pm:
             
             mock_pm_instance = AsyncMock()
             mock_pm.return_value = mock_pm_instance
@@ -110,12 +107,13 @@ class TestBotStats:
     
     def test_uptime_calculation(self):
         """Test uptime calculation."""
+        from datetime import timedelta
         stats = BotStats()
-        stats.start_time = datetime.utcnow()
-        
+        stats.start_time = datetime.utcnow() - timedelta(seconds=5)
+
         # Should have some uptime
-        assert stats.uptime_seconds > 0
-        assert "00:00:" in stats.uptime_formatted
+        assert stats.uptime_seconds >= 4
+        assert "00:00:0" in stats.uptime_formatted
     
     def test_uptime_when_not_started(self):
         """Test uptime when bot hasn't started."""
@@ -150,14 +148,13 @@ class TestBotSetupAndShutdown:
     @pytest.mark.asyncio
     async def test_context_manager(self, bot_config):
         """Test async context manager."""
-        with patch('src.core.bot.StatePersistence') as mock_state, \
-             patch('src.core.bot.SolanaClient'), \
-             patch('src.core.bot.ArbitrumClient'), \
-             patch('src.core.bot.RiskEngine'), \
-             patch('src.core.bot.PositionSizer'), \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController'), \
-             patch('src.core.bot.PositionManager') as mock_pm:
+        with patch('bot.core.bot.StatePersistence') as mock_state, \
+             patch('bot.core.bot.SolanaClient'), \
+             patch('bot.core.bot.ArbitrumClient'), \
+             patch('bot.core.bot.RiskEngine'), \
+             patch('bot.core.bot.PositionSizer'), \
+             patch('bot.core.bot.PauseController'), \
+             patch('bot.core.bot.PositionManager') as mock_pm:
             
             mock_state_instance = AsyncMock()
             mock_state.return_value = mock_state_instance
@@ -231,8 +228,8 @@ class TestScanCycle:
         mock_bot._pause_controller.check_paused.return_value = False
         mock_bot._pause_controller.can_execute.return_value = True
         mock_bot.config.max_concurrent_positions = 1
-        mock_bot._positions = {"pos1": MagicMock()}
-        
+        mock_bot._positions = {"default": {"pos1": MagicMock()}}
+
         await mock_bot._scan_cycle()
         
         # Should not scan when max positions reached
@@ -292,19 +289,23 @@ class TestExecuteEntry:
         
         position = MagicMock(spec=CombinedPosition)
         position.position_id = "new_pos"
-        
+        position.user_id = None  # will default to "default"
+
         mock_bot._position_manager = AsyncMock()
         mock_bot._position_manager.open_position = AsyncMock(return_value=MagicMock(
             success=True,
             position=position,
         ))
-        
+
         mock_bot._state = AsyncMock()
-        
+
         await mock_bot._execute_entry(opportunity)
-        
+
         mock_bot._position_manager.open_position.assert_called_once()
-        assert "new_pos" in mock_bot._positions
+        # Positions are now nested: {user_id: {position_id: position}}
+        user_id = position.user_id or "default"
+        assert user_id in mock_bot._positions
+        assert "new_pos" in mock_bot._positions[user_id]
     
     @pytest.mark.asyncio
     async def test_execute_entry_sizing_failure(self, mock_bot):
@@ -337,16 +338,17 @@ class TestExecuteExit:
         """Test successful position exit."""
         position = MagicMock(spec=CombinedPosition)
         position.position_id = "pos1"
-        
-        mock_bot._positions = {"pos1": position}
+        position.user_id = "default"
+
+        mock_bot._positions = {"default": {"pos1": position}}
         mock_bot._position_manager = AsyncMock()
         mock_bot._position_manager.close_position = AsyncMock(return_value=True)
         mock_bot._state = AsyncMock()
-        
+
         await mock_bot._execute_exit(position, "test_reason")
-        
+
         mock_bot._position_manager.close_position.assert_called_once_with("pos1")
-        assert "pos1" not in mock_bot._positions
+        assert "pos1" not in mock_bot._positions.get("default", {})
         assert mock_bot._stats.positions_closed == 1
     
     @pytest.mark.asyncio
@@ -354,15 +356,16 @@ class TestExecuteExit:
         """Test failed position exit."""
         position = MagicMock(spec=CombinedPosition)
         position.position_id = "pos1"
-        
-        mock_bot._positions = {"pos1": position}
+        position.user_id = "default"
+
+        mock_bot._positions = {"default": {"pos1": position}}
         mock_bot._position_manager = AsyncMock()
         mock_bot._position_manager.close_position = AsyncMock(return_value=False)
-        
+
         await mock_bot._execute_exit(position, "test_reason")
-        
+
         # Position should still be tracked
-        assert "pos1" in mock_bot._positions
+        assert "pos1" in mock_bot._positions.get("default", {})
 
 
 class TestCallbacks:

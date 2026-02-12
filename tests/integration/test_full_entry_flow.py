@@ -9,22 +9,22 @@ from decimal import Decimal
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.core.bot import DeltaNeutralBot, BotConfig
-from src.core.position_manager import PositionManager, PreflightResult
-from src.core.position_sizer import PositionSizer, SizingResult, PositionSize
-from src.core.price_consensus import PriceConsensus, ConsensusResult
-from src.models.opportunity import ArbitrageOpportunity, OpportunityScore
-from src.models.position import (
+from bot.core.bot import DeltaNeutralBot, BotConfig
+from bot.core.position_manager import PositionManager, PreflightResult
+from bot.core.position_sizer import PositionSizer, SizingResult, PositionSize
+from bot.core.price_consensus import PriceConsensus, ConsensusResult
+from shared.models.opportunity import ArbitrageOpportunity, OpportunityScore
+from shared.models.position import (
     AsgardPosition, 
     HyperliquidPosition, 
     CombinedPosition,
     PositionReference
 )
-from src.models.common import Asset, Protocol
-from src.models.funding import FundingRate, AsgardRates
-from src.venues.asgard.manager import AsgardPositionManager, OpenPositionResult
-from src.venues.hyperliquid.trader import HyperliquidTrader, OrderResult, PositionInfo
-from src.state.persistence import StatePersistence
+from shared.models.common import Asset, Protocol
+from shared.models.funding import FundingRate, AsgardRates
+from bot.venues.asgard.manager import AsgardPositionManager, OpenPositionResult
+from bot.venues.hyperliquid.trader import HyperliquidTrader, OrderResult, PositionInfo
+from bot.state.persistence import StatePersistence
 
 
 @pytest.fixture
@@ -149,15 +149,15 @@ class TestFullEntryFlow:
             status="open",
         )
         
-        with patch('src.core.bot.StatePersistence') as mock_state, \
-             patch('src.core.bot.SolanaClient') as mock_solana, \
-             patch('src.core.bot.ArbitrumClient') as mock_arbitrum, \
-             patch('src.core.bot.RiskEngine'), \
-             patch('src.core.bot.PositionSizer') as mock_sizer, \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController'), \
-             patch('src.core.bot.PositionManager') as mock_pm_class, \
-             patch('src.core.bot.OpportunityDetector'):
+        with patch('bot.core.bot.StatePersistence') as mock_state, \
+             patch('bot.core.bot.SolanaClient') as mock_solana, \
+             patch('bot.core.bot.ArbitrumClient') as mock_arbitrum, \
+             patch('bot.core.bot.RiskEngine'), \
+             patch('bot.core.bot.PositionSizer') as mock_sizer, \
+             patch('bot.core.bot.LSTMonitor'), \
+             patch('bot.core.bot.PauseController'), \
+             patch('bot.core.bot.PositionManager') as mock_pm_class, \
+             patch('bot.core.bot.OpportunityDetector'):
             
             # Setup mocks
             mock_state_instance = AsyncMock()
@@ -212,8 +212,8 @@ class TestFullEntryFlow:
             await bot._execute_entry(mock_opportunity)
             
             # Verify position was stored
-            assert len(bot._positions) == 1
-            assert "test_pos_001" in bot._positions
+            assert sum(len(v) for v in bot._positions.values()) == 1
+            assert "test_pos_001" in bot._positions.get("default", {})
             assert bot._stats.positions_opened == 1
             
             # Verify state was saved
@@ -228,15 +228,15 @@ class TestFullEntryFlow:
         # Make opportunity fail preflight
         mock_opportunity.preflight_checks_passed = False
         
-        with patch('src.core.bot.StatePersistence') as mock_state, \
-             patch('src.core.bot.SolanaClient') as mock_solana, \
-             patch('src.core.bot.ArbitrumClient') as mock_arbitrum, \
-             patch('src.core.bot.RiskEngine'), \
-             patch('src.core.bot.PositionSizer') as mock_sizer, \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController'), \
-             patch('src.core.bot.PositionManager') as mock_pm_class, \
-             patch('src.core.bot.OpportunityDetector'):
+        with patch('bot.core.bot.StatePersistence') as mock_state, \
+             patch('bot.core.bot.SolanaClient') as mock_solana, \
+             patch('bot.core.bot.ArbitrumClient') as mock_arbitrum, \
+             patch('bot.core.bot.RiskEngine'), \
+             patch('bot.core.bot.PositionSizer') as mock_sizer, \
+             patch('bot.core.bot.LSTMonitor'), \
+             patch('bot.core.bot.PauseController'), \
+             patch('bot.core.bot.PositionManager') as mock_pm_class, \
+             patch('bot.core.bot.OpportunityDetector'):
             
             mock_state_instance = AsyncMock()
             mock_state.return_value = mock_state_instance
@@ -287,15 +287,15 @@ class TestFullEntryFlow:
     async def test_entry_with_insufficient_balance(self, mock_opportunity):
         """Test entry when wallet has insufficient balance."""
         
-        with patch('src.core.bot.StatePersistence') as mock_state, \
-             patch('src.core.bot.SolanaClient') as mock_solana, \
-             patch('src.core.bot.ArbitrumClient') as mock_arbitrum, \
-             patch('src.core.bot.RiskEngine'), \
-             patch('src.core.bot.PositionSizer') as mock_sizer, \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController'), \
-             patch('src.core.bot.PositionManager') as mock_pm_class, \
-             patch('src.core.bot.OpportunityDetector'):
+        with patch('bot.core.bot.StatePersistence') as mock_state, \
+             patch('bot.core.bot.SolanaClient') as mock_solana, \
+             patch('bot.core.bot.ArbitrumClient') as mock_arbitrum, \
+             patch('bot.core.bot.RiskEngine'), \
+             patch('bot.core.bot.PositionSizer') as mock_sizer, \
+             patch('bot.core.bot.LSTMonitor'), \
+             patch('bot.core.bot.PauseController'), \
+             patch('bot.core.bot.PositionManager') as mock_pm_class, \
+             patch('bot.core.bot.OpportunityDetector'):
             
             mock_state_instance = AsyncMock()
             mock_state.return_value = mock_state_instance
@@ -333,7 +333,7 @@ class TestFullEntryFlow:
             await bot._execute_entry(mock_opportunity)
             
             # Verify no position was opened
-            assert len(bot._positions) == 0
+            assert sum(len(v) for v in bot._positions.values()) == 0
             assert bot._stats.positions_opened == 0
             
             # Verify position manager was never called
@@ -346,15 +346,15 @@ class TestFullEntryFlow:
                                                             mock_asgard_position):
         """Test that Hyperliquid is unwound if Asgard fails after HL opens."""
         
-        with patch('src.core.bot.StatePersistence') as mock_state, \
-             patch('src.core.bot.SolanaClient') as mock_solana, \
-             patch('src.core.bot.ArbitrumClient') as mock_arbitrum, \
-             patch('src.core.bot.RiskEngine'), \
-             patch('src.core.bot.PositionSizer') as mock_sizer, \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController'), \
-             patch('src.core.bot.PositionManager') as mock_pm_class, \
-             patch('src.core.bot.OpportunityDetector'):
+        with patch('bot.core.bot.StatePersistence') as mock_state, \
+             patch('bot.core.bot.SolanaClient') as mock_solana, \
+             patch('bot.core.bot.ArbitrumClient') as mock_arbitrum, \
+             patch('bot.core.bot.RiskEngine'), \
+             patch('bot.core.bot.PositionSizer') as mock_sizer, \
+             patch('bot.core.bot.LSTMonitor'), \
+             patch('bot.core.bot.PauseController'), \
+             patch('bot.core.bot.PositionManager') as mock_pm_class, \
+             patch('bot.core.bot.OpportunityDetector'):
             
             mock_state_instance = AsyncMock()
             mock_state.return_value = mock_state_instance
@@ -403,8 +403,8 @@ class TestFullEntryFlow:
             await bot._execute_entry(mock_opportunity)
             
             # Verify no position was stored
-            assert len(bot._positions) == 0
-            
+            assert sum(len(v) for v in bot._positions.values()) == 0
+
             await bot.shutdown()
 
 
@@ -470,15 +470,15 @@ class TestEntryWithLST:
             status="open",
         )
         
-        with patch('src.core.bot.StatePersistence') as mock_state, \
-             patch('src.core.bot.SolanaClient') as mock_solana, \
-             patch('src.core.bot.ArbitrumClient') as mock_arbitrum, \
-             patch('src.core.bot.RiskEngine'), \
-             patch('src.core.bot.PositionSizer') as mock_sizer, \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController'), \
-             patch('src.core.bot.PositionManager') as mock_pm_class, \
-             patch('src.core.bot.OpportunityDetector'):
+        with patch('bot.core.bot.StatePersistence') as mock_state, \
+             patch('bot.core.bot.SolanaClient') as mock_solana, \
+             patch('bot.core.bot.ArbitrumClient') as mock_arbitrum, \
+             patch('bot.core.bot.RiskEngine'), \
+             patch('bot.core.bot.PositionSizer') as mock_sizer, \
+             patch('bot.core.bot.LSTMonitor'), \
+             patch('bot.core.bot.PauseController'), \
+             patch('bot.core.bot.PositionManager') as mock_pm_class, \
+             patch('bot.core.bot.OpportunityDetector'):
             
             mock_state_instance = AsyncMock()
             mock_state.return_value = mock_state_instance
@@ -525,8 +525,8 @@ class TestEntryWithLST:
             await bot._execute_entry(opportunity)
             
             # Verify position was stored with correct asset
-            assert len(bot._positions) == 1
-            stored_pos = bot._positions["test_pos_jitosol"]
+            assert sum(len(v) for v in bot._positions.values()) == 1
+            stored_pos = bot._positions["default"]["test_pos_jitosol"]
             assert stored_pos.asgard.asset == Asset.JITOSOL
             
             await bot.shutdown()
@@ -560,15 +560,15 @@ class TestEntryCallbacks:
             status="open",
         )
         
-        with patch('src.core.bot.StatePersistence') as mock_state, \
-             patch('src.core.bot.SolanaClient') as mock_solana, \
-             patch('src.core.bot.ArbitrumClient') as mock_arbitrum, \
-             patch('src.core.bot.RiskEngine'), \
-             patch('src.core.bot.PositionSizer') as mock_sizer, \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController'), \
-             patch('src.core.bot.PositionManager') as mock_pm_class, \
-             patch('src.core.bot.OpportunityDetector'):
+        with patch('bot.core.bot.StatePersistence') as mock_state, \
+             patch('bot.core.bot.SolanaClient') as mock_solana, \
+             patch('bot.core.bot.ArbitrumClient') as mock_arbitrum, \
+             patch('bot.core.bot.RiskEngine'), \
+             patch('bot.core.bot.PositionSizer') as mock_sizer, \
+             patch('bot.core.bot.LSTMonitor'), \
+             patch('bot.core.bot.PauseController'), \
+             patch('bot.core.bot.PositionManager') as mock_pm_class, \
+             patch('bot.core.bot.OpportunityDetector'):
             
             mock_state_instance = AsyncMock()
             mock_state.return_value = mock_state_instance

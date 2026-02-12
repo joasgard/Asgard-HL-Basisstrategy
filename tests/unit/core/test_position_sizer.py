@@ -3,7 +3,7 @@ import pytest
 from decimal import Decimal
 from unittest.mock import patch, MagicMock
 
-from src.core.position_sizer import PositionSizer, PositionSize, SizingResult
+from bot.core.position_sizer import PositionSizer, PositionSize, SizingResult
 
 
 class TestPositionSizerInitialization:
@@ -33,7 +33,7 @@ class TestPositionSizerInitialization:
         assert sizer.default_leverage == Decimal("3.5")
         assert sizer.max_leverage == Decimal("4.5")
     
-    @patch('src.core.position_sizer.get_risk_limits')
+    @patch('bot.core.position_sizer.get_risk_limits')
     def test_initialization_from_risk_config(self, mock_get_risk_limits):
         """Test that leverage values load from risk config."""
         mock_get_risk_limits.return_value = {

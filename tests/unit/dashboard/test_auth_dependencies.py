@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch, AsyncMock
 from fastapi import HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials
 
-from src.dashboard.auth import (
+from backend.dashboard.auth import (
     Session, SessionManager, InvalidSessionError,
     SESSION_COOKIE_NAME, CSRF_COOKIE_NAME,
     get_current_session, require_csrf, get_encryption_manager,
@@ -56,7 +56,7 @@ class TestGetCurrentSession:
         """Test when session cookie exists but session not in memory."""
         mock_request.cookies[SESSION_COOKIE_NAME] = "invalid_session"
         
-        with patch('src.dashboard.auth.session_manager') as mock_sm:
+        with patch('backend.dashboard.auth.session_manager') as mock_sm:
             mock_sm.get_session = AsyncMock(return_value=None)
             
             with pytest.raises(HTTPException) as exc_info:
@@ -70,7 +70,7 @@ class TestGetCurrentSession:
         """Test when session has expired."""
         mock_request.cookies[SESSION_COOKIE_NAME] = "expired_session"
         
-        with patch('src.dashboard.auth.session_manager') as mock_sm:
+        with patch('backend.dashboard.auth.session_manager') as mock_sm:
             mock_sm.get_session = AsyncMock(
                 side_effect=InvalidSessionError("Session expired")
             )
@@ -87,7 +87,7 @@ class TestGetCurrentSession:
         """Test successful session retrieval."""
         mock_request.cookies[SESSION_COOKIE_NAME] = "session123"
         
-        with patch('src.dashboard.auth.session_manager') as mock_sm:
+        with patch('backend.dashboard.auth.session_manager') as mock_sm:
             mock_sm.get_session = AsyncMock(return_value=valid_session)
             mock_sm.touch_session = AsyncMock()
             
@@ -134,7 +134,7 @@ class TestRequireCsrf:
         mock_request.cookies[SESSION_COOKIE_NAME] = "session123"
         mock_request.headers["X-CSRF-Token"] = "wrong_token"
         
-        with patch('src.dashboard.auth.session_manager') as mock_sm:
+        with patch('backend.dashboard.auth.session_manager') as mock_sm:
             mock_sm.validate_csrf = AsyncMock(return_value=False)
             
             with pytest.raises(HTTPException) as exc_info:
@@ -149,7 +149,7 @@ class TestRequireCsrf:
         mock_request.cookies[SESSION_COOKIE_NAME] = "session123"
         mock_request.headers["X-CSRF-Token"] = "valid_csrf_token"
         
-        with patch('src.dashboard.auth.session_manager') as mock_sm:
+        with patch('backend.dashboard.auth.session_manager') as mock_sm:
             mock_sm.validate_csrf = AsyncMock(return_value=True)
             
             # Should not raise
@@ -214,7 +214,7 @@ class TestPrivyAuth:
     
     def test_initialization(self):
         """Test PrivyAuth initialization stores credentials for lazy loading."""
-        from src.dashboard.auth import PrivyAuth
+        from backend.dashboard.auth import PrivyAuth
         
         auth = PrivyAuth("app_id", "app_secret")
         
@@ -225,10 +225,10 @@ class TestPrivyAuth:
         assert auth._client is None
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.privy_client.PrivyClient')
+    @patch('backend.dashboard.privy_client.PrivyClient')
     async def test_verify_token(self, mock_client_class):
         """Test token verification delegates to SDK client."""
-        from src.dashboard.auth import PrivyAuth
+        from backend.dashboard.auth import PrivyAuth
         
         mock_client = AsyncMock()
         mock_client.verify_access_token = AsyncMock(return_value={
@@ -246,10 +246,10 @@ class TestPrivyAuth:
         mock_client.verify_access_token.assert_called_once_with("test_token")
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.privy_client.PrivyClient')
+    @patch('backend.dashboard.privy_client.PrivyClient')
     async def test_get_user(self, mock_client_class):
         """Test get_user delegates to SDK client."""
-        from src.dashboard.auth import PrivyAuth
+        from backend.dashboard.auth import PrivyAuth
         
         mock_client = AsyncMock()
         mock_client.get_user = AsyncMock(return_value={

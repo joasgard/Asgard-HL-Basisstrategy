@@ -12,12 +12,12 @@ class TestGetSettings:
     """Tests for GET /settings endpoint."""
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.settings.load_settings')
-    @patch('src.dashboard.api.settings.get_db')
+    @patch('backend.dashboard.api.settings.load_settings')
+    @patch('backend.dashboard.api.settings.get_db')
     async def test_get_settings_returns_defaults(self, mock_get_db, mock_load_settings):
         """Test that get_settings returns default settings when none saved."""
-        from src.dashboard.api.settings import get_settings
-        from src.dashboard.api.settings import StrategySettings
+        from backend.dashboard.api.settings import get_settings
+        from backend.dashboard.api.settings import StrategySettings
         
         # Mock default settings
         mock_settings = StrategySettings()
@@ -34,11 +34,11 @@ class TestGetSettings:
         assert result.settings.default_leverage == 3.0
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.settings.load_settings')
-    @patch('src.dashboard.api.settings.get_db')
+    @patch('backend.dashboard.api.settings.load_settings')
+    @patch('backend.dashboard.api.settings.get_db')
     async def test_get_settings_returns_saved(self, mock_get_db, mock_load_settings):
         """Test that get_settings returns saved settings."""
-        from src.dashboard.api.settings import get_settings, StrategySettings
+        from backend.dashboard.api.settings import get_settings, StrategySettings
         
         # Mock saved settings
         mock_settings = StrategySettings(
@@ -61,38 +61,36 @@ class TestSaveSettings:
     """Tests for POST /settings endpoint."""
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.settings.store_settings')
-    @patch('src.dashboard.api.settings.get_db')
+    @patch('backend.dashboard.api.settings.store_settings')
+    @patch('backend.dashboard.api.settings.get_db')
     async def test_save_settings_success(self, mock_get_db, mock_store_settings):
         """Test saving settings successfully."""
-        from src.dashboard.api.settings import save_settings, StrategySettings, SettingsResponse
+        from backend.dashboard.api.settings import save_settings, StrategySettings, SettingsResponse
         
         mock_db = MagicMock()
         mock_db.execute = AsyncMock()
-        mock_db._connection = MagicMock()
-        mock_db._connection.commit = AsyncMock()
         mock_get_db.return_value = mock_db
-        
+
         mock_user = MagicMock()
         mock_user.user_id = "test_user"
-        
+
         settings = StrategySettings(
             default_leverage=4.0,
             max_position_size=100000
         )
-        
+
         result = await save_settings(settings, user=mock_user, db=mock_db)
-        
+
         assert result.success is True
         mock_store_settings.assert_called_once()
         mock_db.execute.assert_called_once()  # Audit log
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.settings.store_settings')
-    @patch('src.dashboard.api.settings.get_db')
+    @patch('backend.dashboard.api.settings.store_settings')
+    @patch('backend.dashboard.api.settings.get_db')
     async def test_save_settings_error(self, mock_get_db, mock_store_settings):
         """Test handling error when saving settings."""
-        from src.dashboard.api.settings import save_settings, StrategySettings
+        from backend.dashboard.api.settings import save_settings, StrategySettings
         
         mock_store_settings.side_effect = Exception("Database error")
         
@@ -114,21 +112,19 @@ class TestResetSettings:
     """Tests for POST /settings/reset endpoint."""
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.settings.store_settings')
-    @patch('src.dashboard.api.settings.get_db')
+    @patch('backend.dashboard.api.settings.store_settings')
+    @patch('backend.dashboard.api.settings.get_db')
     async def test_reset_settings_success(self, mock_get_db, mock_store_settings):
         """Test resetting settings to defaults."""
-        from src.dashboard.api.settings import reset_settings, StrategySettings
+        from backend.dashboard.api.settings import reset_settings, StrategySettings
         
         mock_db = MagicMock()
         mock_db.execute = AsyncMock()
-        mock_db._connection = MagicMock()
-        mock_db._connection.commit = AsyncMock()
         mock_get_db.return_value = mock_db
-        
+
         mock_user = MagicMock()
         mock_user.user_id = "test_user"
-        
+
         result = await reset_settings(user=mock_user, db=mock_db)
         
         assert result.success is True
@@ -138,11 +134,11 @@ class TestResetSettings:
         mock_store_settings.assert_called_once()
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.settings.store_settings')
-    @patch('src.dashboard.api.settings.get_db')
+    @patch('backend.dashboard.api.settings.store_settings')
+    @patch('backend.dashboard.api.settings.get_db')
     async def test_reset_settings_error(self, mock_get_db, mock_store_settings):
         """Test handling error when resetting settings."""
-        from src.dashboard.api.settings import reset_settings
+        from backend.dashboard.api.settings import reset_settings
         
         mock_store_settings.side_effect = Exception("Database error")
         
@@ -163,7 +159,7 @@ class TestStrategySettings:
     
     def test_default_values(self):
         """Test default values for StrategySettings."""
-        from src.dashboard.api.settings import StrategySettings
+        from backend.dashboard.api.settings import StrategySettings
         
         settings = StrategySettings()
         
@@ -180,7 +176,7 @@ class TestStrategySettings:
     
     def test_custom_values(self):
         """Test creating StrategySettings with custom values."""
-        from src.dashboard.api.settings import StrategySettings
+        from backend.dashboard.api.settings import StrategySettings
         
         settings = StrategySettings(
             default_leverage=4.0,
@@ -196,7 +192,7 @@ class TestStrategySettings:
     
     def test_leverage_validation(self):
         """Test leverage validation constraints (1.1x - 4x)."""
-        from src.dashboard.api.settings import StrategySettings
+        from backend.dashboard.api.settings import StrategySettings
         from pydantic import ValidationError
         
         # Too low (below 1.1)
@@ -220,7 +216,7 @@ class TestStrategySettings:
     
     def test_max_position_size_validation(self):
         """Test max_position_size validation (min $100)."""
-        from src.dashboard.api.settings import StrategySettings
+        from backend.dashboard.api.settings import StrategySettings
         from pydantic import ValidationError
         
         # Too low (below $100 minimum)
@@ -241,7 +237,7 @@ class TestSettingsResponse:
     
     def test_response_creation(self):
         """Test creating SettingsResponse."""
-        from src.dashboard.api.settings import SettingsResponse, StrategySettings
+        from backend.dashboard.api.settings import SettingsResponse, StrategySettings
         
         settings = StrategySettings()
         response = SettingsResponse(
@@ -256,7 +252,7 @@ class TestSettingsResponse:
     
     def test_response_without_settings(self):
         """Test creating SettingsResponse without settings."""
-        from src.dashboard.api.settings import SettingsResponse
+        from backend.dashboard.api.settings import SettingsResponse
         
         response = SettingsResponse(
             success=False,

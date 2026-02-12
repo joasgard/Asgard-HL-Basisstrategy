@@ -2,7 +2,7 @@
 import pytest
 from unittest.mock import AsyncMock, Mock, patch
 
-from src.venues.hyperliquid.signer import HyperliquidSigner, SignedOrder
+from bot.venues.hyperliquid.signer import HyperliquidSigner, SignedOrder, SignedSpotTransfer
 
 
 @pytest.fixture
@@ -19,7 +19,7 @@ def mock_privy_client():
 @pytest.fixture
 def mock_settings():
     """Mock settings with Privy config."""
-    with patch('src.venues.hyperliquid.signer.get_settings') as mock:
+    with patch('bot.venues.hyperliquid.signer.get_settings') as mock:
         settings = Mock()
         settings.privy_app_id = "test-app-id"
         settings.privy_app_secret = "test-secret"
@@ -80,7 +80,7 @@ class TestHyperliquidSigner:
 
 class TestSignedOrder:
     """Tests for SignedOrder dataclass."""
-    
+
     def test_signed_order_creation(self):
         """Test creating SignedOrder."""
         signed = SignedOrder(
@@ -93,7 +93,39 @@ class TestSignedOrder:
             signature="0x123abc",
             nonce=123456,
         )
-        
+
         assert signed.coin == "ETH"
         assert signed.signature == "0x123abc"
         assert signed.nonce == 123456
+
+
+class TestSignSpotTransfer:
+    """Tests for renamed sign_spot_transfer (formerly sign_deposit)."""
+
+    @pytest.mark.asyncio
+    async def test_sign_spot_transfer(self, mock_privy_client, mock_settings):
+        """Test signing a spot transfer."""
+        signer = HyperliquidSigner()
+
+        signed = await signer.sign_spot_transfer(usdc_amount="1000000")
+
+        assert isinstance(signed, SignedSpotTransfer)
+        assert signed.usdc_amount == "1000000"
+        assert signed.signature == "0xsignature123"
+        assert signed.nonce > 0
+
+    def test_signed_spot_transfer_creation(self):
+        """Test creating SignedSpotTransfer."""
+        signed = SignedSpotTransfer(
+            usdc_amount="5000000",
+            signature="0xabc",
+            nonce=12345,
+        )
+        assert signed.usdc_amount == "5000000"
+        assert signed.signature == "0xabc"
+
+    def test_old_names_no_longer_exist(self):
+        """Verify old SignedDeposit and sign_deposit names are gone."""
+        import bot.venues.hyperliquid.signer as signer_module
+        assert not hasattr(signer_module, "SignedDeposit")
+        assert not hasattr(HyperliquidSigner, "sign_deposit")

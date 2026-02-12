@@ -4,7 +4,7 @@ from decimal import Decimal
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
-from src.core.risk_engine import (
+from bot.core.risk_engine import (
     RiskEngine,
     RiskLevel,
     ExitReason,
@@ -14,8 +14,8 @@ from src.core.risk_engine import (
     ExitDecision,
     DeltaDriftResult,
 )
-from src.models.position import AsgardPosition, HyperliquidPosition, CombinedPosition
-from src.config.assets import Asset
+from shared.models.position import AsgardPosition, HyperliquidPosition, CombinedPosition
+from shared.config.assets import Asset
 
 
 @pytest.fixture
@@ -65,7 +65,7 @@ class TestRiskEngineInitialization:
         assert engine.critical_health_factor == Decimal("0.05")
         assert engine.margin_fraction_threshold == Decimal("0.10")
     
-    @patch('src.core.risk_engine.get_risk_limits')
+    @patch('bot.core.risk_engine.get_risk_limits')
     def test_initialization_from_config(self, mock_get_risk_limits):
         """Test that thresholds load from risk config."""
         mock_get_risk_limits.return_value = {

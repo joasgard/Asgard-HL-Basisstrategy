@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from fastapi import HTTPException
 
-from src.dashboard.dependencies import (
+from backend.dashboard.dependencies import (
     set_bot_bridge, get_bot_bridge, require_bot_bridge,
     _bot_bridge
 )

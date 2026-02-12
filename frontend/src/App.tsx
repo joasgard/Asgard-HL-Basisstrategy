@@ -1,11 +1,13 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { PrivyProvider } from '@privy-io/react-auth';
-import { AuthWrapper } from './components/auth/AuthWrapper';
 import { Layout } from './components/layout/Layout';
 import { Dashboard } from './components/dashboard/Dashboard';
 import { Settings } from './components/settings/Settings';
 import { Positions } from './components/positions/Positions';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { ToastContainer, GlobalLoading } from './components/ui';
+import { useSSE } from './hooks';
 import './index.css';
 
 const queryClient = new QueryClient({
@@ -13,6 +15,7 @@ const queryClient = new QueryClient({
     queries: {
       retry: 1,
       refetchOnWindowFocus: false,
+      staleTime: 30000, // 30 seconds
     },
   },
 });
@@ -22,6 +25,12 @@ const privyAppId = import.meta.env.VITE_PRIVY_APP_ID || '';
 // Debug: Log if app ID is missing
 if (!privyAppId) {
   console.warn('⚠️ VITE_PRIVY_APP_ID is not set. Authentication will not work.');
+}
+
+// SSE initializer component
+function SSEInitializer() {
+  useSSE();
+  return null;
 }
 
 function App() {
@@ -46,27 +55,28 @@ function App() {
   }
 
   return (
-    <PrivyProvider
-      appId={privyAppId}
-      config={{
-        loginMethods: ['email'],
-        appearance: {
-          theme: 'dark',
-          accentColor: '#3b82f6',
-        },
-        embeddedWallets: {
-          ethereum: {
-            createOnLogin: 'users-without-wallets',
+    <ErrorBoundary>
+      <PrivyProvider
+        appId={privyAppId}
+        config={{
+          loginMethods: ['email'],
+          appearance: {
+            theme: 'dark',
+            accentColor: '#4a90d9',
           },
-          solana: {
-            createOnLogin: 'users-without-wallets',
+          embeddedWallets: {
+            ethereum: {
+              createOnLogin: 'all-users',
+            },
+            solana: {
+              createOnLogin: 'all-users',
+            },
           },
-        },
-      }}
-    >
-      <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
-          <AuthWrapper>
+        }}
+      >
+        <QueryClientProvider client={queryClient}>
+          <BrowserRouter>
+            <SSEInitializer />
             <Layout>
               <Routes>
                 <Route path="/" element={<Dashboard />} />
@@ -74,10 +84,12 @@ function App() {
                 <Route path="/settings" element={<Settings />} />
               </Routes>
             </Layout>
-          </AuthWrapper>
-        </BrowserRouter>
-      </QueryClientProvider>
-    </PrivyProvider>
+            <ToastContainer />
+            <GlobalLoading />
+          </BrowserRouter>
+        </QueryClientProvider>
+      </PrivyProvider>
+    </ErrorBoundary>
   );
 }
 

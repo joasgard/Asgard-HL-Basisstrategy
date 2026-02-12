@@ -1,5 +1,5 @@
 #!/bin/bash
-# Delta Neutral Funding Rate Arbitrage Bot - Environment Setup Script
+# Asgard Basis - Environment Setup Script
 # Usage: ./setup.sh [options]
 
 set -euo pipefail
@@ -242,7 +242,7 @@ setup_env_file() {
     else
         # Create basic .env
         cat > "$env_file" << 'EOF'
-# Delta Neutral Bot Environment Configuration
+# Asgard Basis Environment Configuration
 
 # Asgard API
 ASGARD_API_KEY=
@@ -347,7 +347,7 @@ print_summary() {
 # =============================================================================
 main() {
     echo "========================================"
-    echo "  Delta Neutral Bot - Setup Script"
+    echo "  Asgard Basis - Setup Script"
     echo "========================================"
     echo ""
     
@@ -371,11 +371,11 @@ main() {
 # Show help
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
     cat << EOF
-Delta Neutral Bot Setup Script
+Asgard Basis Setup Script
 
 Usage: $0 [options]
 
-This script sets up the development environment for the Delta Neutral Bot.
+This script sets up the development environment for Asgard Basis.
 
 Steps performed:
   1. Check system requirements (Python 3.9+)

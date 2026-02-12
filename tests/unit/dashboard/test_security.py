@@ -4,7 +4,7 @@ Tests for dashboard security utilities.
 import pytest
 from unittest.mock import MagicMock, patch
 
-from src.dashboard.security import SecretSanitizer, sanitize_for_audit
+from backend.dashboard.security import SecretSanitizer, sanitize_for_audit
 
 
 class TestSecretSanitizer:

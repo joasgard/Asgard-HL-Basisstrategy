@@ -13,7 +13,7 @@ import hashlib
 import hmac
 from unittest.mock import patch, MagicMock
 
-from src.security.encryption import (
+from shared.security.encryption import (
     # Exceptions
     EncryptionError,
     DecryptionError,
@@ -681,8 +681,8 @@ class TestArgon2Fallback:
         kek_argon2 = derive_kek(password, salt)
         
         # Mock Argon2 as unavailable and get PBKDF2 result
-        with patch('src.security.encryption.ARGON2_AVAILABLE', False):
-            with patch('src.security.encryption.hash_secret_raw', side_effect=ImportError):
+        with patch('shared.common.security.encryption.ARGON2_AVAILABLE', False):
+            with patch('shared.common.security.encryption.hash_secret_raw', side_effect=ImportError):
                 kek_pbkdf2 = derive_kek(password, salt)
         
         # Different algorithms should produce different keys

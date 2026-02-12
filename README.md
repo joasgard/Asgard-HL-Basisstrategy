@@ -1,222 +1,182 @@
-# Delta Neutral Funding Rate Arbitrage Bot
+# Asgard Basis
 
-**Status:** Phases 1-9 Complete (950+ tests passing)  
-**Dashboard:** Web UI with real-time APY calculator & responsive mobile layout  
-**Spec Version:** 3.4  
-**Security:** 🔐 Privy embedded wallets (no local private keys)
+**Status:** Production Ready
+**Dashboard:** React SPA with TypeScript, Vite, Tailwind CSS & Privy SDK
+**Backend:** FastAPI + PostgreSQL + Redis
+**Security:** Privy embedded wallets (no local private keys)
 
-A delta-neutral arbitrage strategy capturing funding rate differentials between **Asgard Finance** (Solana long positions) and **Hyperliquid** (Arbitrum short perpetuals).
+A **market-neutral trading bot** that generates passive income from cryptocurrency funding rates without exposure to price movements.
 
-> **🔐 Security Note:** This bot uses [Privy](https://privy.io) for secure wallet infrastructure. Private keys are **never stored locally** - they remain safely sharded in Privy's TEE (Trusted Execution Environment) infrastructure. All signing is done via secure API calls.
+> **Security Note:** This bot uses [Privy](https://privy.io) for secure wallet infrastructure. Private keys are **never stored locally** - they remain safely sharded in Privy's TEE (Trusted Execution Environment). All signing is done via secure API calls.
 
 ---
 
-## 🚀 Quick Start (3 Minutes)
+## How It Makes Money
 
-**New users:** See **[GETTING_STARTED.md](GETTING_STARTED.md)** for complete setup instructions.
+Cryptocurrency exchanges charge funding rates every 8 hours to balance long/short positions. When many traders are long, longs pay shorts. Our bot captures these payments:
+
+```
++------------------------------------------------------------------+
+|                    HOW IT MAKES MONEY                              |
++------------------------------------------------------------------+
+|                                                                    |
+|  1. BORROW $10,000 on Solana (Asgard)         PAYS ~6% APR       |
+|     +-- Buy SOL with borrowed money                               |
+|     +-- Earn staking rewards (~3% APR)                             |
+|                                                                    |
+|  2. SHORT $10,000 on Arbitrum (Hyperliquid)    EARNS ~12% APR     |
+|     +-- Sell SOL-PERP to hedge price exposure                      |
+|                                                                    |
+|  3. RESULT: Price exposure cancels out (DELTA NEUTRAL)             |
+|     +-- NET YIELD: ~12% - 6% + 3% = ~9% APR                      |
+|                                                                    |
++------------------------------------------------------------------+
+```
+
+**Expected Yield: 6-15% APR** (varies with market conditions)
+
+| Investment | Expected Annual | Monthly Average |
+|------------|-----------------|-----------------|
+| $10,000 | $600 - $1,500 | $50 - $125 |
+| $50,000 | $3,000 - $7,500 | $250 - $625 |
+| $100,000 | $6,000 - $15,000 | $500 - $1,250 |
+
+### Risk Profile
+
+| Risk | Level | Notes |
+|------|-------|-------|
+| **Price Risk** | Eliminated | Long and short cancel each other |
+| **Funding Risk** | Variable | Rates can turn negative; bot exits automatically |
+| **Liquidation Risk** | Low | 3x leverage with automatic margin monitoring |
+| **Smart Contract Risk** | Medium | Uses established protocols (Asgard, Hyperliquid) |
+| **Custody Risk** | Minimal | Self-custody via Privy embedded wallets |
+
+---
+
+## How It Works
+
+### 1. Opportunity Detection
+The bot monitors funding rates continuously. When funding rate < 0 (shorts get paid), predicted rate stays negative, and expected yield > costs, it triggers entry.
+
+### 2. Position Opening
+- **Solana (Asgard):** Deposit SOL as collateral, borrow USDC, buy more SOL
+- **Arbitrum (Hyperliquid):** Deposit USDC as margin, short SOL-PERP
+
+Result: Long SOL exposure = Short SOL exposure (price neutral)
+
+### 3. Earning Phase
+Every 8 hours: receive funding payment on Hyperliquid short, pay borrowing interest on Asgard, earn SOL staking rewards. Net funding accumulates as profit.
+
+### 4. Exit Conditions
+Bot closes positions when funding rate turns positive, risk thresholds are breached, or user manually stops.
+
+---
+
+## Quick Start
 
 ```bash
-# 1. Clone and setup
+# 1. Clone
 git clone <repository-url>
-cd BasisStrategy
-./scripts/setup.sh
+cd AsgardBasis
 
-# 2. Start the dashboard
+# 2. Setup Python environment
+python -m venv .venv
 source .venv/bin/activate
-uvicorn src.dashboard.main:app --port 8080
+pip install -r requirements.txt
+
+# 3. Start PostgreSQL + Redis (Docker recommended)
+docker compose -f docker/docker-compose.yml up -d postgres redis
+
+# 4. Configure secrets (7 files)
+mkdir -p secrets
+echo "your-asgard-api-key" > secrets/asgard_api_key.txt
+echo "your-privy-app-id" > secrets/privy_app_id.txt
+echo "your-privy-app-secret" > secrets/privy_app_secret.txt
+echo "https://solana-rpc.com" > secrets/solana_rpc_url.txt
+echo "https://arbitrum-rpc.com" > secrets/arbitrum_rpc_url.txt
+openssl rand -hex 32 > secrets/server_secret.txt
+openssl ecparam -name prime256v1 -genkey -noout -out secrets/privy_auth.pem
+
+# 5. Build frontend
+cd frontend && npm install && npm run build && cd ..
+
+# 6. Start
+python run_dashboard.py
 ```
 
-Then open **http://localhost:8080** and complete the 3-step wizard:
+Open **http://localhost:8080** -> Login with Privy -> Fund wallets -> Trade
 
-| Step | Action | Time |
-|------|--------|------|
-| 1 | Login with Privy (Google/Twitter) | 30 sec |
-| 2 | Create Solana + Arbitrum wallets | 30 sec |
-| 3 | Fund wallets & start trading | 2 min |
-
-**No API keys required** - both exchanges work with wallet-based authentication!
+See [GETTING_STARTED.md](GETTING_STARTED.md) for complete setup, Docker deployment, and troubleshooting.
 
 ---
 
-## Strategy Overview
+## Architecture
 
 ```
-┌─────────────────────────┐         ┌─────────────────────────┐
-│    ASGARD (Solana)      │         │   HYPERLIQUID (Arbitrum)│
-│  ┌───────────────────┐  │         │  ┌───────────────────┐  │
-│  │  LONG Spot/Margin │  │◄───────►│  │  SHORT Perpetual  │  │
-│  │  • 3-4x leverage  │  │  Delta  │  │  • 3-4x leverage  │  │
-│  │  • SOL/LST assets │  │ Neutral │  │  • SOL-PERP       │  │
-│  │  • Earn funding   │  │         │  │  • Receive funding│  │
-│  └───────────────────┘  │         │  └───────────────────┘  │
-└─────────────────────────┘         └─────────────────────────┘
+React SPA  ->  FastAPI Backend  ->  PostgreSQL + Redis
+                    |
+          +---------+---------+
+          |                   |
+    IntentScanner     PositionMonitor
+          |                   |
+    UserTradingContext  (per-user exchange clients)
+          |                   |
+     +---------+    +---------+
+     | Asgard  |    | Hyper-  |
+     | (Solana)|    | liquid  |
+     +---------+    +---------+
 ```
 
-**Supported Asset:** SOL/USDC only (focused strategy)
-
-**Yield Sources:**
-- Hyperliquid funding payments (shorts paid when funding < 0)
-- Asgard lending yield minus borrowing cost
-- LST staking rewards (for jitoSOL, jupSOL, INF)
+**Key Design:**
+- Multi-user: each user gets Privy-managed wallets + isolated trading context
+- Intent-based: users submit entry criteria, bot waits for conditions
+- Background monitoring: auto-exit on risk triggers across all users
 
 ---
 
-## 📚 Documentation
+## Project Structure
+
+```
++-- bot/              # Trading engine (core, venues, state)
++-- shared/           # Shared packages (db, models, config, security, chain)
++-- backend/          # FastAPI dashboard (API + React SPA serving)
++-- frontend/         # React SPA (TypeScript, Vite, Tailwind)
++-- migrations/       # PostgreSQL migrations (8 files)
++-- docker/           # Dockerfile + docker-compose.yml
++-- tests/            # Test suite (unit + integration)
+```
+
+---
+
+## Documentation
 
 | Document | Purpose |
 |----------|---------|
-| **[GETTING_STARTED.md](GETTING_STARTED.md)** | **Step-by-step setup guide for new users** |
-| [spec.md](spec.md) | Full technical specification (architecture, formulas, risk limits) |
-| [spec-dashboard.md](spec-dashboard.md) | Dashboard technical specification |
-| [tracker.md](tracker.md) | Implementation progress and task breakdown |
-| [tracker-dashboard.md](tracker-dashboard.md) | Dashboard implementation tracker |
-| [SECURITY.md](SECURITY.md) | Security best practices and secret management |
-| [test-check.md](test-check.md) | Safety verification test suite |
-| [future-releases.md](future-releases.md) | Roadmap and deferred features |
+| [GETTING_STARTED.md](GETTING_STARTED.md) | Complete setup, testing & deployment guide |
+| [docs/spec.md](docs/spec.md) | Technical specification (v4.0) |
+| [docs/tracker.md](docs/tracker.md) | Implementation progress tracker |
+| [SECURITY.md](SECURITY.md) | Security practices |
 
 ---
 
-## Quick Reference
+## Safety
 
-### Entry Criteria
-1. Current funding rate < 0 (shorts paid)
-2. Predicted next funding < 0 (shorts will be paid)
-3. Total expected APY > 0 after all costs
-4. Funding volatility < 50% (1-week lookback)
-
-### Default Parameters
-| Parameter | Value |
-|-----------|-------|
-| Leverage | 2x-4x (slider-adjustable) |
-| Min Position | $1,000 |
-| Price Deviation Threshold | 0.5% |
-| Delta Drift Threshold | 0.5% |
-
----
-
-## Development Status
-
-| Phase | Status | Description |
-|-------|--------|-------------|
-| Phase 1 | ✅ Complete | Project setup, deps, config, logging, retry |
-| Phase 2 | ✅ Complete | Core models (enums, funding, opportunity, positions) |
-| Phase 2.5 | ✅ Complete | API Security (secrets management) |
-| Phase 3 | ✅ Complete | Asgard integration (client, market data, manager) |
-| Phase 4 | ✅ Complete | Hyperliquid integration (client, funding, signer, trader) |
-| Phase 5.1 | ✅ Complete | Opportunity detector |
-| Phase 5.2 | ✅ Complete | Price consensus & fill validator |
-| Phase 5.3 | ✅ Complete | Position manager |
-| Phase 5.4 | ✅ Complete | Position sizer |
-| Phase 5.5 | ✅ Complete | LST correlation monitor |
-| Phase 6 | ✅ Complete | Risk engine & circuit breakers |
-| Phase 7 | ✅ Complete | Pause controller & emergency stops |
-| Phase 8 | ✅ Complete | Shadow trading & paper trading mode |
-| Phase 9 | ✅ Complete | **Dashboard** - Web UI with real-time APY calculator, responsive mobile layout |
-
-### Completed Work (950+ tests passing)
-- ✅ **Foundation** - Directory structure, deps, config, logging, retry
-- ✅ **Models** - Enums, FundingRate, AsgardRates, ArbitrageOpportunity, Positions
-- ✅ **Chain Connection** - Solana/Arbitrum clients, outage detection
-- ✅ **Asgard Integration** - Client, market data, state machine, transactions, manager
-- ✅ **Hyperliquid Integration** - Client, funding oracle, signer, trader
-- ✅ **Core Strategy** - Opportunity detection, price consensus, fill validation
-- ✅ **Dashboard** - Web UI, REST API, real-time APY calculator, responsive mobile layout, pause/resume controls
-
-See [tracker.md](tracker.md) for detailed task breakdown.
-
----
-
-## 🖥️ Dashboard
-
-The bot includes a **web dashboard** with a guided 3-step setup wizard:
-
-### 3-Step Setup Wizard
-
-| Step | Description |
-|------|-------------|
-| **1. Auth** | Login with Privy (Google, Twitter, Email) |
-| **2. Wallets** | Auto-create Solana + Arbitrum wallets |
-| **3. Exchange** | Optional API keys (wallet auth works without) |
-
-### Dashboard Features
-
-| Feature | Description |
-|---------|-------------|
-| **📊 APY Calculator** | Real-time leverage-adjusted APY with funding rate integration |
-| **🎯 Strategy Performance** | Combined net APY display with leg breakdowns |
-| **🏛️ Asgard Leg Details** | SOL supply rate, USDC borrow rate, formula breakdown |
-| **⚡ Hyperliquid Leg Details** | SOL-PERP funding rate, annualized APY |
-| **📱 Mobile Responsive** | Tabbed layout for mobile (Overview / Leg Details) |
-| **⚡ Leverage Slider** | 2x-4x leverage with real-time APY updates |
-| **🟢 Open Position** | One-click position entry |
-| **Real-time Status** | Uptime, positions, PnL |
-| **Position Monitor** | Live position tracking with health metrics |
-| **Control Panel** | Pause/resume bot operations |
-| **Auto-refresh** | Updates every 5 seconds |
-
-**Access:** http://localhost:8080 (when running)
-
-**Setup:** See [GETTING_STARTED.md](GETTING_STARTED.md#-using-the-dashboard)
-
----
-
-## Usage
-
-### Run Bot Only (Headless)
-```bash
-source .venv/bin/activate
-python run_bot.py
-```
-
-### Run Bot + Dashboard
-```bash
-# Terminal 1 - Bot
-source .venv/bin/activate
-python run_bot.py
-
-# Terminal 2 - Dashboard
-source .venv/bin/activate
-uvicorn src.dashboard.main:app --host 0.0.0.0 --port 8080
-```
-
-### Run with Docker Compose
-```bash
-cd docker
-docker-compose up -d
-```
-
-See [GETTING_STARTED.md](GETTING_STARTED.md) for complete setup details.
-
----
-
-## Local Development Setup
-
-For detailed setup instructions, see **[GETTING_STARTED.md](GETTING_STARTED.md)**.
-
-Quick summary:
-1. Clone repository
-2. Run `./scripts/setup.sh`
-3. Add Privy credentials (`secrets/privy_app_id.txt`, `secrets/privy_app_secret.txt`)
-4. Run dashboard: `uvicorn src.dashboard.main:app --port 8080`
-5. Complete 3-step wizard at http://localhost:8080
-
-No exchange API keys required - both Asgard and Hyperliquid work with wallet-based authentication!
-
----
-
-## Safety & Testing
-
-This project includes a comprehensive **555+ test** safety suite covering:
+- 1000+ tests across unit and integration
 - Delta neutrality invariants
-- Liquidation protection
-- Price consensus validation
-- Funding rate safety checks
-- Transaction state machine recovery
-- Dashboard API security
-
-See [test-check.md](test-check.md) for the safety verification test matrix.
+- Liquidation protection with automatic exit monitoring
+- Circuit breakers and risk engine
+- Structured error codes with user-friendly messages
+- Per-user position isolation
 
 ---
 
-*Last updated: 2026-02-06*  
-*Dashboard: v2.0 with responsive layout & APY calculator*
+## Costs & Fees
+
+- **Hyperliquid**: 0.01% taker fee on trades
+- **Asgard**: Variable borrow rate (typically 4-8% APR)
+- **Gas Fees**: ~$0.01-0.10 per transaction (Solana + Arbitrum)
+- **Minimum**: $5,000+ recommended (gas costs become negligible)
+
+---
+
+*Last updated: 2026-02-12*

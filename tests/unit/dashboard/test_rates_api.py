@@ -9,11 +9,11 @@ class TestGetRates:
     """Tests for GET /rates endpoint."""
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.rates.AsgardClient')
-    @patch('src.dashboard.api.rates.HyperliquidFundingOracle')
+    @patch('backend.dashboard.api.rates.AsgardClient')
+    @patch('backend.dashboard.api.rates.HyperliquidFundingOracle')
     async def test_get_rates_success(self, mock_oracle_class, mock_asgard_class):
         """Test fetching rates successfully from both venues."""
-        from src.dashboard.api.rates import get_rates
+        from backend.dashboard.api.rates import get_rates
         
         # Mock Asgard client
         mock_asgard = AsyncMock()
@@ -76,11 +76,11 @@ class TestGetRates:
         assert "drift" in result["combined"]
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.rates.AsgardClient')
-    @patch('src.dashboard.api.rates.HyperliquidFundingOracle')
+    @patch('backend.dashboard.api.rates.AsgardClient')
+    @patch('backend.dashboard.api.rates.HyperliquidFundingOracle')
     async def test_get_rates_with_leverage(self, mock_oracle_class, mock_asgard_class):
         """Test fetching rates with different leverage values."""
-        from src.dashboard.api.rates import get_rates
+        from backend.dashboard.api.rates import get_rates
         
         # Mock Asgard client
         mock_asgard = AsyncMock()
@@ -126,11 +126,11 @@ class TestGetRates:
         assert result["asgard"]["kamino"] == -4.0
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.rates.AsgardClient')
-    @patch('src.dashboard.api.rates.HyperliquidFundingOracle')
+    @patch('backend.dashboard.api.rates.AsgardClient')
+    @patch('backend.dashboard.api.rates.HyperliquidFundingOracle')
     async def test_get_rates_asgard_error(self, mock_oracle_class, mock_asgard_class):
         """Test handling Asgard API errors gracefully."""
-        from src.dashboard.api.rates import get_rates
+        from backend.dashboard.api.rates import get_rates
         
         # Mock Asgard client to raise exception
         mock_asgard = AsyncMock()
@@ -158,11 +158,11 @@ class TestGetRates:
         assert result["asgard"] == {}
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.rates.AsgardClient')
-    @patch('src.dashboard.api.rates.HyperliquidFundingOracle')
+    @patch('backend.dashboard.api.rates.AsgardClient')
+    @patch('backend.dashboard.api.rates.HyperliquidFundingOracle')
     async def test_get_rates_hyperliquid_error(self, mock_oracle_class, mock_asgard_class):
         """Test handling Hyperliquid API errors gracefully."""
-        from src.dashboard.api.rates import get_rates
+        from backend.dashboard.api.rates import get_rates
         
         # Mock Asgard client
         mock_asgard = AsyncMock()
@@ -198,11 +198,11 @@ class TestGetRates:
         assert result["hyperliquid"]["annualized"] == 0.0
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.rates.AsgardClient')
-    @patch('src.dashboard.api.rates.HyperliquidFundingOracle')
+    @patch('backend.dashboard.api.rates.AsgardClient')
+    @patch('backend.dashboard.api.rates.HyperliquidFundingOracle')
     async def test_get_rates_sol_not_found(self, mock_oracle_class, mock_asgard_class):
         """Test when SOL rate is not found in Hyperliquid response."""
-        from src.dashboard.api.rates import get_rates
+        from backend.dashboard.api.rates import get_rates
         
         # Mock Asgard client
         mock_asgard = AsyncMock()
@@ -230,10 +230,10 @@ class TestFetchAsgardRates:
     """Tests for _fetch_asgard_rates internal function."""
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.rates.AsgardClient')
+    @patch('backend.dashboard.api.rates.AsgardClient')
     async def test_fetch_asgard_rates_calculation(self, mock_asgard_class):
         """Test APY calculation at specified leverage."""
-        from src.dashboard.api.rates import _fetch_asgard_rates
+        from backend.dashboard.api.rates import _fetch_asgard_rates
         
         mock_asgard = AsyncMock()
         mock_asgard_class.return_value = mock_asgard
@@ -270,10 +270,10 @@ class TestFetchAsgardRates:
         assert details["drift"]["net_apy"] == 29.0
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.rates.AsgardClient')
+    @patch('backend.dashboard.api.rates.AsgardClient')
     async def test_fetch_asgard_rates_unknown_protocol(self, mock_asgard_class):
         """Test handling unknown protocol IDs gracefully."""
-        from src.dashboard.api.rates import _fetch_asgard_rates
+        from backend.dashboard.api.rates import _fetch_asgard_rates
         
         mock_asgard = AsyncMock()
         mock_asgard_class.return_value = mock_asgard
@@ -306,10 +306,10 @@ class TestFetchAsgardRates:
         assert len(rates) == 1  # Only kamino
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.rates.AsgardClient')
+    @patch('backend.dashboard.api.rates.AsgardClient')
     async def test_fetch_asgard_rates_empty_strategies(self, mock_asgard_class):
         """Test handling empty strategies response."""
-        from src.dashboard.api.rates import _fetch_asgard_rates
+        from backend.dashboard.api.rates import _fetch_asgard_rates
         
         mock_asgard = AsyncMock()
         mock_asgard_class.return_value = mock_asgard
@@ -325,10 +325,10 @@ class TestFetchAsgardRates:
         assert details == {}
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.rates.AsgardClient')
+    @patch('backend.dashboard.api.rates.AsgardClient')
     async def test_fetch_asgard_rates_missing_sol_usdc(self, mock_asgard_class):
         """Test when SOL/USDC strategy is missing."""
-        from src.dashboard.api.rates import _fetch_asgard_rates
+        from backend.dashboard.api.rates import _fetch_asgard_rates
         
         mock_asgard = AsyncMock()
         mock_asgard_class.return_value = mock_asgard
@@ -354,10 +354,10 @@ class TestFetchHyperliquidRates:
     """Tests for _fetch_hyperliquid_rates internal function."""
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.rates.HyperliquidFundingOracle')
+    @patch('backend.dashboard.api.rates.HyperliquidFundingOracle')
     async def test_fetch_hyperliquid_rates_success(self, mock_oracle_class):
         """Test fetching Hyperliquid rates successfully."""
-        from src.dashboard.api.rates import _fetch_hyperliquid_rates
+        from backend.dashboard.api.rates import _fetch_hyperliquid_rates
         
         mock_oracle = AsyncMock()
         mock_oracle_class.return_value = mock_oracle
@@ -378,10 +378,10 @@ class TestFetchHyperliquidRates:
         assert result["annualized"] == pytest.approx(-18.39, abs=0.5)
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.rates.HyperliquidFundingOracle')
+    @patch('backend.dashboard.api.rates.HyperliquidFundingOracle')
     async def test_fetch_hyperliquid_rates_sol_not_found(self, mock_oracle_class):
         """Test when SOL is not in the funding rates response."""
-        from src.dashboard.api.rates import _fetch_hyperliquid_rates
+        from backend.dashboard.api.rates import _fetch_hyperliquid_rates
         
         mock_oracle = AsyncMock()
         mock_oracle_class.return_value = mock_oracle
@@ -399,10 +399,10 @@ class TestFetchHyperliquidRates:
         assert result["annualized"] == 0.0
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.rates.HyperliquidFundingOracle')
+    @patch('backend.dashboard.api.rates.HyperliquidFundingOracle')
     async def test_fetch_hyperliquid_rates_api_error(self, mock_oracle_class):
         """Test handling API errors gracefully."""
-        from src.dashboard.api.rates import _fetch_hyperliquid_rates
+        from backend.dashboard.api.rates import _fetch_hyperliquid_rates
         
         mock_oracle = AsyncMock()
         mock_oracle_class.return_value = mock_oracle

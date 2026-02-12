@@ -1,5 +1,5 @@
 #!/bin/bash
-# Delta Neutral Funding Rate Arbitrage Bot - Health Check Script
+# Asgard Basis - Health Check Script
 # Usage: ./health_check.sh [options]
 
 set -euo pipefail
@@ -58,7 +58,7 @@ send_alert() {
     if [[ -n "$ALERT_WEBHOOK_URL" ]]; then
         curl -s -X POST \
             -H "Content-Type: application/json" \
-            -d "{\"text\":\"[$severity] Delta Neutral Bot: $message\",\"timestamp\":\"$(date -u +'%Y-%m-%dT%H:%M:%SZ')\"}" \
+            -d "{\"text\":\"[$severity] Asgard Basis: $message\",\"timestamp\":\"$(date -u +'%Y-%m-%dT%H:%M:%SZ')\"}" \
             "$ALERT_WEBHOOK_URL" &>/dev/null || true
     fi
 }
@@ -295,7 +295,7 @@ main() {
 # Show help
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
     cat << EOF
-Delta Neutral Bot Health Check Script
+Asgard Basis Health Check Script
 
 Usage: $0 [command] [options]
 

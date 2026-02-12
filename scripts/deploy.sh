@@ -1,5 +1,5 @@
 #!/bin/bash
-# Delta Neutral Funding Rate Arbitrage Bot - Deployment Script
+# Asgard Basis - Deployment Script
 # Usage: ./deploy.sh [environment] [options]
 
 set -euo pipefail
@@ -203,7 +203,7 @@ show_status() {
 # =============================================================================
 main() {
     echo "========================================"
-    echo "  Delta Neutral Bot - Deployment Script"
+    echo "  Asgard Basis - Deployment Script"
     echo "  Environment: $ENVIRONMENT"
     echo "  Image Tag: $IMAGE_TAG"
     echo "========================================"
@@ -251,7 +251,7 @@ main() {
 # Show help
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
     cat << EOF
-Delta Neutral Bot Deployment Script
+Asgard Basis Deployment Script
 
 Usage: $0 [environment] [options]
 

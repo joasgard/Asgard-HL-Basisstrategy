@@ -4,7 +4,7 @@ from decimal import Decimal
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 
-from src.core.pause_controller import (
+from bot.core.pause_controller import (
     PauseController,
     CircuitBreakerType,
     PauseScope,

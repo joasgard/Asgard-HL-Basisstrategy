@@ -7,7 +7,30 @@ export interface Position {
   leverage: number;
   size_usd: number;
   pnl_usd: number;
+  pnl_percent: number;
+  entry_price: number;
+  current_price: number;
+  health_factor: number;
   created_at: string;
+  asgard_pda?: string;
+  hyperliquid_address?: string;
+}
+
+export interface JobStatus {
+  job_id: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  position_id?: string;
+  error?: string;
+  error_code?: string;
+  error_stage?: string;
+  created_at?: string;
+  completed_at?: string;
+  params?: {
+    asset?: string;
+    leverage?: number;
+    size_usd?: number;
+    action?: 'close';
+  };
 }
 
 export interface OpenPositionRequest {
@@ -37,12 +60,7 @@ export const positionsApi = {
     return response.data;
   },
 
-  async getJobStatus(jobId: string): Promise<{
-    job_id: string;
-    status: 'pending' | 'running' | 'completed' | 'failed';
-    position_id?: string;
-    error?: string;
-  }> {
+  async getJobStatus(jobId: string): Promise<JobStatus> {
     const response = await apiClient.get(`/positions/jobs/${jobId}`);
     return response.data;
   },

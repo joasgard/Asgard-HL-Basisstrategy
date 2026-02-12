@@ -14,13 +14,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.config.assets import Asset, get_mint
-from src.core.opportunity_detector import OpportunityDetector
-from src.models.common import Protocol
-from src.models.funding import FundingRate, AsgardRates
-from src.models.opportunity import ArbitrageOpportunity, OpportunityScore
-from src.venues.asgard.market_data import AsgardMarketData, NetCarryResult
-from src.venues.hyperliquid.funding_oracle import (
+from shared.config.assets import Asset, get_mint
+from bot.core.opportunity_detector import OpportunityDetector
+from shared.models.common import Protocol
+from shared.models.funding import FundingRate, AsgardRates
+from shared.models.opportunity import ArbitrageOpportunity, OpportunityScore
+from bot.venues.asgard.market_data import AsgardMarketData, NetCarryResult
+from bot.venues.hyperliquid.funding_oracle import (
     HyperliquidFundingOracle,
     FundingPrediction,
     FundingRate as HlFundingRate,
@@ -283,15 +283,15 @@ class TestScanOpportunities:
     
     @pytest.mark.asyncio
     async def test_scan_all_assets(self, mock_asgard_market_data, mock_hyperliquid_oracle):
-        """Test scanning all supported assets."""
+        """Test scanning all supported assets (SOL only)."""
         async with OpportunityDetector(
             asgard_market_data=mock_asgard_market_data,
             hyperliquid_oracle=mock_hyperliquid_oracle,
         ) as detector:
             opportunities = await detector.scan_opportunities()
-        
-        # Should scan all 4 assets
-        assert mock_asgard_market_data.select_best_protocol.call_count == 4
+
+        # Should scan SOL only
+        assert mock_asgard_market_data.select_best_protocol.call_count == 1
     
     @pytest.mark.asyncio
     async def test_scan_sorted_by_apy(
@@ -356,12 +356,12 @@ class TestCalculateTotalAPY:
             funding_apy, net_carry_apy, lst_staking_apy = await detector.calculate_total_apy(
                 asset=Asset.SOL,
                 protocol=Protocol.MARGINFI,
-                funding_rate=Decimal("-0.1095"),  # Annual
+                funding_rate=Decimal("-0.1095"),  # Annual 1x rate
             )
-        
-        # Funding APY should be absolute value
-        assert funding_apy == Decimal("0.1095")
-        # Net carry from mock
+
+        # Funding APY = |rate| × leverage (3x default) — per deployed capital
+        assert funding_apy == Decimal("0.1095") * Decimal("3")
+        # Net carry from mock (already leveraged)
         assert net_carry_apy == Decimal("-0.01")
         # No LST staking for SOL
         assert lst_staking_apy == Decimal("0")
@@ -388,7 +388,8 @@ class TestCalculateTotalAPY:
                 funding_rate=Decimal("-0.1095"),
             )
         
-        assert funding_apy == Decimal("0.1095")
+        # Funding APY = |rate| × leverage (3x default)
+        assert funding_apy == Decimal("0.1095") * Decimal("3")
         assert net_carry_apy == Decimal("0.015")
         # jitoSOL has ~8% staking yield
         assert lst_staking_apy > Decimal("0")
@@ -777,67 +778,6 @@ class TestCheckEntryCriteria:
         assert criteria["preflight_passed"] is False
 
 
-class TestLSTAssets:
-    """Tests specific to LST assets."""
-    
-    @pytest.mark.asyncio
-    async def test_jitosol_opportunity(self, mock_asgard_market_data, mock_hyperliquid_oracle):
-        """Test opportunity detection for jitoSOL."""
-        mock_asgard_market_data.select_best_protocol = AsyncMock(return_value=
-            NetCarryResult(
-                protocol=Protocol.MARGINFI,
-                lending_rate=0.06,
-                borrowing_rate=0.085,
-                net_carry_rate=0.01,
-                net_carry_apy=0.01,
-                leverage=3.0,
-                has_capacity=True,
-            )
-        )
-        
-        async with OpportunityDetector(
-            asgard_market_data=mock_asgard_market_data,
-            hyperliquid_oracle=mock_hyperliquid_oracle,
-        ) as detector:
-            opportunities = await detector.scan_opportunities(assets=[Asset.JITOSOL])
-        
-        assert len(opportunities) == 1
-        opp = opportunities[0]
-        assert opp.asset == Asset.JITOSOL
-        # Should include LST staking yield (~8%)
-        assert opp.score.lst_staking_apy == Decimal("0.08")
-    
-    @pytest.mark.asyncio
-    async def test_jupsol_opportunity(self, mock_asgard_market_data, mock_hyperliquid_oracle):
-        """Test opportunity detection for jupSOL."""
-        async with OpportunityDetector(
-            asgard_market_data=mock_asgard_market_data,
-            hyperliquid_oracle=mock_hyperliquid_oracle,
-        ) as detector:
-            opportunities = await detector.scan_opportunities(assets=[Asset.JUPSOL])
-        
-        assert len(opportunities) == 1
-        opp = opportunities[0]
-        assert opp.asset == Asset.JUPSOL
-        # Should include LST staking yield (~7.5%)
-        assert opp.score.lst_staking_apy == Decimal("0.075")
-    
-    @pytest.mark.asyncio
-    async def test_inf_opportunity(self, mock_asgard_market_data, mock_hyperliquid_oracle):
-        """Test opportunity detection for INF."""
-        async with OpportunityDetector(
-            asgard_market_data=mock_asgard_market_data,
-            hyperliquid_oracle=mock_hyperliquid_oracle,
-        ) as detector:
-            opportunities = await detector.scan_opportunities(assets=[Asset.INF])
-        
-        assert len(opportunities) == 1
-        opp = opportunities[0]
-        assert opp.asset == Asset.INF
-        # Should include LST staking yield (~7%)
-        assert opp.score.lst_staking_apy == Decimal("0.07")
-
-
 class TestCacheManagement:
     """Tests for cache management."""
     
@@ -860,8 +800,8 @@ class TestContextManager:
     @pytest.mark.asyncio
     async def test_context_manager_initializes_clients(self):
         """Test that context manager initializes clients."""
-        with patch("src.core.opportunity_detector.AsgardMarketData") as mock_asgard_class, \
-             patch("src.core.opportunity_detector.HyperliquidFundingOracle") as mock_hl_class:
+        with patch("bot.core.opportunity_detector.AsgardMarketData") as mock_asgard_class, \
+             patch("bot.core.opportunity_detector.HyperliquidFundingOracle") as mock_hl_class:
             
             mock_asgard = MagicMock()
             mock_asgard.client._session = None

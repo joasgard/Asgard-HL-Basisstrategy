@@ -12,17 +12,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.config.assets import Asset
-from src.models.common import Protocol, TransactionState
-from src.venues.asgard.client import AsgardClient
-from src.venues.asgard.manager import (
+from shared.config.assets import Asset
+from shared.models.common import Protocol, TransactionState
+from bot.venues.asgard.client import AsgardClient
+from bot.venues.asgard.manager import (
     AsgardPositionManager,
     OpenPositionResult,
     ClosePositionResult,
     HealthStatus,
 )
-from src.venues.asgard.market_data import NetCarryResult
-from src.venues.asgard.transactions import BuildResult, SignResult, SubmitResult
+from bot.venues.asgard.market_data import NetCarryResult
+from bot.venues.asgard.transactions import BuildResult, SignResult, SubmitResult
 
 
 class TestAsgardPositionManagerInit:
@@ -36,7 +36,7 @@ class TestAsgardPositionManagerInit:
     
     def test_init_creates_clients(self):
         """Test that clients are created if not provided."""
-        with patch("src.venues.asgard.manager.AsgardClient") as mock_client:
+        with patch("bot.venues.asgard.manager.AsgardClient") as mock_client:
             mock_instance = MagicMock()
             mock_client.return_value = mock_instance
             

@@ -1,5 +1,5 @@
-# Root requirements file - installs all dependencies for backward compatibility
-# 
+# Root requirements file - installs all dependencies
+#
 # For specific environments, use:
 #   - Bot only: pip install -r requirements/bot.txt
 #   - Dashboard only: pip install -r requirements/dashboard.txt

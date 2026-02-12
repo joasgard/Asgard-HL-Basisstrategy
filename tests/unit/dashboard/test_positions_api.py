@@ -10,18 +10,25 @@ from datetime import datetime
 from fastapi import HTTPException
 
 
+def _mock_user(user_id="test_user"):
+    """Create a mock User."""
+    user = MagicMock()
+    user.user_id = user_id
+    return user
+
+
 class TestListPositions:
     """Tests for GET /positions endpoint."""
-    
+
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.positions.require_bot_bridge')
+    @patch('backend.dashboard.api.positions.require_bot_bridge')
     async def test_list_positions_success(self, mock_require_bridge):
         """Test listing positions successfully."""
-        from src.dashboard.api.positions import list_positions
-        from src.shared.schemas import PositionSummary
-        
+        from backend.dashboard.api.positions import list_positions
+        from shared.common.schemas import PositionSummary
+
         mock_bridge = AsyncMock()
-        
+
         # Create mock positions
         pos1 = PositionSummary(
             position_id="pos1",
@@ -40,43 +47,43 @@ class TestListPositions:
             opened_at=datetime.utcnow(),
             hold_duration_hours=24.5
         )
-        
+
         mock_bridge.get_positions.return_value = {"pos1": pos1}
         mock_require_bridge.return_value = mock_bridge
-        
-        result = await list_positions()
-        
+
+        result = await list_positions(user=_mock_user())
+
         assert len(result) == 1
         assert result[0].position_id == "pos1"
         assert result[0].asset == "SOL"
-    
+
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.positions.require_bot_bridge')
+    @patch('backend.dashboard.api.positions.require_bot_bridge')
     async def test_list_positions_empty(self, mock_require_bridge):
         """Test listing positions when none exist."""
-        from src.dashboard.api.positions import list_positions
-        
+        from backend.dashboard.api.positions import list_positions
+
         mock_bridge = AsyncMock()
         mock_bridge.get_positions.return_value = {}
         mock_require_bridge.return_value = mock_bridge
-        
-        result = await list_positions()
-        
+
+        result = await list_positions(user=_mock_user())
+
         assert result == []
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.positions.require_bot_bridge')
+    @patch('backend.dashboard.api.positions.require_bot_bridge')
     async def test_list_positions_exception(self, mock_require_bridge):
         """Test handling exception when listing positions."""
-        from src.dashboard.api.positions import list_positions
-        
+        from backend.dashboard.api.positions import list_positions
+
         mock_bridge = AsyncMock()
         mock_bridge.get_positions.side_effect = Exception("Connection error")
         mock_require_bridge.return_value = mock_bridge
-        
+
         with pytest.raises(HTTPException) as exc_info:
-            await list_positions()
-        
+            await list_positions(user=_mock_user())
+
         assert exc_info.value.status_code == 503
 
 
@@ -84,14 +91,14 @@ class TestGetPosition:
     """Tests for GET /positions/{position_id} endpoint."""
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.positions.require_bot_bridge')
+    @patch('backend.dashboard.api.positions.require_bot_bridge')
     async def test_get_position_success(self, mock_require_bridge):
         """Test getting position detail successfully."""
-        from src.dashboard.api.positions import get_position
-        from src.shared.schemas import PositionDetail
-        
+        from backend.dashboard.api.positions import get_position
+        from shared.common.schemas import PositionDetail
+
         mock_bridge = AsyncMock()
-        
+
         pos = PositionDetail(
             position_id="pos1",
             asset="SOL",
@@ -114,43 +121,48 @@ class TestGetPosition:
             pnl={},
             risk={}
         )
-        
+
+        # get_position checks ownership via get_positions first
+        mock_bridge.get_positions.return_value = {"pos1": MagicMock()}
         mock_bridge.get_position_detail.return_value = pos
         mock_require_bridge.return_value = mock_bridge
-        
-        result = await get_position("pos1")
-        
+
+        result = await get_position("pos1", user=_mock_user())
+
         assert result.position_id == "pos1"
         assert result.asset == "SOL"
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.positions.require_bot_bridge')
+    @patch('backend.dashboard.api.positions.require_bot_bridge')
     async def test_get_position_not_found(self, mock_require_bridge):
         """Test handling position not found."""
-        from src.dashboard.api.positions import get_position
-        
+        from backend.dashboard.api.positions import get_position
+
         mock_bridge = AsyncMock()
-        mock_bridge.get_position_detail.side_effect = Exception("404 Not Found")
+        # Position not in user's positions → 404 from ownership check
+        mock_bridge.get_positions.return_value = {}
         mock_require_bridge.return_value = mock_bridge
-        
+
         with pytest.raises(HTTPException) as exc_info:
-            await get_position("nonexistent")
-        
+            await get_position("nonexistent", user=_mock_user())
+
         assert exc_info.value.status_code == 404
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.positions.require_bot_bridge')
+    @patch('backend.dashboard.api.positions.require_bot_bridge')
     async def test_get_position_exception(self, mock_require_bridge):
         """Test handling other exceptions."""
-        from src.dashboard.api.positions import get_position
-        
+        from backend.dashboard.api.positions import get_position
+
         mock_bridge = AsyncMock()
+        # Ownership check passes, then detail fetch fails
+        mock_bridge.get_positions.return_value = {"pos1": MagicMock()}
         mock_bridge.get_position_detail.side_effect = Exception("Connection error")
         mock_require_bridge.return_value = mock_bridge
-        
+
         with pytest.raises(HTTPException) as exc_info:
-            await get_position("pos1")
-        
+            await get_position("pos1", user=_mock_user())
+
         assert exc_info.value.status_code == 503
 
 
@@ -158,35 +170,38 @@ class TestOpenPosition:
     """Tests for POST /positions/open endpoint."""
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.positions.uuid')
+    @patch('backend.dashboard.api.positions.uuid')
     async def test_open_position_success(self, mock_uuid):
         """Test initiating position open successfully."""
         import asyncio
-        from src.dashboard.api.positions import open_position, OpenPositionRequest
+        from backend.dashboard.api.positions import open_position, OpenPositionRequest
         
         mock_uuid.uuid4.return_value = "test-job-id"
         
         mock_db = AsyncMock()
-        mock_db._connection = MagicMock()
-        mock_db._connection.commit = AsyncMock()
-        
+
         mock_user = MagicMock()
         mock_user.user_id = "test_user"
-        
+
+        # Mock Redis for per-user position lock
+        mock_redis = AsyncMock()
+        mock_redis.set = AsyncMock(return_value=True)
+
         request = OpenPositionRequest(asset="SOL", leverage=3.0, size_usd=10000)
-        
-        result = await open_position(request, user=mock_user, db=mock_db)
-        
+
+        with patch('shared.redis_client.get_redis', new_callable=AsyncMock, return_value=mock_redis):
+            result = await open_position(request, user=mock_user, db=mock_db)
+
         assert result.success is True
         assert result.job_id == "test-job-id"
         assert "initiated" in result.message.lower()
-        
+
         mock_db.execute.assert_called_once()
     
     @pytest.mark.asyncio
     async def test_open_position_with_venue(self):
         """Test opening position with specific venue."""
-        from src.dashboard.api.positions import OpenPositionRequest
+        from backend.dashboard.api.positions import OpenPositionRequest
         
         request = OpenPositionRequest(
             asset="SOL",
@@ -201,24 +216,29 @@ class TestOpenPosition:
         assert request.venue == "kamino"
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.api.positions.uuid')
+    @patch('backend.dashboard.api.positions.uuid')
     async def test_open_position_db_error(self, mock_uuid):
         """Test handling database error."""
-        from src.dashboard.api.positions import open_position, OpenPositionRequest
-        
+        from backend.dashboard.api.positions import open_position, OpenPositionRequest
+
         mock_uuid.uuid4.return_value = "test-job-id"
-        
+
         mock_db = AsyncMock()
         mock_db.execute.side_effect = Exception("Database error")
-        
+
         mock_user = MagicMock()
         mock_user.user_id = "test_user"
-        
+
+        # Mock Redis for per-user position lock
+        mock_redis = AsyncMock()
+        mock_redis.set = AsyncMock(return_value=True)
+
         request = OpenPositionRequest(asset="SOL", leverage=3.0, size_usd=10000)
-        
-        with pytest.raises(HTTPException) as exc_info:
-            await open_position(request, user=mock_user, db=mock_db)
-        
+
+        with patch('shared.redis_client.get_redis', new_callable=AsyncMock, return_value=mock_redis):
+            with pytest.raises(HTTPException) as exc_info:
+                await open_position(request, user=mock_user, db=mock_db)
+
         assert exc_info.value.status_code == 500
 
 
@@ -228,7 +248,7 @@ class TestGetJobStatus:
     @pytest.mark.asyncio
     async def test_get_job_status_pending(self):
         """Test getting pending job status."""
-        from src.dashboard.api.positions import get_job_status
+        from backend.dashboard.api.positions import get_job_status
         
         mock_db = AsyncMock()
         mock_db.fetchone.return_value = {
@@ -242,17 +262,17 @@ class TestGetJobStatus:
             "params": '{"asset": "SOL", "leverage": 3.0, "size_usd": 10000}'
         }
         
-        result = await get_job_status("job1", db=mock_db)
-        
+        result = await get_job_status("job1", user=_mock_user(), db=mock_db)
+
         assert result.job_id == "job1"
         assert result.status == "pending"
         assert result.params["asset"] == "SOL"
-    
+
     @pytest.mark.asyncio
     async def test_get_job_status_completed(self):
         """Test getting completed job status."""
-        from src.dashboard.api.positions import get_job_status
-        
+        from backend.dashboard.api.positions import get_job_status
+
         mock_db = AsyncMock()
         mock_db.fetchone.return_value = {
             "job_id": "job1",
@@ -264,17 +284,17 @@ class TestGetJobStatus:
             "completed_at": "2024-01-01T00:01:00",
             "params": '{"asset": "SOL", "leverage": 3.0, "size_usd": 10000}'
         }
-        
-        result = await get_job_status("job1", db=mock_db)
-        
+
+        result = await get_job_status("job1", user=_mock_user(), db=mock_db)
+
         assert result.status == "completed"
         assert result.position_id == "pos123"
-    
+
     @pytest.mark.asyncio
     async def test_get_job_status_failed(self):
         """Test getting failed job status."""
-        from src.dashboard.api.positions import get_job_status
-        
+        from backend.dashboard.api.positions import get_job_status
+
         mock_db = AsyncMock()
         mock_db.fetchone.return_value = {
             "job_id": "job1",
@@ -286,24 +306,24 @@ class TestGetJobStatus:
             "completed_at": "2024-01-01T00:00:30",
             "params": '{"asset": "SOL", "leverage": 3.0, "size_usd": 10000}'
         }
-        
-        result = await get_job_status("job1", db=mock_db)
-        
+
+        result = await get_job_status("job1", user=_mock_user(), db=mock_db)
+
         assert result.status == "failed"
         assert result.error == "Insufficient funds"
         assert result.error_stage == "asgard_open"
-    
+
     @pytest.mark.asyncio
     async def test_get_job_status_not_found(self):
         """Test handling job not found."""
-        from src.dashboard.api.positions import get_job_status
-        
+        from backend.dashboard.api.positions import get_job_status
+
         mock_db = AsyncMock()
         mock_db.fetchone.return_value = None
-        
+
         with pytest.raises(HTTPException) as exc_info:
-            await get_job_status("nonexistent", db=mock_db)
-        
+            await get_job_status("nonexistent", user=_mock_user(), db=mock_db)
+
         assert exc_info.value.status_code == 404
 
 
@@ -313,7 +333,7 @@ class TestListJobs:
     @pytest.mark.asyncio
     async def test_list_jobs_success(self):
         """Test listing jobs successfully."""
-        from src.dashboard.api.positions import list_jobs
+        from backend.dashboard.api.positions import list_jobs
         
         mock_db = AsyncMock()
         mock_db.fetchall.return_value = [
@@ -353,7 +373,7 @@ class TestListJobs:
     @pytest.mark.asyncio
     async def test_list_jobs_empty(self):
         """Test listing jobs when none exist."""
-        from src.dashboard.api.positions import list_jobs
+        from backend.dashboard.api.positions import list_jobs
         
         mock_db = AsyncMock()
         mock_db.fetchall.return_value = []
@@ -368,7 +388,7 @@ class TestListJobs:
     @pytest.mark.asyncio
     async def test_list_jobs_with_limit(self):
         """Test listing jobs with custom limit."""
-        from src.dashboard.api.positions import list_jobs
+        from backend.dashboard.api.positions import list_jobs
         
         mock_db = AsyncMock()
         mock_db.fetchall.return_value = [
@@ -395,7 +415,7 @@ class TestOpenPositionRequest:
     
     def test_valid_request(self):
         """Test creating valid request."""
-        from src.dashboard.api.positions import OpenPositionRequest
+        from backend.dashboard.api.positions import OpenPositionRequest
         
         request = OpenPositionRequest(asset="SOL", leverage=3.0, size_usd=10000)
         
@@ -406,7 +426,7 @@ class TestOpenPositionRequest:
     
     def test_default_leverage(self):
         """Test default leverage value."""
-        from src.dashboard.api.positions import OpenPositionRequest
+        from backend.dashboard.api.positions import OpenPositionRequest
         
         request = OpenPositionRequest(asset="SOL", size_usd=10000)
         
@@ -414,7 +434,7 @@ class TestOpenPositionRequest:
     
     def test_leverage_validation(self):
         """Test leverage validation."""
-        from src.dashboard.api.positions import OpenPositionRequest
+        from backend.dashboard.api.positions import OpenPositionRequest
         from pydantic import ValidationError
         
         # Too low (below 1.1)
@@ -438,7 +458,7 @@ class TestOpenPositionRequest:
     
     def test_size_validation(self):
         """Test size_usd validation."""
-        from src.dashboard.api.positions import OpenPositionRequest
+        from backend.dashboard.api.positions import OpenPositionRequest
         from pydantic import ValidationError
         
         # Too low (below $100 minimum)
@@ -459,7 +479,7 @@ class TestOpenPositionResponse:
     
     def test_success_response(self):
         """Test successful response."""
-        from src.dashboard.api.positions import OpenPositionResponse
+        from backend.dashboard.api.positions import OpenPositionResponse
         
         response = OpenPositionResponse(
             success=True,
@@ -472,7 +492,7 @@ class TestOpenPositionResponse:
     
     def test_failure_response(self):
         """Test failure response."""
-        from src.dashboard.api.positions import OpenPositionResponse
+        from backend.dashboard.api.positions import OpenPositionResponse
         
         response = OpenPositionResponse(
             success=False,
@@ -488,7 +508,7 @@ class TestJobStatusResponse:
     
     def test_pending_status(self):
         """Test pending job status."""
-        from src.dashboard.api.positions import JobStatusResponse
+        from backend.dashboard.api.positions import JobStatusResponse
         
         response = JobStatusResponse(
             job_id="job1",
@@ -501,7 +521,7 @@ class TestJobStatusResponse:
     
     def test_completed_status(self):
         """Test completed job status."""
-        from src.dashboard.api.positions import JobStatusResponse
+        from backend.dashboard.api.positions import JobStatusResponse
         
         response = JobStatusResponse(
             job_id="job1",
@@ -514,7 +534,7 @@ class TestJobStatusResponse:
     
     def test_failed_status(self):
         """Test failed job status."""
-        from src.dashboard.api.positions import JobStatusResponse
+        from backend.dashboard.api.positions import JobStatusResponse
         
         response = JobStatusResponse(
             job_id="job1",

@@ -10,8 +10,8 @@ from datetime import datetime
 
 import httpx
 
-from src.dashboard.bot_bridge import BotBridge, BotUnavailableError
-from src.shared.schemas import BotStats, PositionSummary, PositionDetail, PauseState, PauseScope
+from backend.dashboard.bot_bridge import BotBridge, BotUnavailableError
+from shared.common.schemas import BotStats, PositionSummary, PositionDetail, PauseState, PauseScope
 
 
 class TestBotBridgeInitialization:
@@ -230,10 +230,10 @@ class TestGetPositions:
                 hold_duration_hours=24.5
             )
         }
-        bridge._set_cached("positions", cached_positions)
-        
+        bridge._set_cached("positions_all", cached_positions)
+
         result = await bridge.get_positions()
-        
+
         assert result == cached_positions
     
     @pytest.mark.asyncio
@@ -275,12 +275,12 @@ class TestGetPositions:
         
         # Set stale cache
         stale_positions = {"pos1": MagicMock()}
-        bridge._cache["positions"] = stale_positions
-        bridge._cache_timestamp["positions"] = time.time() - 10.0  # Expired
-        
+        bridge._cache["positions_all"] = stale_positions
+        bridge._cache_timestamp["positions_all"] = time.time() - 10.0  # Expired
+
         with patch.object(bridge, '_request', side_effect=asyncio.TimeoutError):
             result = await bridge.get_positions()
-            
+
             assert result == stale_positions
     
     @pytest.mark.asyncio
@@ -298,12 +298,12 @@ class TestGetPositions:
         bridge = BotBridge()
         
         stale_positions = {"pos1": MagicMock()}
-        bridge._cache["positions"] = stale_positions
-        bridge._cache_timestamp["positions"] = time.time() - 10.0
-        
+        bridge._cache["positions_all"] = stale_positions
+        bridge._cache_timestamp["positions_all"] = time.time() - 10.0
+
         with patch.object(bridge, '_request', side_effect=BotUnavailableError("Bot down")):
             result = await bridge.get_positions()
-            
+
             assert result == stale_positions
 
 

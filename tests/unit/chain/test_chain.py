@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.models.common import Chain, ChainStatus
-from src.chain.outage_detector import OutageDetector, ChainHealth
+from shared.models.common import Chain, ChainStatus
+from shared.chain.outage_detector import OutageDetector, ChainHealth
 
 
 class TestOutageDetector:
@@ -123,7 +123,7 @@ class TestOutageDetector:
         """Test health check with mocked success."""
         detector = OutageDetector()
         
-        with patch("src.chain.outage_detector.SolanaClient") as mock_client:
+        with patch("shared.chain.outage_detector.SolanaClient") as mock_client:
             mock_instance = AsyncMock()
             mock_instance.health_check = AsyncMock(return_value=True)
             mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
@@ -140,7 +140,7 @@ class TestOutageDetector:
         """Test health check with mocked failure."""
         detector = OutageDetector()
         
-        with patch("src.chain.outage_detector.SolanaClient") as mock_client:
+        with patch("shared.chain.outage_detector.SolanaClient") as mock_client:
             mock_instance = AsyncMock()
             mock_instance.health_check = AsyncMock(return_value=False)
             mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)

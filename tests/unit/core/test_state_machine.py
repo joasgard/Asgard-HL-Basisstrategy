@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from src.models.common import TransactionState
-from src.state.state_machine import StateStore, TransactionStateMachine, TransactionRecord
+from shared.models.common import TransactionState
+from bot.state.state_machine import StateStore, TransactionStateMachine, TransactionRecord
 
 
 class TestStateStore:

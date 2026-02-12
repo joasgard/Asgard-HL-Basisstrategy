@@ -6,10 +6,10 @@ from decimal import Decimal
 
 import pytest
 
-from src.models.common import Asset, Protocol, TransactionState, Chain
-from src.models.funding import FundingRate, AsgardRates, BorrowingRate, LendingRate
-from src.models.opportunity import ArbitrageOpportunity, OpportunityScore, OpportunityFilter
-from src.models.position import (
+from shared.models.common import Asset, Protocol, TransactionState, Chain
+from shared.models.funding import FundingRate, AsgardRates, BorrowingRate, LendingRate
+from shared.models.opportunity import ArbitrageOpportunity, OpportunityScore, OpportunityFilter
+from shared.models.position import (
     AsgardPosition, HyperliquidPosition, CombinedPosition, PositionReference
 )
 
@@ -116,7 +116,7 @@ class TestOpportunityModel:
     
     def test_opportunity_entry_criteria(self):
         """Test entry criteria validation."""
-        from src.models.common import Asset, Protocol
+        from shared.models.common import Asset, Protocol
         
         asgard_rates = AsgardRates(
             protocol_id=0,
@@ -182,7 +182,7 @@ class TestOpportunityModel:
     
     def test_opportunity_leverage_validation(self):
         """Test leverage bounds validation."""
-        from src.models.common import Asset, Protocol
+        from shared.models.common import Asset, Protocol
         
         asgard_rates = AsgardRates(
             protocol_id=0,

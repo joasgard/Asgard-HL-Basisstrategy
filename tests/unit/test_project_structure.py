@@ -63,7 +63,7 @@ def test_config_files_exist():
     config_files = [
         "requirements.txt",
         ".env.example",
-        "src/config/risk.yaml",
+        "shared/config/risk.yaml",
     ]
     
     for file_path in config_files:
@@ -74,8 +74,8 @@ def test_config_files_exist():
 def test_imports_work():
     """Verify core modules can be imported."""
     # These should not raise ImportError
-    from src.config import assets, settings
-    from src.utils import logger, retry
+    from shared.config import assets, settings
+    from shared.utils import logger, retry
     
     assert assets is not None
     assert settings is not None
@@ -85,7 +85,7 @@ def test_imports_work():
 
 def test_asset_definitions():
     """Verify asset definitions are loaded correctly."""
-    from src.config.assets import Asset, ASSETS
+    from shared.config.assets import Asset, ASSETS
     
     # Check all assets are defined
     assets = list(ASSETS.keys())

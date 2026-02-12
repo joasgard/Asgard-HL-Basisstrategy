@@ -1,244 +1,149 @@
 # Security Policy
 
-This document outlines security practices for the Delta Neutral Arb trading bot.
+## Quick Security Checklist
 
-## Quick Start for Security
-
-1. **Never commit secrets** - Use `secrets/` directory or environment variables
-2. **Use Privy for wallet security** - No private keys stored locally
-3. **Use separate wallets** - Different addresses for dev/staging/production
-4. **Restrict file permissions** - `chmod 600` on credential files
-5. **Review before sharing** - Run `git status` to verify no secrets are staged
+- [ ] Never commit secrets - `secrets/` is git-ignored
+- [ ] Use Privy for wallets - no local private keys
+- [ ] Set permissions: `chmod 600 secrets/*`
+- [ ] Use separate wallets for dev/prod
+- [ ] PostgreSQL password changed from default
+- [ ] Redis password set in production
 
 ---
 
-## Wallet Infrastructure (Privy)
+## Wallet Security (Privy)
 
 This bot uses **Privy** for secure wallet infrastructure. Private keys are **never stored locally**.
 
-### How It Works
-
 ```
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│  Your Server    │────▶│  Privy API       │────▶│  Secure Enclave │
-│  (Trading Bot)  │◀────│  (TEE)           │◀────│  (Key Shard)    │
-└─────────────────┘     └──────────────────┘     └─────────────────┘
-         │
++------------------+     +------------------+     +------------------+
+|  Your Server     |---->|  Privy API       |---->|  Secure Enclave  |
+|  (Trading Bot)   |<----|  (TEE)           |<----|  (Key Shard)     |
++------------------+     +------------------+     +------------------+
+         |
     Signs with auth key
-    (you control this - privy_auth.pem)
+    (privy_auth.pem - you control this)
 ```
 
-**Key Benefits:**
-- ✅ **No local private keys** - Keys are sharded in Privy's TEE infrastructure
-- ✅ **Server-side signing** - Automated signing for algorithmic trading
-- ✅ **Policy controls** - Set limits on transaction amounts and destinations
-- ✅ **SOC 2 compliant** - Enterprise-grade security
-- ✅ **Key export** - You can export keys anytime for backup
-
-### Setting Up Privy
-
-1. **Create Account**: [https://privy.io](https://privy.io)
-2. **Generate Auth Key**: `openssl ecparam -name prime256v1 -genkey -noout -out privy_auth.pem`
-3. **Register Public Key**: Upload `privy_auth.pub` in Privy dashboard
-4. **Create Wallets**: Use Privy dashboard or SDK to create EVM and Solana wallets
+**Benefits:**
+- No local private keys
+- Server-side signing via API
+- SOC 2 compliant
+- Export keys anytime for backup
 
 ---
 
-## Credential Storage
+## Required Secrets (7 Files)
 
-### Option 1: Secrets Directory (Recommended for Production)
-
-Store credentials in individual files:
+Create in `secrets/` directory:
 
 ```bash
-# Copy templates
-cp secrets/asgard_api_key.txt.example secrets/asgard_api_key.txt
-cp secrets/privy_app_id.txt.example secrets/privy_app_id.txt
-cp secrets/privy_app_secret.txt.example secrets/privy_app_secret.txt
-cp secrets/wallet_address.txt.example secrets/wallet_address.txt
-cp secrets/solana_wallet_address.txt.example secrets/solana_wallet_address.txt
+# External services
+echo "key" > asgard_api_key.txt          # asgard.finance
+echo "id" > privy_app_id.txt             # dashboard.privy.io
+echo "secret" > privy_app_secret.txt     # dashboard.privy.io
+echo "url" > solana_rpc_url.txt          # helius.dev
+echo "url" > arbitrum_rpc_url.txt        # alchemy.com
 
-# Add actual credentials
-echo "your_api_key" > secrets/asgard_api_key.txt
-echo "your_privy_app_id" > secrets/privy_app_id.txt
-echo "your_privy_app_secret" > secrets/privy_app_secret.txt
-echo "0x...your_evm_address..." > secrets/wallet_address.txt
-echo "...your_solana_address..." > secrets/solana_wallet_address.txt
+# Generated locally
+openssl rand -hex 32 > server_secret.txt
+openssl ecparam -name prime256v1 -genkey -noout -out privy_auth.pem
 
-# Copy your Privy authorization key
-cp privy_auth.pem secrets/
-
-# Set restrictive permissions
-chmod 600 secrets/*.txt
-chmod 600 secrets/*.pem
-```
-
-**Protected by .gitignore:**
-- All files in `secrets/` are ignored except `.gitkeep`, `README.md`, and `*.example`
-- Real credential files will never be committed
-
-### Option 2: Environment Variables
-
-```bash
-# Export in your shell
-export ASGARD_API_KEY="your_key"
-export PRIVY_APP_ID="your_app_id"
-export PRIVY_APP_SECRET="your_secret"
-export WALLET_ADDRESS="0x...your_evm_address..."
-export SOLANA_WALLET_ADDRESS="...your_solana_address..."
-```
-
-### Option 3: .env File (Development Only)
-
-```bash
-# Copy example
-cp .env.example .env
-
-# Edit with your credentials
-# .env is git-ignored automatically
+# Set permissions
+chmod 600 *.txt *.pem
 ```
 
 ---
 
-## Required Secrets
+## Infrastructure Security
 
-| Variable | Purpose | Source |
-|----------|---------|--------|
-| `ASGARD_API_KEY` | Asgard Finance API access | Asgard Dashboard |
-| `PRIVY_APP_ID` | Privy application identifier | Privy Dashboard |
-| `PRIVY_APP_SECRET` | Privy application secret | Privy Dashboard |
-| `PRIVY_AUTH_KEY_PATH` | Path to your ECDSA auth key | Generated locally |
-| `WALLET_ADDRESS` | EVM wallet address (for Hyperliquid) | Privy Dashboard |
-| `SOLANA_WALLET_ADDRESS` | Solana wallet address (for Asgard) | Privy Dashboard |
-| `HYPERLIQUID_WALLET_ADDRESS` | Hyperliquid wallet address | From wallet |
-| `ADMIN_API_KEY` | Bot pause/resume API | Generate random string |
+### PostgreSQL
 
----
+- Change default password (`POSTGRES_PASSWORD` in .env)
+- Only accessible within Docker network (not exposed to host in production)
+- Connection pooling via asyncpg (min 2, max 10 connections)
 
-## Security Checklist
+### Redis
 
-Before committing code:
+- AOF persistence enabled for crash recovery
+- Memory limited to 256MB with LRU eviction
+- Used for: rate limiting, distributed locks, SSE pub/sub
+- Not exposed to host in production
 
-```bash
-# 1. Check what's being committed
-git status
+### Docker Hardening
 
-# 2. Review all staged files
-git diff --cached --name-only
-
-# 3. Ensure no secrets in diff
-git diff --cached | grep -i -E "(key|secret|private|password)" | head -20
-
-# 4. Verify .gitignore is working
-git check-ignore -v secrets/asgard_api_key.txt
-# Should output: .gitignore:44:secrets/*    secrets/asgard_api_key.txt
-
-# 5. Verify no private key files exist
-ls secrets/*private_key* 2>/dev/null && echo "WARNING: Found private key files!" || echo "✓ No private key files"
-```
+| Feature | Implementation |
+|---------|---------------|
+| Non-root user | `botuser` (UID 1000) |
+| Read-only filesystem | `read_only: true` |
+| No privilege escalation | `no-new-privileges: true` |
+| Minimal capabilities | `cap_drop: ALL` |
+| tmpfs for temp files | `/tmp` and `.cache` directories |
+| Resource limits | CPU and memory caps |
+| Health checks | All services monitored |
 
 ---
 
-## What Gets Protected
+## Application Security
 
-### Automatically Ignored:
-- `secrets/*` - All secret files (except templates)
-- `.env` - Environment files
-- `*.key`, `*.pem` - Key files
-- `*.db`, `*.sqlite` - Databases
-- `*.log` - Log files
-- Files with "private", "secret", "credential" in name
+### Authentication
+- Privy Email + OTP (no passwords stored)
+- JWT sessions in httpOnly, Secure, SameSite cookies
+- Redis-backed rate limiting on auth endpoints
 
-### What IS Committed:
-- `secrets/*.example` - Template files with placeholder values
-- `secrets/README.md` - Documentation
-- `secrets/.gitkeep` - Directory placeholder
-- `.env.example` - Example environment file
+### Encryption
+- AES-256-GCM field-level encryption for sensitive config
+- KEK derived from HMAC(user_id, server_secret) - never persisted
+- DEK stored encrypted by KEK in PostgreSQL
 
----
+### API Security
+- Security headers: HSTS, CSP, X-Frame-Options, X-Content-Type-Options
+- CSRF protection on state-changing requests
+- Request ID tracking for audit trail
+- Structured JSON logging (PII sanitized)
 
-## Key Security Principles
-
-### 1. No Local Private Keys
-**Previous approach (deprecated):**
-```bash
-# OLD - Private keys stored locally (DANGEROUS)
-echo "private_key" > secrets/solana_private_key.txt
-echo "private_key" > secrets/hyperliquid_private_key.txt
-```
-
-**New approach (Privy):**
-```bash
-# NEW - Only public addresses stored locally
-echo "0x...address..." > secrets/wallet_address.txt
-echo "...address..." > secrets/solana_wallet_address.txt
-# Private keys are safely stored in Privy's TEE infrastructure
-```
-
-### 2. Key Separation
-- **Never reuse wallets** across different environments
-- **Separate wallets for Solana and Hyperliquid** (different chains)
-- **Different wallets for dev/staging/production**
-
-### 3. Privy Policy Controls
-Set up policies in Privy dashboard to limit risk:
-
-| Policy | Recommendation |
-|--------|----------------|
-| Daily spend limit | Set based on your trading volume |
-| Contract allowlist | Only allow Hyperliquid and Asgard contracts |
-| Transaction webhook | Alert on every transaction |
-| 2-of-2 signing | Require manual approval for trades >$10K |
-
-### 4. State Storage Security
-- Only **signatures** are stored in SQLite (not full transactions)
-- Signatures alone cannot be used to replay transactions
-- Database file is git-ignored
-
-### 5. Transaction Validation
-All transactions are validated against allowlists before signing:
-- Solana: Only known program IDs (Marginfi, Kamino, Solend, Drift, Asgard)
-- Hyperliquid: EIP-712 domain and chain ID verification
+### Transaction Validation
+- Only allowed Solana programs can be called
+- Only allowed Hyperliquid actions (order, updateLeverage, cancel)
+- All transactions validated before Privy signing
 
 ---
 
-## Incident Response
+## Privy Setup
 
-### If You Accidentally Commit a Secret:
-
-1. **Immediately revoke/rotate the exposed credential**
-   - Generate new API keys in Privy dashboard
-   - Create new wallets if addresses were exposed (funds are safe, but privacy compromised)
-
-2. **Remove from git history** (if pushed):
+1. **Create account**: [privy.io](https://privy.io)
+2. **Generate auth key**: `openssl ecparam -name prime256v1 -genkey -noout -out privy_auth.pem`
+3. **Register public key**:
    ```bash
-   git filter-branch --force --index-filter \
-   'git rm --cached --ignore-unmatch path/to/secret' \
-   --prune-empty --tag-name-filter cat -- --all
+   openssl ec -in privy_auth.pem -pubout -out privy_auth.pub.pem
+   cat privy_auth.pub.pem  # Copy to Privy dashboard
    ```
-
-3. **Force push** (coordinate with team):
-   ```bash
-   git push origin --force --all
-   ```
-
-4. **Audit access logs** for any unauthorized usage
+4. **Enable**: Email login + embedded wallets (EVM + Solana)
 
 ---
 
-## Reporting Security Issues
+## File Security
 
-If you discover a security vulnerability:
+```bash
+# Verify permissions
+ls -la secrets/
+# Should show: -rw------- (600)
 
-1. **DO NOT** open a public issue
-2. Contact the maintainers directly
-3. Provide detailed description and reproduction steps
-4. Allow time for patch before public disclosure
+# Verify gitignore
+git status  # No secrets should appear
+```
 
 ---
 
-## Additional Resources
+## Production Deployment
 
-- [Privy Documentation](https://docs.privy.io/)
-- [GitHub: Removing sensitive data](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository)
-- [OWASP: Secrets Management](https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html)
+- Use dedicated server/VPS
+- Use `docker-compose.prod.yml` with Nginx for TLS
+- Restrict firewall: only ports 80/443 open
+- No SSH password auth - use keys only
+- Regular updates: `apt update && apt upgrade`
+- Monitor health endpoints: `/health/live` and `/health/ready`
+
+---
+
+*Last updated: 2026-02-12*

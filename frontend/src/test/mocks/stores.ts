@@ -1,0 +1,90 @@
+import { vi } from 'vitest';
+
+// Mock store factory
+export const createMockAuthStore = (overrides = {}) => ({
+  user: null,
+  isAuthenticated: false,
+  isLoading: false,
+  setUser: vi.fn(),
+  setAuthenticated: vi.fn(),
+  setLoading: vi.fn(),
+  getSolanaWallet: vi.fn(),
+  getEvmWallet: vi.fn(),
+  logout: vi.fn(),
+  ...overrides,
+});
+
+export const createMockPositionsStore = (overrides = {}) => ({
+  positions: [],
+  isLoading: false,
+  error: null,
+  selectedPosition: null,
+  totalPnl: 0,
+  totalValue: 0,
+  openPositionsCount: 0,
+  setPositions: vi.fn(),
+  addPosition: vi.fn(),
+  updatePosition: vi.fn(),
+  removePosition: vi.fn(),
+  setLoading: vi.fn(),
+  setError: vi.fn(),
+  selectPosition: vi.fn(),
+  calculateStats: vi.fn(),
+  ...overrides,
+});
+
+export const createMockUIStore = (overrides = {}) => ({
+  activeModal: null,
+  modalData: null,
+  toasts: [],
+  globalLoading: false,
+  loadingMessage: '',
+  sidebarOpen: false,
+  openModal: vi.fn(),
+  closeModal: vi.fn(),
+  addToast: vi.fn(),
+  removeToast: vi.fn(),
+  setGlobalLoading: vi.fn(),
+  toggleSidebar: vi.fn(),
+  setSidebarOpen: vi.fn(),
+  ...overrides,
+});
+
+export const createMockSettingsStore = (overrides = {}) => ({
+  defaultLeverage: 3.0,
+  minPositionSize: 100,
+  maxPositionSize: 50000,
+  enableAutoExit: true,
+  enableCircuitBreakers: true,
+  maxFundingRate: 0.01,
+  stopLossPercent: 10,
+  takeProfitPercent: 50,
+  selectedPreset: 'balanced',
+  isLoading: false,
+  error: null,
+  isDirty: false,
+  updateSettings: vi.fn(),
+  applyPreset: vi.fn(),
+  saveSettings: vi.fn(),
+  loadSettings: vi.fn(),
+  resetSettings: vi.fn(),
+  setLoading: vi.fn(),
+  setError: vi.fn(),
+  markDirty: vi.fn(),
+  ...overrides,
+});
+
+export const createMockRatesStore = (overrides = {}) => ({
+  rates: null,
+  historicalRates: [],
+  isLoading: false,
+  error: null,
+  lastUpdated: null,
+  setRates: vi.fn(),
+  setHistoricalRates: vi.fn(),
+  setLoading: vi.fn(),
+  setError: vi.fn(),
+  refreshRates: vi.fn(),
+  getNetApyAtLeverage: vi.fn(),
+  ...overrides,
+});

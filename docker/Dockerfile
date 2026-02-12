@@ -1,10 +1,29 @@
-# Delta Neutral Funding Rate Arbitrage Bot
-# Multi-stage Dockerfile for production deployment
+# Asgard Basis
+# Multi-stage Dockerfile for production deployment with React frontend
 
 # =============================================================================
-# Stage 1: Builder
+# Stage 1: Frontend Builder (Node.js)
 # =============================================================================
-FROM python:3.11-slim as builder
+FROM node:20-slim as frontend-builder
+
+WORKDIR /app/frontend
+
+# Copy package files
+COPY frontend/package*.json ./
+
+# Install dependencies
+RUN npm ci --only=production
+
+# Copy frontend source
+COPY frontend/ ./
+
+# Build production bundle
+RUN npm run build
+
+# =============================================================================
+# Stage 2: Python Builder
+# =============================================================================
+FROM python:3.11-slim as python-builder
 
 # Set build environment
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -28,7 +47,7 @@ RUN pip install --upgrade pip && \
     pip install -r /tmp/requirements.txt
 
 # =============================================================================
-# Stage 2: Production
+# Stage 3: Production
 # =============================================================================
 FROM python:3.11-slim as production
 
@@ -41,7 +60,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     BOT_ENV=production
 
 # Create app user (non-root for security)
-# Use UID 1000 for consistency with host permissions
 RUN groupadd -r -g 1000 botuser && useradd -r -u 1000 -g botuser -s /bin/false botuser
 
 # Install runtime dependencies
@@ -51,14 +69,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy virtual environment from builder
-COPY --from=builder /opt/venv /opt/venv
+COPY --from=python-builder /opt/venv /opt/venv
 
 # Create app directory
 WORKDIR ${APP_HOME}
 
 # Copy application code
-COPY src/ ./src/
-COPY config/ ./config/ 2>/dev/null || true
+COPY bot/ ./bot/
+COPY shared/ ./shared/
+COPY backend/ ./backend/
+COPY run_dashboard.py ./
+
+# Copy built frontend from frontend-builder
+COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 # Create directories for state and logs
 RUN mkdir -p ${APP_HOME}/data ${APP_HOME}/logs && \
@@ -69,13 +92,13 @@ USER botuser
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import sys; sys.path.insert(0, 'src'); from core.bot import DeltaNeutralBot; print('OK')" || exit 1
+    CMD curl -f http://localhost:8080/health/live --max-time 4 || exit 1
 
 # Default command
-CMD ["python", "-m", "src.main"]
+CMD ["uvicorn", "backend.dashboard.main:app", "--host", "0.0.0.0", "--port", "8080"]
 
 # =============================================================================
-# Stage 3: Development
+# Stage 4: Development
 # =============================================================================
 FROM production as development
 

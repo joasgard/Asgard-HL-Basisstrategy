@@ -5,14 +5,14 @@ from decimal import Decimal
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.state.persistence import (
+from bot.state.persistence import (
     StatePersistence,
     RecoveryResult,
     DecimalEncoder,
     decode_decimal,
 )
-from src.models.position import CombinedPosition, AsgardPosition, HyperliquidPosition
-from src.models.common import Asset, Protocol
+from shared.models.position import CombinedPosition, AsgardPosition, HyperliquidPosition
+from shared.models.common import Asset, Protocol
 
 
 def create_test_asgard_position(**kwargs):
@@ -53,7 +53,7 @@ def create_test_hyperliquid_position(**kwargs):
 
 def create_test_combined_position(**kwargs):
     """Helper to create CombinedPosition with defaults."""
-    from src.models.position import PositionReference
+    from shared.models.position import PositionReference
     
     defaults = {
         "position_id": "test_pos",

@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import aiohttp
 import pytest
 
-from src.venues.asgard.client import (
+from bot.venues.asgard.client import (
     AsgardClient,
     AsgardAPIError,
     AsgardAuthError,
@@ -46,7 +46,7 @@ class TestAsgardClientInit:
         assert client.base_url == "https://custom.asgard.finance"
         assert client.rate_limit_rps == 2.5
     
-    @patch("src.venues.asgard.client.get_settings")
+    @patch("bot.venues.asgard.client.get_settings")
     def test_init_loads_from_settings(self, mock_get_settings):
         """Test that API key is loaded from settings if not provided."""
         mock_settings = MagicMock()
@@ -56,7 +56,7 @@ class TestAsgardClientInit:
         client = AsgardClient()
         assert client.api_key == "settings_key"
     
-    @patch("src.venues.asgard.client.get_settings")
+    @patch("bot.venues.asgard.client.get_settings")
     def test_init_warns_if_no_api_key(self, mock_get_settings):
         """Test that warning is logged if API key is not configured."""
         mock_settings = MagicMock()

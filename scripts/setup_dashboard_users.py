@@ -23,7 +23,7 @@ import sys
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.dashboard.auth import get_password_hash
+from backend.dashboard.auth import session_manager
 
 
 def create_user(username: str, password: str, role: str) -> dict:

@@ -2,6 +2,9 @@
 Tests for core internal API.
 """
 import pytest
+import tempfile
+import os
+from pathlib import Path
 from datetime import datetime
 from decimal import Decimal
 from unittest.mock import MagicMock, patch, AsyncMock
@@ -9,13 +12,13 @@ from unittest.mock import MagicMock, patch, AsyncMock
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 
-from src.core.internal_api import (
+from bot.core.internal_api import (
     internal_app, set_bot_instance, get_bot, verify_internal_token,
     health_check, _get_bot_state, get_stats, get_positions, get_position_detail,
     get_pause_state, pause_bot, resume_bot, open_position_internal,
     _position_to_summary, _position_to_detail
 )
-from src.shared.schemas import BotStats, PositionSummary, PositionDetail, PauseState
+from shared.common.schemas import BotStats, PositionSummary, PositionDetail, PauseState
 
 
 class TestSetBotInstance:
@@ -28,7 +31,7 @@ class TestSetBotInstance:
         set_bot_instance(mock_bot)
         
         # Import after setting to get the updated value
-        from src.core.internal_api import _bot_instance
+        from bot.core.internal_api import _bot_instance
         assert _bot_instance is mock_bot
         
         # Reset for other tests
@@ -63,33 +66,35 @@ class TestGetBot:
 class TestVerifyInternalToken:
     """Tests for verify_internal_token function."""
     
-    def test_verify_valid_token(self):
+    def test_verify_valid_token(self, tmp_path):
         """Test verifying valid token."""
-        with patch('src.core.internal_api.get_settings') as mock_settings:
-            mock_settings.return_value = MagicMock(admin_api_key="valid_token")
-            
+        secret_file = tmp_path / "server_secret.txt"
+        secret_file.write_text("valid_token\n")
+
+        with patch('shared.config.settings.SECRETS_DIR', tmp_path):
             credentials = HTTPAuthorizationCredentials(
                 scheme="Bearer",
                 credentials="valid_token"
             )
-            
+
             result = verify_internal_token(credentials)
-            
+
             assert result == "valid_token"
-    
-    def test_verify_invalid_token(self):
+
+    def test_verify_invalid_token(self, tmp_path):
         """Test verifying invalid token raises 401."""
-        with patch('src.core.internal_api.get_settings') as mock_settings:
-            mock_settings.return_value = MagicMock(admin_api_key="valid_token")
-            
+        secret_file = tmp_path / "server_secret.txt"
+        secret_file.write_text("valid_token\n")
+
+        with patch('shared.config.settings.SECRETS_DIR', tmp_path):
             credentials = HTTPAuthorizationCredentials(
                 scheme="Bearer",
                 credentials="invalid_token"
             )
-            
+
             with pytest.raises(HTTPException) as exc_info:
                 verify_internal_token(credentials)
-            
+
             assert exc_info.value.status_code == 401
             assert "Invalid internal token" in exc_info.value.detail
 
@@ -203,7 +208,7 @@ class TestGetStats:
         mock_bot.get_stats.return_value = mock_stats
         set_bot_instance(mock_bot)
         
-        with patch('src.core.internal_api.verify_internal_token'):
+        with patch('bot.core.internal_api.verify_internal_token'):
             credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="token")
             result = await get_stats(credentials)
         
@@ -244,7 +249,7 @@ class TestGetPositions:
         mock_bot.get_positions.return_value = {"pos1": mock_position}
         set_bot_instance(mock_bot)
         
-        with patch('src.core.internal_api.verify_internal_token'):
+        with patch('bot.core.internal_api.verify_internal_token'):
             credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="token")
             result = await get_positions(credentials)
         
@@ -297,7 +302,7 @@ class TestGetPositionDetail:
         mock_bot.get_positions.return_value = {"pos1": mock_position}
         set_bot_instance(mock_bot)
         
-        with patch('src.core.internal_api.verify_internal_token'):
+        with patch('bot.core.internal_api.verify_internal_token'):
             credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="token")
             result = await get_position_detail("pos1", credentials)
         
@@ -312,7 +317,7 @@ class TestGetPositionDetail:
         mock_bot.get_positions.return_value = {}
         set_bot_instance(mock_bot)
         
-        with patch('src.core.internal_api.verify_internal_token'):
+        with patch('bot.core.internal_api.verify_internal_token'):
             credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="token")
             
             with pytest.raises(HTTPException) as exc_info:
@@ -341,7 +346,7 @@ class TestGetPauseState:
         mock_bot._pause_controller.get_pause_state.return_value = mock_state
         set_bot_instance(mock_bot)
         
-        with patch('src.core.internal_api.verify_internal_token'):
+        with patch('bot.core.internal_api.verify_internal_token'):
             credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="token")
             result = await get_pause_state(credentials)
         
@@ -364,7 +369,7 @@ class TestGetPauseState:
         mock_bot._pause_controller.get_pause_state.return_value = mock_state
         set_bot_instance(mock_bot)
         
-        with patch('src.core.internal_api.verify_internal_token'):
+        with patch('bot.core.internal_api.verify_internal_token'):
             credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="token")
             result = await get_pause_state(credentials)
         
@@ -384,7 +389,7 @@ class TestPauseBot:
         mock_bot.pause = AsyncMock(return_value=True)
         set_bot_instance(mock_bot)
         
-        with patch('src.core.internal_api.verify_internal_token'):
+        with patch('bot.core.internal_api.verify_internal_token'):
             credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="token")
             request = {"api_key": "admin_key", "reason": "Testing", "scope": "all"}
             result = await pause_bot(request, credentials)
@@ -401,7 +406,7 @@ class TestPauseBot:
         mock_bot.pause = AsyncMock(return_value=True)
         set_bot_instance(mock_bot)
         
-        with patch('src.core.internal_api.verify_internal_token'):
+        with patch('bot.core.internal_api.verify_internal_token'):
             credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="token")
             request = {"api_key": "admin_key", "reason": "Testing", "scope": "entry"}
             result = await pause_bot(request, credentials)
@@ -417,7 +422,7 @@ class TestPauseBot:
         mock_bot.pause = AsyncMock(return_value=False)
         set_bot_instance(mock_bot)
         
-        with patch('src.core.internal_api.verify_internal_token'):
+        with patch('bot.core.internal_api.verify_internal_token'):
             credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="token")
             request = {"api_key": "admin_key", "reason": "Testing", "scope": "all"}
             result = await pause_bot(request, credentials)
@@ -437,7 +442,7 @@ class TestResumeBot:
         mock_bot.resume = AsyncMock(return_value=True)
         set_bot_instance(mock_bot)
         
-        with patch('src.core.internal_api.verify_internal_token'):
+        with patch('bot.core.internal_api.verify_internal_token'):
             credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="token")
             request = {"api_key": "admin_key"}
             result = await resume_bot(request, credentials)
@@ -453,7 +458,7 @@ class TestResumeBot:
         mock_bot.resume = AsyncMock(return_value=False)
         set_bot_instance(mock_bot)
         
-        with patch('src.core.internal_api.verify_internal_token'):
+        with patch('bot.core.internal_api.verify_internal_token'):
             credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="token")
             request = {"api_key": "admin_key"}
             result = await resume_bot(request, credentials)

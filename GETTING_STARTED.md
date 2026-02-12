@@ -1,355 +1,348 @@
-# Getting Started Guide
+# Getting Started
 
-A step-by-step guide to set up and run the Delta Neutral Funding Rate Arbitrage Bot.
-
----
-
-## 📋 Prerequisites
-
-- **Python 3.9+**
-- **Git**
-- **Docker & Docker Compose** (optional, for containerized deployment)
-- **Privy Account** (free) from [privy.io](https://privy.io) - for secure wallet infrastructure
-
-> **Note:** Exchange API keys are **optional**. Both Asgard and Hyperliquid work with wallet-based authentication.
+Complete setup guide for Asgard Basis.
 
 ---
 
-## 🚀 Quick Start (3 minutes)
+## Prerequisites
 
-### 1. Clone the Repository
+- Python 3.9+
+- Node.js 18+
+- PostgreSQL 16
+- Redis 7
+- Git
+
+---
+
+## Quick Setup
+
+### 1. Clone & Install
 
 ```bash
 git clone <repository-url>
-cd BasisStrategy
-```
+cd AsgardBasis
 
-### 2. Run Setup Script
-
-```bash
-./scripts/setup.sh
-```
-
-This will:
-- Check Python version
-- Create virtual environment (`.venv`)
-- Install dependencies
-- Create required directories
-- Set up secret files
-
-### 3. Start the Dashboard
-
-```bash
+# Python
+python -m venv .venv
 source .venv/bin/activate
-uvicorn src.dashboard.main:app --host 0.0.0.0 --port 8080
+pip install -r requirements.txt
+
+# Frontend
+cd frontend
+npm install
+npm run build
+cd ..
 ```
 
-Then open **http://localhost:8080** and follow the 3-step setup wizard:
+### 2. Start Infrastructure
 
-| Step | Action | Description |
-|------|--------|-------------|
-| 1 | **Login** | Sign in with Privy (Google, Twitter, etc.) |
-| 2 | **Wallets** | Create Solana + Arbitrum wallets |
-| 3 | **Exchange** | Optional: Add API keys for higher rate limits |
-
-That's it! You're ready to trade.
-
----
-
-## 📖 Detailed Setup
-
-### Privy Configuration (Required)
-
-The bot uses **Privy** for secure, server-side wallet management.
-
-#### 1. Create Privy App
-
-1. Go to [https://dashboard.privy.io](https://dashboard.privy.io) and sign up
-2. Create a new app
-3. Copy your **App ID** and **App Secret**
-
-#### 2. Configure Server Secret
+The easiest way to get PostgreSQL and Redis running:
 
 ```bash
-# Generate a secure server secret for encryption
+# Using Docker (recommended)
+docker compose -f docker/docker-compose.yml up -d postgres redis
+
+# Or install natively:
+# PostgreSQL: brew install postgresql@16 && brew services start postgresql@16
+# Redis: brew install redis && brew services start redis
+```
+
+Create the database (if not using Docker):
+```bash
+createdb basis
+```
+
+### 3. Configure Secrets
+
+Create 7 files in `secrets/`:
+
+```bash
+mkdir -p secrets
+
+# From external services
+echo "your-asgard-key" > secrets/asgard_api_key.txt
+echo "your-privy-app-id" > secrets/privy_app_id.txt
+echo "your-privy-app-secret" > secrets/privy_app_secret.txt
+echo "https://solana-rpc.com" > secrets/solana_rpc_url.txt
+echo "https://arbitrum-rpc.com" > secrets/arbitrum_rpc_url.txt
+
+# Generate locally
 openssl rand -hex 32 > secrets/server_secret.txt
+openssl ecparam -name prime256v1 -genkey -noout -out secrets/privy_auth.pem
 
-# Add your Privy credentials
-echo "your_privy_app_id" > secrets/privy_app_id.txt
-echo "your_privy_app_secret" > secrets/privy_app_secret.txt
+# Secure permissions
+chmod 600 secrets/*
 ```
 
-#### 3. Set Secure Permissions
+### 4. Configure Environment
 
 ```bash
-chmod 600 secrets/*.txt
+cp .env.example .env
+# Edit .env with your database URL and other settings
 ```
 
----
+Key variables:
+```bash
+DATABASE_URL=postgresql://basis:basis@localhost:5432/basis
+REDIS_URL=redis://localhost:6379
+VITE_PRIVY_APP_ID=your-privy-app-id
+```
 
-## 🌐 Using the Dashboard
-
-### First Time Setup Wizard
-
-The dashboard includes a guided 3-step setup:
-
-#### Step 1: Authentication
-- Click "Sign in with Privy"
-- Login with Google, Twitter, or email
-- Your user ID becomes your account identifier
-
-#### Step 2: Wallet Setup
-- The dashboard creates two wallets via Privy:
-  - **Solana wallet** - For Asgard trading
-  - **Arbitrum wallet** - For Hyperliquid trading
-- Fund these wallets with USDC to start trading
-
-#### Step 3: Exchange Configuration (Optional)
-- **Asgard**: Public access (1 req/sec) or add API key for unlimited
-- **Hyperliquid**: Wallet-based auth (no key needed)
-- Click "Skip" to use wallet-based authentication
-
-### Main Dashboard Features
-
-After setup, the dashboard shows:
-
-| Feature | Description |
-|---------|-------------|
-| **📊 APY Calculator** | Real-time leverage-adjusted APY display |
-| **🎯 Strategy Performance** | Combined net APY with leg breakdowns |
-| **🏛️ Asgard Leg** | SOL supply rate, USDC borrow rate, formula |
-| **⚡ Hyperliquid Leg** | SOL-PERP funding rate, annualized APY |
-| **🔴 Fund Wallets** | Deposit USDC to your trading wallets |
-| **🟢 Open Position** | Start trading with one click |
-| **Status Cards** | Bot status, positions count, PnL |
-| **Positions List** | Real-time position monitoring |
-| **Control Panel** | Pause/resume trading |
-
-#### Dashboard Layout
-
-**Desktop (2-column layout):**
-- **Left Column:** Strategy Performance (Net APY) + Quick Stats
-- **Right Column:** Asgard Leg details + Hyperliquid Leg details
-
-**Mobile (tabbed layout):**
-- **📊 Overview Tab:** Strategy Performance + Quick Stats
-- **⚡ Leg Details Tab:** Asgard + Hyperliquid breakdowns
-- Leverage slider and Open Position button are persistent
-
----
-
-## 💰 Funding Your Wallets
-
-Before trading, fund your wallets:
-
-### Solana Wallet (Asgard)
-- Send **SOL** - For transaction fees
-- Send **SOL** - Used as collateral for delta-neutral position
-
-### Arbitrum Wallet (Hyperliquid)
-- Send **USDC** - For perpetual trading and fees
-
-**Note:** This is a SOL/USDC focused strategy. You go long SOL on Asgard and short SOL-PERP on Hyperliquid.
-
-Use the "🔴 Fund Wallets" button on the dashboard to see your wallet addresses.
-
----
-
-## 🔧 Optional: API Keys for Higher Rate Limits
-
-Both exchanges work without API keys, but you can add them for higher rate limits:
-
-### Asgard API Key (Optional)
+### 5. Register Privy Key
 
 ```bash
-# Contact Asgard for an API key
-echo "your_asgard_api_key" > secrets/asgard_api_key.txt
+# Generate public key for Privy dashboard
+openssl ec -in secrets/privy_auth.pem -pubout -out secrets/privy_auth.pub.pem
+cat secrets/privy_auth.pub.pem
+# Copy this to https://dashboard.privy.io -> Settings -> Auth Keys
 ```
 
-| Access Type | Rate Limit |
-|-------------|------------|
-| No API Key | 1 req/sec (IP-based) |
-| With API Key | Unlimited |
-
-### Hyperliquid API Key (Optional)
-
-Hyperliquid uses your EVM wallet for authentication (EIP-712 signatures). API keys are only needed for higher rate limits.
-
----
-
-## 🏃 Running the Bot
-
-### Method 1: Dashboard-First (Recommended)
+### 6. Start
 
 ```bash
 source .venv/bin/activate
-uvicorn src.dashboard.main:app --port 8080
+python run_dashboard.py
 ```
 
-Open http://localhost:8080, complete the 3-step wizard, then click **"🟢 Launch Strategy"**.
+Open **http://localhost:8080** -> Login -> Fund wallets -> Trade
 
-### Method 2: Headless Bot
+---
+
+## Detailed Setup
+
+### 1. Get API Keys
+
+| Service | What You Need | URL |
+|---------|---------------|-----|
+| Asgard | API Key | asgard.finance |
+| Privy | App ID + App Secret | dashboard.privy.io |
+| Helius | Solana RPC URL | helius.dev |
+| Alchemy | Arbitrum RPC URL | alchemy.com |
+
+### 2. Privy Setup
+
+1. Sign up at [privy.io](https://privy.io)
+2. Create app -> Copy App ID and App Secret
+3. Enable Email login method
+4. Enable embedded wallets for Ethereum + Solana
+5. Go to Settings -> Auth Keys
+6. Copy contents of `privy_auth.pub.pem` and save
+
+### 3. Fund Wallets
+
+After first login, the dashboard creates:
+
+- **Solana wallet** - Send SOL for gas + collateral
+- **Arbitrum wallet** - Send USDC for Hyperliquid margin
+
+Click "Deposit" button in dashboard to see addresses.
+
+---
+
+## Local Testing Checklist
+
+### Test 1: Infrastructure Running
+
+```bash
+# PostgreSQL
+psql postgresql://basis:basis@localhost:5432/basis -c "SELECT 1"
+
+# Redis
+redis-cli ping
+# Should return: PONG
+```
+
+### Test 2: Frontend Build
+
+```bash
+cd frontend
+npm run build
+# Should complete without errors
+ls -la dist/
+```
+
+### Test 3: Backend Starts
 
 ```bash
 source .venv/bin/activate
-python run_bot.py
+python run_dashboard.py
+
+# Should see:
+# - "Connecting to PostgreSQL..."
+# - "Database schema version: 8"
+# - "Redis connected"
+# - "Position monitor service started"
+# - "Intent scanner service started"
+# - "Dashboard API ready"
 ```
 
-### Method 3: Docker Compose (Production)
+### Test 4: API Health Check
+
+```bash
+# In another terminal
+curl http://localhost:8080/health/ready
+
+# Should return:
+# {"status":"ready","database":"healthy","redis":"healthy",...}
+```
+
+### Test 5: Frontend Loads
+
+```bash
+open http://localhost:8080
+
+# Should see:
+# - React SPA with "Asgard Basis" branding
+# - "Connect" button (Privy login)
+```
+
+### Test 6: Authentication
+
+1. Click **"Connect"**
+2. Login with email (Privy modal)
+3. Enter OTP from email
+4. Should see dashboard with wallet addresses
+
+### Test 7: API Endpoints
+
+```bash
+curl http://localhost:8080/api/v1/rates
+curl http://localhost:8080/api/v1/health/ready
+```
+
+---
+
+## Docker Deployment
+
+### Development
 
 ```bash
 cd docker
-
-# Create environment file
-cp ../.env.example .env
-# Edit .env with your credentials
-
-# Build and start all services
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Stop services
-docker-compose down
+docker compose up -d
+# Starts: PostgreSQL + Redis + Bot
+# Access at http://localhost:8080
 ```
 
-Access dashboard at http://localhost:8080
+### Production
+
+```bash
+# Configure .env with production values first
+docker compose -f docker-compose.prod.yml up -d
+# Starts: PostgreSQL + Redis + App + Nginx
+# Access at https://yourdomain.com (port 80/443)
+```
+
+### Production Checklist
+
+- [ ] 7 secrets files configured
+- [ ] `chmod 600 secrets/*`
+- [ ] Privy auth key registered in dashboard
+- [ ] Frontend built: `cd frontend && npm run build`
+- [ ] `.env` configured with production DATABASE_URL and POSTGRES_PASSWORD
+- [ ] Nginx TLS certificates in place
+- [ ] Firewall: only ports 80/443 open
+- [ ] Test with small position first
 
 ---
 
-## 🔒 Security
-
-### How It Works
-
-1. **Privy manages wallets** - Private keys never touch your server
-2. **Server-side signing** - Transactions signed via Privy's secure API
-3. **Field-level encryption** - API keys encrypted at rest using AES-256-GCM
-4. **No local keys** - Unlike traditional setups, no `*_private_key.txt` files exist
-
-### Security Checklist
-
-Before running with real funds:
-
-- [ ] Created Privy account and configured credentials
-- [ ] Generated secure `server_secret.txt` for encryption
-- [ ] Set restrictive permissions: `chmod 600 secrets/*`
-- [ ] Verified `.env` and `secrets/` are in `.gitignore`
-- [ ] Tested with small amounts first
-- [ ] Verified dashboard is not exposed to public internet
-
----
-
-## 🧪 Testing Your Setup
-
-### Run Tests
+## Testing
 
 ```bash
 source .venv/bin/activate
 
-# Run all tests
+# All tests
 pytest tests/ -v
 
-# Run bot tests only
-pytest tests/unit/ -v
+# Specific module
+pytest tests/unit/core/ -v
+pytest tests/unit/dashboard/ -v
+pytest tests/unit/venues/ -v
 
-# Run with coverage
-pytest tests/ --cov=src --cov-report=html
-```
+# With coverage
+pytest --cov=. --cov-report=html
+# View at htmlcov/index.html
 
-### Verify Configuration
-
-```bash
-# Test imports
-python -c "from src.config.settings import get_settings; print('✓ Settings OK')"
-python -c "from src.core.bot import DeltaNeutralBot; print('✓ Bot OK')"
-python -c "from src.dashboard.main import app; print('✓ Dashboard OK')"
-
-# Test Privy connection
-python -c "
-from src.venues.privy_client import get_privy_client
-client = get_privy_client()
-print('✓ Privy client initialized')
-"
+# Frontend tests
+cd frontend && npm test
 ```
 
 ---
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Dashboard won't start
 
 ```bash
-# Check Python version
-python3 --version  # Should be 3.9+
+# Check PostgreSQL is running
+psql postgresql://basis:basis@localhost:5432/basis -c "SELECT 1"
 
-# Verify virtual environment
-source .venv/bin/activate
-which python  # Should show .venv path
+# Check Redis is running
+redis-cli ping
 
-# Check dependencies
-pip list | grep -E "(fastapi|privy|web3)"
+# Check secrets exist
+ls secrets/*.txt secrets/*.pem | wc -l  # Should be 7
+
+# Verify imports
+python -c "from backend.dashboard.main import create_app; print('OK')"
 ```
 
-### Privy authentication errors
+### Database errors
 
 ```bash
-# Verify credentials are set
-cat secrets/privy_app_id.txt
-cat secrets/privy_app_secret.txt
+# Check connection
+psql postgresql://basis:basis@localhost:5432/basis
 
-# Test Privy connection
-python -c "
-from src.venues.privy_client import get_privy_client
-client = get_privy_client()
-print('✓ Privy client initialized')
-"
+# Reset database (WARNING: loses all data)
+dropdb basis && createdb basis
+python run_dashboard.py  # Migrations will run automatically
 ```
 
-### Missing exchange data
+### Port already in use
 
 ```bash
-# Check if public API access is working
-curl https://v2-ultra-edge.asgard.finance/margin-trading/markets
+# Kill process on port 8080
+lsof -ti:8080 | xargs kill -9
 
-# Test with optional API key if you have one
-curl -H "X-API-Key: your_key" https://v2-ultra-edge.asgard.finance/margin-trading/markets
+# Or use different port
+uvicorn backend.dashboard.main:app --port 8081
 ```
 
-### Docker issues
+### Frontend not showing
 
 ```bash
-# Rebuild containers
-docker-compose down
-docker-compose build --no-cache
-docker-compose up -d
+# Make sure frontend is built
+cd frontend && npm run build
 
-# Check logs
-docker-compose logs bot
-docker-compose logs dashboard
+# Check dist/ exists
+ls frontend/dist/index.html
 ```
 
 ---
 
-## 📚 Next Steps
+## Project Structure
 
-1. **Read the spec**: See [docs/specs/spec.md](docs/specs/spec.md) for full technical details
-2. **Review architecture**: Check architecture docs in `docs/architecture/`
-3. **Monitor performance**: Use the dashboard to track PnL and positions
-4. **Add API keys later**: Contact exchanges if you need higher rate limits
-
----
-
-## 💡 Tips
-
-- **Start small**: Test with minimum position sizes first
-- **Fund both wallets**: You need SOL on Solana and USDC on Arbitrum
-- **Monitor APY**: Dashboard shows real-time combined APY at your selected leverage
-- **Use pause**: Pause entry during volatile markets
-- **Check health**: Use `/health` endpoint for monitoring
-- **No API keys needed**: Both exchanges work with wallet-based auth
-- **Mobile friendly**: Dashboard works great on mobile devices with tabbed layout
+```
+AsgardBasis/
++-- bot/              # Trading engine (core logic, venues, state)
++-- shared/           # Shared packages (db, models, config, security)
++-- backend/          # FastAPI dashboard (API + SPA serving)
++-- frontend/         # React SPA (TypeScript, Vite, Tailwind)
++-- migrations/       # PostgreSQL schema migrations
++-- docker/           # Docker configuration
++-- tests/            # Test suite (unit + integration)
++-- secrets/          # API keys (git-ignored)
++-- run_dashboard.py  # Local development entry point
+```
 
 ---
 
-**Need help?** Check [SECURITY.md](SECURITY.md) for security best practices and [README.md](README.md) for project overview.
+## Next Steps
+
+1. Read the [README](README.md) for strategy overview
+2. Read [docs/spec.md](docs/spec.md) for technical details
+3. Review [SECURITY.md](SECURITY.md) for security practices
+4. Start with small positions to test
+
+---
+
+*Last updated: 2026-02-12*

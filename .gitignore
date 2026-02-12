@@ -1,5 +1,5 @@
 # ============================================
-# Delta Neutral Arb - Git Ignore
+# Asgard Basis - Git Ignore
 # ============================================
 # SECURITY WARNING: This file protects sensitive credentials.
 # DO NOT modify these rules to expose secrets!
@@ -38,6 +38,9 @@ env/
 .venv/
 venv.bak/
 env.bak/
+
+# Node.js (defense-in-depth; also in frontend/.gitignore)
+node_modules/
 
 # IDEs
 .vscode/
@@ -82,8 +85,10 @@ secrets/privy_auth.pem
 secrets/server_secret.txt
 secrets/admin_api_key.txt
 secrets/solana_rpc_url.txt
-secrets/arbitrum_rpc_url.txt
+secrets/solana_private_key.txt
 secrets/solana_wallet_address.txt
+secrets/arbitrum_rpc_url.txt
+secrets/hyperliquid_private_key.txt
 secrets/hyperliquid_wallet_address.txt
 secrets/wallet_address.txt
 secrets/sentry_dsn.txt
@@ -111,6 +116,13 @@ id.json
 *.backup
 *~
 *.old
+
+# ============================================
+# Build artifacts
+# ============================================
+*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
 
 # ============================================
 # Testing

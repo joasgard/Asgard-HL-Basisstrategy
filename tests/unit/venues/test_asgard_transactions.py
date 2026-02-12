@@ -2,9 +2,9 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.config.assets import Asset
-from src.models.common import Protocol
-from src.venues.asgard.transactions import (
+from shared.config.assets import Asset
+from shared.models.common import Protocol
+from bot.venues.asgard.transactions import (
     AsgardTransactionBuilder,
     BuildResult,
     SignResult,
@@ -15,7 +15,7 @@ from src.venues.asgard.transactions import (
 class TestAsgardTransactionBuilderInit:
     """Tests for transaction builder initialization."""
     
-    @patch('src.venues.asgard.transactions.get_settings')
+    @patch('bot.venues.asgard.transactions.get_settings')
     def test_init_loads_wallet_address_from_settings(self, mock_get_settings):
         """Test that wallet address is loaded from settings."""
         mock_settings = MagicMock()
@@ -32,7 +32,7 @@ class TestAsgardTransactionBuilderInit:
     
     def test_privy_property_lazy_loads(self):
         """Test that privy property lazy loads the client."""
-        with patch('src.venues.asgard.transactions.get_settings') as mock_settings:
+        with patch('bot.venues.asgard.transactions.get_settings') as mock_settings:
             mock_settings.return_value = MagicMock(
                 solana_wallet_address="test_address",
                 privy_app_id="test_app",
@@ -63,7 +63,7 @@ class TestBuildCreatePosition:
     @pytest.fixture
     def mock_builder(self):
         """Create mock builder with mocked dependencies."""
-        with patch('src.venues.asgard.transactions.get_settings') as mock_settings:
+        with patch('bot.venues.asgard.transactions.get_settings') as mock_settings:
             mock_settings.return_value = MagicMock(
                 solana_wallet_address="test_address",
                 privy_app_id="test_app",
@@ -137,7 +137,7 @@ class TestSignTransaction:
     @pytest.fixture
     def mock_builder(self):
         """Create mock builder with mocked Privy."""
-        with patch('src.venues.asgard.transactions.get_settings') as mock_settings:
+        with patch('bot.venues.asgard.transactions.get_settings') as mock_settings:
             mock_settings.return_value = MagicMock(
                 solana_wallet_address="test_address",
                 privy_app_id="test_app",
@@ -198,7 +198,7 @@ class TestBuildClosePosition:
     @pytest.fixture
     def mock_builder(self):
         """Create mock builder with mocked dependencies."""
-        with patch('src.venues.asgard.transactions.get_settings') as mock_settings:
+        with patch('bot.venues.asgard.transactions.get_settings') as mock_settings:
             mock_settings.return_value = MagicMock(
                 solana_wallet_address="test_address",
                 privy_app_id="test_app",
@@ -245,7 +245,7 @@ class TestSubmitTransaction:
     @pytest.fixture
     def mock_builder(self):
         """Create mock builder with mocked dependencies."""
-        with patch('src.venues.asgard.transactions.get_settings') as mock_settings:
+        with patch('bot.venues.asgard.transactions.get_settings') as mock_settings:
             mock_settings.return_value = MagicMock(
                 solana_wallet_address="test_address",
                 privy_app_id="test_app",

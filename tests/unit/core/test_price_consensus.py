@@ -13,14 +13,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.config.assets import Asset
-from src.core.price_consensus import (
+from shared.config.assets import Asset
+from bot.core.price_consensus import (
     ConsensusResult,
     PriceConsensus,
     PriceDeviationError,
 )
-from src.venues.asgard.market_data import AsgardMarketData
-from src.venues.hyperliquid.client import HyperliquidClient
+from bot.venues.asgard.market_data import AsgardMarketData
+from bot.venues.hyperliquid.client import HyperliquidClient
 
 
 # Fixtures
@@ -335,8 +335,8 @@ class TestContextManager:
     @pytest.mark.asyncio
     async def test_context_manager_initializes_clients(self):
         """Test that context manager initializes clients."""
-        with patch("src.core.price_consensus.AsgardMarketData") as mock_asgard_class, \
-             patch("src.core.price_consensus.HyperliquidClient") as mock_hl_class:
+        with patch("bot.core.price_consensus.AsgardMarketData") as mock_asgard_class, \
+             patch("bot.core.price_consensus.HyperliquidClient") as mock_hl_class:
             
             mock_asgard = MagicMock()
             mock_asgard.client._session = None

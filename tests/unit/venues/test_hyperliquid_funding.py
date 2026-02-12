@@ -12,8 +12,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.venues.hyperliquid.client import HyperliquidClient
-from src.venues.hyperliquid.funding_oracle import (
+from bot.venues.hyperliquid.client import HyperliquidClient
+from bot.venues.hyperliquid.funding_oracle import (
     HyperliquidFundingOracle,
     FundingRate,
     FundingPrediction,
@@ -29,7 +29,7 @@ class TestFundingOracleInit:
         oracle = HyperliquidFundingOracle(client=client)
         assert oracle.client is client
     
-    @patch("src.venues.hyperliquid.funding_oracle.HyperliquidClient")
+    @patch("bot.venues.hyperliquid.funding_oracle.HyperliquidClient")
     def test_init_creates_client(self, mock_client_class):
         """Test that client is created if not provided."""
         mock_instance = MagicMock()
@@ -152,17 +152,17 @@ class TestGetFundingHistory:
 class TestFundingRateProperties:
     """Tests for FundingRate dataclass properties."""
     
-    def test_hourly_rate(self):
-        """Test hourly rate calculation."""
+    def test_rate_8hr(self):
+        """Test 8-hour rate calculation."""
         rate = FundingRate(
             coin="SOL",
-            funding_rate=-0.0008,  # 8-hour rate
+            funding_rate=-0.0001,  # Hourly rate
             timestamp_ms=1700000000000,
-            annualized_rate=-0.0008 * 3 * 365,
+            annualized_rate=-0.0001 * 24 * 365,
         )
-        
-        # Hourly rate = 8-hour rate / 8
-        assert rate.hourly_rate == -0.0001
+
+        # 8hr rate = hourly rate * 8
+        assert rate.rate_8hr == -0.0008
     
     def test_timestamp_conversion(self):
         """Test timestamp to datetime conversion."""
@@ -187,20 +187,22 @@ class TestPredictNextFunding:
     async def test_predict_next_funding(self):
         """Test funding rate prediction."""
         client = MagicMock(spec=HyperliquidClient)
-        client.get_meta_and_asset_contexts = AsyncMock(return_value={
-            "assetCtxs": [
+        # Real API format: [meta, assetCtxs] — contexts are positional (no "coin" key)
+        client.get_meta_and_asset_contexts = AsyncMock(return_value=[
+            {"universe": [{"name": "SOL"}]},
+            [
                 {
-                    "coin": "SOL",
-                    "markPx": 101.0,  # Mark price above index
-                    "oraclePx": 100.0,  # Index price
+                    "markPx": "101.0",
+                    "oraclePx": "100.0",
+                    "premium": "0.009",
                 }
             ]
-        })
-        
+        ])
+
         oracle = HyperliquidFundingOracle(client=client)
-        
+
         prediction = await oracle.predict_next_funding("SOL")
-        
+
         assert prediction.coin == "SOL"
         # Premium = (101 - 100) / 100 = 0.01
         # Interest = 0.0001
@@ -214,20 +216,21 @@ class TestPredictNextFunding:
     async def test_predict_next_funding_negative_premium(self):
         """Test prediction when mark is below index."""
         client = MagicMock(spec=HyperliquidClient)
-        client.get_meta_and_asset_contexts = AsyncMock(return_value={
-            "assetCtxs": [
+        client.get_meta_and_asset_contexts = AsyncMock(return_value=[
+            {"universe": [{"name": "SOL"}]},
+            [
                 {
-                    "coin": "SOL",
-                    "markPx": 99.0,  # Mark below index
-                    "oraclePx": 100.0,
+                    "markPx": "99.0",
+                    "oraclePx": "100.0",
+                    "premium": "-0.009",
                 }
             ]
-        })
-        
+        ])
+
         oracle = HyperliquidFundingOracle(client=client)
-        
+
         prediction = await oracle.predict_next_funding("SOL")
-        
+
         # Premium = (99 - 100) / 100 = -0.01
         assert prediction.premium == -0.01
         assert prediction.predicted_rate == pytest.approx(-0.0099, abs=1e-4)
@@ -236,12 +239,13 @@ class TestPredictNextFunding:
     async def test_predict_next_funding_coin_not_found(self):
         """Test prediction for non-existent coin."""
         client = MagicMock(spec=HyperliquidClient)
-        client.get_meta_and_asset_contexts = AsyncMock(return_value={
-            "assetCtxs": [{"coin": "BTC"}]  # No SOL
-        })
-        
+        client.get_meta_and_asset_contexts = AsyncMock(return_value=[
+            {"universe": [{"name": "BTC"}]},  # No SOL
+            [{"markPx": "50000.0", "oraclePx": "50000.0"}]
+        ])
+
         oracle = HyperliquidFundingOracle(client=client)
-        
+
         with pytest.raises(ValueError, match="Coin SOL not found"):
             await oracle.predict_next_funding("SOL")
 

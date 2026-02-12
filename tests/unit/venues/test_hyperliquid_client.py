@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 import aiohttp
 import pytest
 
-from src.venues.hyperliquid.client import (
+from bot.venues.hyperliquid.client import (
     HyperliquidClient,
     HyperliquidAPIError,
     HyperliquidAuthError,

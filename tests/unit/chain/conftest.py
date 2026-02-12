@@ -18,8 +18,8 @@ def disable_retries():
     
     This prevents tests from hanging when mocked RPC calls fail.
     """
-    import src.utils.retry as retry_module
-    from src.utils.retry import RetryConfig
+    import shared.utils.retry as retry_module
+    from shared.utils.retry import RetryConfig
     
     # Save original
     original_rpc_retry = retry_module.RPC_RETRY

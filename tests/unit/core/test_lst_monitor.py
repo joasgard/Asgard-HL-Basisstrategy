@@ -3,13 +3,13 @@ import pytest
 from decimal import Decimal
 from unittest.mock import MagicMock
 
-from src.core.lst_monitor import (
+from bot.core.lst_monitor import (
     LSTMonitor, 
     PegStatus, 
     PegCheckResult,
     LSTDeltaAdjustment,
 )
-from src.config.assets import Asset
+from shared.config.assets import Asset
 
 
 class TestLSTMonitorInitialization:

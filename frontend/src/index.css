@@ -1,42 +1,18 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 /* Base styles - ensure background is set */
 html {
-  background-color: #111827;
-}
-
-@theme {
-  --color-gray-900: #111827;
-  --color-gray-800: #1f2937;
-  --color-gray-700: #374151;
-  --color-gray-600: #4b5563;
-  --color-gray-500: #6b7280;
-  --color-gray-400: #9ca3af;
-  --color-gray-300: #d1d5db;
-  
-  --color-blue-400: #60a5fa;
-  --color-blue-500: #3b82f6;
-  --color-blue-600: #2563eb;
-  --color-blue-700: #1d4ed8;
-  
-  --color-green-400: #4ade80;
-  --color-green-600: #16a34a;
-  --color-green-700: #15803d;
-  
-  --color-red-400: #f87171;
-  --color-red-600: #dc2626;
-  
-  --color-yellow-200: #fef08a;
-  --color-yellow-700: #a16207;
-  --color-yellow-900: #713f12;
+  background-color: #020e1a;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
-  background-color: #111827;
+  background-color: #020e1a;
   color: white;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
 }
 
 /* Custom scrollbar */
@@ -46,16 +22,16 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #1f2937;
+  background: #081631;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #4b5563;
+  background: #1e4976;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #6b7280;
+  background: #3a6a9a;
 }
 
 /* OTP Input styles */
@@ -65,17 +41,17 @@ body {
   text-align: center;
   font-size: 24px;
   font-weight: bold;
-  border: 2px solid #374151;
+  border: 2px solid #162d50;
   border-radius: 8px;
-  background: #1f2937;
+  background: #081631;
   color: white;
   transition: all 0.2s;
 }
 
 .otp-input:focus {
-  border-color: #3b82f6;
+  border-color: #4a90d9;
   outline: none;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
+  box-shadow: 0 0 0 3px rgba(74, 144, 217, 0.3);
 }
 
 /* Leverage slider styles */
@@ -83,7 +59,7 @@ body {
   -webkit-appearance: none;
   appearance: none;
   height: 8px;
-  background: #374151;
+  background: #162d50;
   border-radius: 4px;
   outline: none;
 }
@@ -93,7 +69,7 @@ body {
   appearance: none;
   width: 20px;
   height: 20px;
-  background: #3b82f6;
+  background: #4a90d9;
   cursor: pointer;
   border-radius: 50%;
 }
@@ -101,7 +77,7 @@ body {
 .leverage-slider::-moz-range-thumb {
   width: 20px;
   height: 20px;
-  background: #3b82f6;
+  background: #4a90d9;
   cursor: pointer;
   border-radius: 50%;
   border: none;
@@ -120,8 +96,8 @@ input[type="number"] {
 
 /* Tab active state */
 .tab-active {
-  border-bottom: 2px solid #3b82f6;
-  color: #3b82f6;
+  border-bottom: 2px solid #4a90d9;
+  color: #4a90d9;
 }
 
 /* Shake animation */

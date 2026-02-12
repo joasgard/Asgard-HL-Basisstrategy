@@ -9,4 +9,4 @@ project_root = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, project_root)
 
 # Run uvicorn
-os.system("uvicorn src.dashboard.main:app --reload --port 8080 --host 127.0.0.1")
+os.system("uvicorn backend.dashboard.main:app --reload --port 8080 --host 127.0.0.1")

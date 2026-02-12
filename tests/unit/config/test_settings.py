@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.config.settings import (
+from shared.config.settings import (
     Settings,
     get_settings,
     reload_settings,
@@ -24,106 +24,90 @@ def mock_env():
     return {
         "ASGARD_API_KEY": "test_key",
         "SOLANA_RPC_URL": "https://test.solana.com",
-        "SOLANA_WALLET_ADDRESS": "test_solana_address",
-        "HYPERLIQUID_WALLET_ADDRESS": "0x123",
+        "ARBITRUM_RPC_URL": "https://test.arbitrum.com",
         "PRIVY_APP_ID": "test_app_id",
         "PRIVY_APP_SECRET": "test_secret",
-        "WALLET_ADDRESS": "0xabc",
     }
 
 
 def test_settings_validation(mock_env):
     """Test that settings load and validate correctly."""
     # Clear cached settings before patching environment
-    import src.config.settings as settings_module
+    import shared.config.settings as settings_module
     settings_module._settings = None
     
     with patch.dict(os.environ, mock_env, clear=True):
-        with patch.object(Path, 'exists', return_value=True):
-            settings = reload_settings()
+        settings = reload_settings()
+        
+        assert settings.asgard_api_key == "test_key"
+        assert settings.solana_rpc_url == "https://test.solana.com"
+        assert settings.arbitrum_rpc_url == "https://test.arbitrum.com"
+        assert settings.privy_app_id == "test_app_id"
+        assert settings.privy_app_secret == "test_secret"
+        assert settings.log_level == "INFO"  # default
+
+
+def test_settings_validation_missing():
+    """Test settings validation catches missing secrets."""
+    import shared.config.settings as settings_module
+    settings_module._settings = None
+    
+    def mock_load_secret(filename):
+        return None  # All secrets missing
+    
+    with patch('shared.common.config.settings.load_secret', side_effect=mock_load_secret):
+        with patch('shared.common.config.settings.SECRETS_DIR', settings_module.BASE_DIR / "nonexistent"):
+            settings = Settings()
+            missing = settings.validate()
             
-            assert settings.asgard_api_key == "test_key"
-            assert settings.solana_rpc_url == "https://test.solana.com"
-            assert settings.hyperliquid_wallet_address == "0x123"
-            assert settings.privy_app_id == "test_app_id"
-            assert settings.privy_app_secret == "test_secret"
-            assert settings.wallet_address == "0xabc"
-            assert settings.paper_trading is True  # default
-            assert settings.environment == "development"  # default
-
-
-def test_environment_validation(mock_env):
-    """Test environment string validation."""
-    mock_env["ENVIRONMENT"] = "invalid"
-    
-    # Clear cached settings
-    import src.config.settings as settings_module
-    settings_module._settings = None
-    
-    with patch.dict(os.environ, mock_env, clear=True):
-        with pytest.raises(ValueError, match="environment must be one of"):
-            reload_settings()
-
-
-def test_log_level_validation(mock_env):
-    """Test log level validation."""
-    mock_env["LOG_LEVEL"] = "INVALID"
-    
-    # Clear cached settings
-    import src.config.settings as settings_module
-    settings_module._settings = None
-    
-    with patch.dict(os.environ, mock_env, clear=True):
-        with pytest.raises(ValueError, match="log_level must be one of"):
-            reload_settings()
+            # Should require these critical files
+            assert "asgard_api_key.txt" in missing
+            assert "privy_app_id.txt" in missing
+            assert "privy_app_secret.txt" in missing
+            assert "solana_rpc_url.txt" in missing
+            assert "arbitrum_rpc_url.txt" in missing
+            assert "privy_auth.pem" in missing
 
 
 class TestSettingsPrivy:
     """Test settings with Privy configuration."""
     
-    @patch('src.config.settings.get_secret')
-    @patch('pathlib.Path.exists')
-    def test_check_required_secrets_privy(self, mock_exists, mock_get_secret):
+    @patch('shared.common.config.settings.load_secret')
+    def test_check_required_secrets_privy(self, mock_load_secret):
         """Test that Privy secrets are checked."""
-        # Mock auth key file exists
-        mock_exists.return_value = True
-        
         # Mock empty secrets
-        mock_get_secret.return_value = ""
+        mock_load_secret.return_value = None
         
         settings = Settings()
-        missing = settings.check_required_secrets()
+        missing = settings.validate()
         
         # Should require Privy fields
-        assert any("PRIVY_APP_ID" in m for m in missing)
-        assert any("PRIVY_APP_SECRET" in m for m in missing)
-        assert any("WALLET_ADDRESS" in m for m in missing)
+        assert "privy_app_id.txt" in missing
+        assert "privy_app_secret.txt" in missing
     
-    @patch('src.config.settings.get_secret')
+    @patch('shared.common.config.settings.load_secret')
     @patch('pathlib.Path.exists')
-    def test_check_required_secrets_no_auth_key(self, mock_exists, mock_get_secret):
+    def test_check_required_secrets_no_auth_key(self, mock_exists, mock_load_secret):
         """Test missing auth key file is detected."""
         mock_exists.return_value = False
-        mock_get_secret.return_value = "exists"
+        mock_load_secret.return_value = "exists"
         
         settings = Settings()
-        missing = settings.check_required_secrets()
+        missing = settings.validate()
         
-        assert any("PRIVY_AUTH_KEY" in m for m in missing)
+        assert "privy_auth.pem" in missing
     
-    @patch('src.config.settings.get_secret')
+    @patch('shared.common.config.settings.load_secret')
     @patch('pathlib.Path.exists')
-    def test_all_secrets_present(self, mock_exists, mock_get_secret):
+    def test_all_secrets_present(self, mock_exists, mock_load_secret):
         """Test no missing secrets when all present."""
         mock_exists.return_value = True
-        mock_get_secret.return_value = "present"
+        mock_load_secret.return_value = "present"
         
         settings = Settings()
-        missing = settings.check_required_secrets()
+        missing = settings.validate()
         
-        # Should not have old private key fields
-        assert not any("HYPERLIQUID_PRIVATE_KEY" in m for m in missing)
-        assert not any("SOLANA_PRIVATE_KEY" in m for m in missing)
+        assert len(missing) == 0
 
 
 def test_risk_config_loading():

@@ -15,18 +15,18 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.config.assets import Asset
-from src.core.position_manager import (
+from shared.config.assets import Asset
+from bot.core.position_manager import (
     PositionManager,
     PreflightResult,
     DeltaInfo,
     RebalanceResult,
     PositionManagerResult,
 )
-from src.models.common import Protocol, ExitReason
-from src.models.opportunity import ArbitrageOpportunity, OpportunityScore
-from src.models.funding import FundingRate, AsgardRates
-from src.models.position import (
+from shared.models.common import Protocol, ExitReason
+from shared.models.opportunity import ArbitrageOpportunity, OpportunityScore
+from shared.models.funding import FundingRate, AsgardRates
+from shared.models.position import (
     AsgardPosition,
     HyperliquidPosition,
     CombinedPosition,
@@ -77,13 +77,13 @@ class TestPreflightChecks:
     @pytest.mark.asyncio
     async def test_preflight_all_checks_pass(self, mock_opportunity):
         """Test all pre-flight checks passing."""
-        with patch('src.core.position_manager.AsgardPositionManager') as mock_asgard, \
-             patch('src.core.position_manager.HyperliquidTrader') as mock_hl, \
-             patch('src.core.position_manager.PriceConsensus') as mock_consensus, \
-             patch('src.core.position_manager.FillValidator'), \
-             patch('src.core.position_manager.SolanaClient') as mock_solana, \
-             patch('src.core.position_manager.ArbitrumClient') as mock_arbitrum:
-            
+        with patch('bot.core.position_manager.AsgardPositionManager') as mock_asgard, \
+             patch('bot.core.position_manager.HyperliquidTrader') as mock_hl, \
+             patch('bot.core.position_manager.PriceConsensus') as mock_consensus, \
+             patch('bot.core.position_manager.FillValidator'), \
+             patch('bot.core.position_manager.SolanaClient') as mock_solana, \
+             patch('bot.core.position_manager.ArbitrumClient') as mock_arbitrum:
+
             # Setup mocks
             mock_consensus_instance = AsyncMock()
             mock_consensus_instance.check_consensus = AsyncMock(return_value=MagicMock(
@@ -91,25 +91,27 @@ class TestPreflightChecks:
                 price_deviation=Decimal("0.001"),
             ))
             mock_consensus.return_value = mock_consensus_instance
-            
+
             mock_solana_instance = AsyncMock()
             mock_solana_instance.get_balance = AsyncMock(return_value=1.0)
             mock_solana_instance.get_token_balance = AsyncMock(return_value=10000)
             mock_solana.return_value = mock_solana_instance
-            
+
             mock_arbitrum_instance = AsyncMock()
-            mock_arbitrum_instance.get_balance = AsyncMock(return_value=0.1)
+            mock_arbitrum_instance.get_balance = AsyncMock(return_value=Decimal("0.1"))
+            mock_arbitrum_instance.get_usdc_balance = AsyncMock(return_value=Decimal("5000"))
             mock_arbitrum.return_value = mock_arbitrum_instance
-            
+
             mock_asgard_instance = AsyncMock()
             mock_asgard.return_value = mock_asgard_instance
-            
+
             mock_hl_instance = AsyncMock()
+            mock_hl_instance.get_deposited_balance = AsyncMock(return_value=10000.0)
             mock_hl.return_value = mock_hl_instance
-            
+
             async with PositionManager() as manager:
                 result = await manager.run_preflight_checks(mock_opportunity)
-                
+
                 assert result.passed is True
                 assert result.all_checks_passed is True
                 assert len(result.errors) == 0
@@ -118,13 +120,13 @@ class TestPreflightChecks:
     @pytest.mark.asyncio
     async def test_preflight_price_deviation_fail(self, mock_opportunity):
         """Test pre-flight failing on price deviation."""
-        with patch('src.core.position_manager.AsgardPositionManager') as mock_asgard, \
-             patch('src.core.position_manager.HyperliquidTrader') as mock_hl, \
-             patch('src.core.position_manager.PriceConsensus') as mock_consensus, \
-             patch('src.core.position_manager.FillValidator'), \
-             patch('src.core.position_manager.SolanaClient') as mock_solana, \
-             patch('src.core.position_manager.ArbitrumClient') as mock_arbitrum:
-            
+        with patch('bot.core.position_manager.AsgardPositionManager') as mock_asgard, \
+             patch('bot.core.position_manager.HyperliquidTrader') as mock_hl, \
+             patch('bot.core.position_manager.PriceConsensus') as mock_consensus, \
+             patch('bot.core.position_manager.FillValidator'), \
+             patch('bot.core.position_manager.SolanaClient') as mock_solana, \
+             patch('bot.core.position_manager.ArbitrumClient') as mock_arbitrum:
+
             # Setup mocks with price deviation failure
             mock_consensus_instance = AsyncMock()
             mock_consensus_instance.check_consensus = AsyncMock(return_value=MagicMock(
@@ -132,22 +134,25 @@ class TestPreflightChecks:
                 price_deviation=Decimal("0.01"),  # 1% deviation
             ))
             mock_consensus.return_value = mock_consensus_instance
-            
+
             mock_solana_instance = AsyncMock()
             mock_solana_instance.get_balance = AsyncMock(return_value=1.0)
             mock_solana_instance.get_token_balance = AsyncMock(return_value=10000)
             mock_solana.return_value = mock_solana_instance
-            
+
             mock_arbitrum_instance = AsyncMock()
-            mock_arbitrum_instance.get_balance = AsyncMock(return_value=0.1)
+            mock_arbitrum_instance.get_balance = AsyncMock(return_value=Decimal("0.1"))
+            mock_arbitrum_instance.get_usdc_balance = AsyncMock(return_value=Decimal("5000"))
             mock_arbitrum.return_value = mock_arbitrum_instance
-            
+
             mock_asgard.return_value = AsyncMock()
-            mock_hl.return_value = AsyncMock()
-            
+            mock_hl_instance = AsyncMock()
+            mock_hl_instance.get_deposited_balance = AsyncMock(return_value=10000.0)
+            mock_hl.return_value = mock_hl_instance
+
             async with PositionManager() as manager:
                 result = await manager.run_preflight_checks(mock_opportunity)
-                
+
                 assert result.passed is False
                 assert result.checks["price_consensus"] is False
                 assert any("deviation" in e.lower() for e in result.errors)
@@ -155,38 +160,41 @@ class TestPreflightChecks:
     @pytest.mark.asyncio
     async def test_preflight_funding_validation_fail(self, mock_opportunity):
         """Test pre-flight failing on funding rate validation."""
-        with patch('src.core.position_manager.AsgardPositionManager') as mock_asgard, \
-             patch('src.core.position_manager.HyperliquidTrader') as mock_hl, \
-             patch('src.core.position_manager.PriceConsensus') as mock_consensus, \
-             patch('src.core.position_manager.FillValidator'), \
-             patch('src.core.position_manager.SolanaClient') as mock_solana, \
-             patch('src.core.position_manager.ArbitrumClient') as mock_arbitrum:
-            
+        with patch('bot.core.position_manager.AsgardPositionManager') as mock_asgard, \
+             patch('bot.core.position_manager.HyperliquidTrader') as mock_hl, \
+             patch('bot.core.position_manager.PriceConsensus') as mock_consensus, \
+             patch('bot.core.position_manager.FillValidator'), \
+             patch('bot.core.position_manager.SolanaClient') as mock_solana, \
+             patch('bot.core.position_manager.ArbitrumClient') as mock_arbitrum:
+
             # Make funding positive (should fail)
             mock_opportunity.current_funding.rate_8hr = Decimal("0.0001")
-            
+
             mock_consensus_instance = AsyncMock()
             mock_consensus_instance.check_consensus = AsyncMock(return_value=MagicMock(
                 is_within_threshold=True,
                 price_deviation=Decimal("0.001"),
             ))
             mock_consensus.return_value = mock_consensus_instance
-            
+
             mock_solana_instance = AsyncMock()
             mock_solana_instance.get_balance = AsyncMock(return_value=1.0)
             mock_solana_instance.get_token_balance = AsyncMock(return_value=10000)
             mock_solana.return_value = mock_solana_instance
-            
+
             mock_arbitrum_instance = AsyncMock()
-            mock_arbitrum_instance.get_balance = AsyncMock(return_value=0.1)
+            mock_arbitrum_instance.get_balance = AsyncMock(return_value=Decimal("0.1"))
+            mock_arbitrum_instance.get_usdc_balance = AsyncMock(return_value=Decimal("5000"))
             mock_arbitrum.return_value = mock_arbitrum_instance
-            
+
             mock_asgard.return_value = AsyncMock()
-            mock_hl.return_value = AsyncMock()
-            
+            mock_hl_instance = AsyncMock()
+            mock_hl_instance.get_deposited_balance = AsyncMock(return_value=10000.0)
+            mock_hl.return_value = mock_hl_instance
+
             async with PositionManager() as manager:
                 result = await manager.run_preflight_checks(mock_opportunity)
-                
+
                 assert result.passed is False
                 assert result.checks["funding_validation"] is False
 
@@ -261,12 +269,12 @@ class TestPositionOpening:
     @pytest.mark.asyncio
     async def test_open_position_success(self, mock_opportunity, mock_asgard_position, mock_hyperliquid_position):
         """Test successful position opening."""
-        with patch('src.core.position_manager.AsgardPositionManager') as mock_asgard_mgr, \
-             patch('src.core.position_manager.HyperliquidTrader') as mock_hl_trader, \
-             patch('src.core.position_manager.PriceConsensus') as mock_consensus, \
-             patch('src.core.position_manager.FillValidator') as mock_validator, \
-             patch('src.core.position_manager.SolanaClient'), \
-             patch('src.core.position_manager.ArbitrumClient'):
+        with patch('bot.core.position_manager.AsgardPositionManager') as mock_asgard_mgr, \
+             patch('bot.core.position_manager.HyperliquidTrader') as mock_hl_trader, \
+             patch('bot.core.position_manager.PriceConsensus') as mock_consensus, \
+             patch('bot.core.position_manager.FillValidator') as mock_validator, \
+             patch('bot.core.position_manager.SolanaClient'), \
+             patch('bot.core.position_manager.ArbitrumClient'):
             
             # Setup Asgard mock
             mock_asgard_instance = AsyncMock()
@@ -280,7 +288,7 @@ class TestPositionOpening:
             mock_asgard_mgr.return_value = mock_asgard_instance
             
             # Setup Hyperliquid mock
-            from src.venues.hyperliquid.trader import PositionInfo
+            from bot.venues.hyperliquid.trader import PositionInfo
             mock_hl_instance = AsyncMock()
             mock_hl_instance.update_leverage = AsyncMock()
             mock_hl_instance.open_short = AsyncMock(return_value=MagicMock(
@@ -337,12 +345,12 @@ class TestPositionOpening:
     @pytest.mark.asyncio
     async def test_open_position_hyperliquid_fails_unwinds(self, mock_opportunity, mock_asgard_position):
         """Test that Asgard position is unwound if Hyperliquid fails."""
-        with patch('src.core.position_manager.AsgardPositionManager') as mock_asgard_mgr, \
-             patch('src.core.position_manager.HyperliquidTrader') as mock_hl_trader, \
-             patch('src.core.position_manager.PriceConsensus') as mock_consensus, \
-             patch('src.core.position_manager.FillValidator'), \
-             patch('src.core.position_manager.SolanaClient'), \
-             patch('src.core.position_manager.ArbitrumClient'):
+        with patch('bot.core.position_manager.AsgardPositionManager') as mock_asgard_mgr, \
+             patch('bot.core.position_manager.HyperliquidTrader') as mock_hl_trader, \
+             patch('bot.core.position_manager.PriceConsensus') as mock_consensus, \
+             patch('bot.core.position_manager.FillValidator'), \
+             patch('bot.core.position_manager.SolanaClient'), \
+             patch('bot.core.position_manager.ArbitrumClient'):
             
             # Setup Asgard mock
             mock_asgard_instance = AsyncMock()
@@ -392,12 +400,12 @@ class TestPositionOpening:
         """Test that position opening fails if preflight checks not passed."""
         mock_opportunity.preflight_checks_passed = False
         
-        with patch('src.core.position_manager.AsgardPositionManager') as mock_asgard, \
-             patch('src.core.position_manager.HyperliquidTrader') as mock_hl, \
-             patch('src.core.position_manager.PriceConsensus') as mock_consensus, \
-             patch('src.core.position_manager.FillValidator'), \
-             patch('src.core.position_manager.SolanaClient'), \
-             patch('src.core.position_manager.ArbitrumClient'):
+        with patch('bot.core.position_manager.AsgardPositionManager') as mock_asgard, \
+             patch('bot.core.position_manager.HyperliquidTrader') as mock_hl, \
+             patch('bot.core.position_manager.PriceConsensus') as mock_consensus, \
+             patch('bot.core.position_manager.FillValidator'), \
+             patch('bot.core.position_manager.SolanaClient'), \
+             patch('bot.core.position_manager.ArbitrumClient'):
             
             mock_asgard.return_value = AsyncMock()
             mock_hl.return_value = AsyncMock()
@@ -453,12 +461,12 @@ class TestPositionClosing:
     @pytest.mark.asyncio
     async def test_close_position_success(self, mock_combined_position):
         """Test successful position closing."""
-        with patch('src.core.position_manager.AsgardPositionManager') as mock_asgard_mgr, \
-             patch('src.core.position_manager.HyperliquidTrader') as mock_hl_trader, \
-             patch('src.core.position_manager.PriceConsensus') as mock_consensus, \
-             patch('src.core.position_manager.FillValidator'), \
-             patch('src.core.position_manager.SolanaClient'), \
-             patch('src.core.position_manager.ArbitrumClient'):
+        with patch('bot.core.position_manager.AsgardPositionManager') as mock_asgard_mgr, \
+             patch('bot.core.position_manager.HyperliquidTrader') as mock_hl_trader, \
+             patch('bot.core.position_manager.PriceConsensus') as mock_consensus, \
+             patch('bot.core.position_manager.FillValidator'), \
+             patch('bot.core.position_manager.SolanaClient'), \
+             patch('bot.core.position_manager.ArbitrumClient'):
             
             # Setup mocks
             mock_asgard_instance = AsyncMock()
@@ -500,12 +508,12 @@ class TestPositionClosing:
     @pytest.mark.asyncio
     async def test_close_position_not_found(self):
         """Test closing a non-existent position."""
-        with patch('src.core.position_manager.AsgardPositionManager') as mock_asgard, \
-             patch('src.core.position_manager.HyperliquidTrader') as mock_hl, \
-             patch('src.core.position_manager.PriceConsensus') as mock_consensus, \
-             patch('src.core.position_manager.FillValidator'), \
-             patch('src.core.position_manager.SolanaClient'), \
-             patch('src.core.position_manager.ArbitrumClient'):
+        with patch('bot.core.position_manager.AsgardPositionManager') as mock_asgard, \
+             patch('bot.core.position_manager.HyperliquidTrader') as mock_hl, \
+             patch('bot.core.position_manager.PriceConsensus') as mock_consensus, \
+             patch('bot.core.position_manager.FillValidator'), \
+             patch('bot.core.position_manager.SolanaClient'), \
+             patch('bot.core.position_manager.ArbitrumClient'):
             
             mock_asgard.return_value = AsyncMock()
             mock_hl.return_value = AsyncMock()
@@ -522,12 +530,12 @@ class TestPositionClosing:
         """Test closing an already closed position."""
         mock_combined_position.status = "closed"
         
-        with patch('src.core.position_manager.AsgardPositionManager') as mock_asgard, \
-             patch('src.core.position_manager.HyperliquidTrader') as mock_hl, \
-             patch('src.core.position_manager.PriceConsensus') as mock_consensus, \
-             patch('src.core.position_manager.FillValidator'), \
-             patch('src.core.position_manager.SolanaClient'), \
-             patch('src.core.position_manager.ArbitrumClient'):
+        with patch('bot.core.position_manager.AsgardPositionManager') as mock_asgard, \
+             patch('bot.core.position_manager.HyperliquidTrader') as mock_hl, \
+             patch('bot.core.position_manager.PriceConsensus') as mock_consensus, \
+             patch('bot.core.position_manager.FillValidator'), \
+             patch('bot.core.position_manager.SolanaClient'), \
+             patch('bot.core.position_manager.ArbitrumClient'):
             
             mock_asgard.return_value = AsyncMock()
             mock_hl.return_value = AsyncMock()
@@ -622,12 +630,12 @@ class TestDeltaCalculation:
     @pytest.mark.asyncio
     async def test_delta_neutral_position(self, mock_neutral_position):
         """Test delta calculation for perfectly neutral position."""
-        with patch('src.core.position_manager.AsgardPositionManager') as mock_asgard, \
-             patch('src.core.position_manager.HyperliquidTrader') as mock_hl, \
-             patch('src.core.position_manager.PriceConsensus') as mock_consensus, \
-             patch('src.core.position_manager.FillValidator'), \
-             patch('src.core.position_manager.SolanaClient'), \
-             patch('src.core.position_manager.ArbitrumClient'):
+        with patch('bot.core.position_manager.AsgardPositionManager') as mock_asgard, \
+             patch('bot.core.position_manager.HyperliquidTrader') as mock_hl, \
+             patch('bot.core.position_manager.PriceConsensus') as mock_consensus, \
+             patch('bot.core.position_manager.FillValidator'), \
+             patch('bot.core.position_manager.SolanaClient'), \
+             patch('bot.core.position_manager.ArbitrumClient'):
             
             mock_asgard.return_value = AsyncMock()
             mock_hl.return_value = AsyncMock()
@@ -648,12 +656,12 @@ class TestDeltaCalculation:
         # Make long worth more
         mock_neutral_position.asgard.current_token_a_price = Decimal("105")
         
-        with patch('src.core.position_manager.AsgardPositionManager') as mock_asgard, \
-             patch('src.core.position_manager.HyperliquidTrader') as mock_hl, \
-             patch('src.core.position_manager.PriceConsensus') as mock_consensus, \
-             patch('src.core.position_manager.FillValidator'), \
-             patch('src.core.position_manager.SolanaClient'), \
-             patch('src.core.position_manager.ArbitrumClient'):
+        with patch('bot.core.position_manager.AsgardPositionManager') as mock_asgard, \
+             patch('bot.core.position_manager.HyperliquidTrader') as mock_hl, \
+             patch('bot.core.position_manager.PriceConsensus') as mock_consensus, \
+             patch('bot.core.position_manager.FillValidator'), \
+             patch('bot.core.position_manager.SolanaClient'), \
+             patch('bot.core.position_manager.ArbitrumClient'):
             
             mock_asgard.return_value = AsyncMock()
             mock_hl.return_value = AsyncMock()
@@ -673,12 +681,12 @@ class TestDeltaCalculation:
     @pytest.mark.asyncio
     async def test_lst_appreciation_drift(self, mock_lst_position):
         """Test LST appreciation creates natural delta drift."""
-        with patch('src.core.position_manager.AsgardPositionManager') as mock_asgard, \
-             patch('src.core.position_manager.HyperliquidTrader') as mock_hl, \
-             patch('src.core.position_manager.PriceConsensus') as mock_consensus, \
-             patch('src.core.position_manager.FillValidator'), \
-             patch('src.core.position_manager.SolanaClient'), \
-             patch('src.core.position_manager.ArbitrumClient'):
+        with patch('bot.core.position_manager.AsgardPositionManager') as mock_asgard, \
+             patch('bot.core.position_manager.HyperliquidTrader') as mock_hl, \
+             patch('bot.core.position_manager.PriceConsensus') as mock_consensus, \
+             patch('bot.core.position_manager.FillValidator'), \
+             patch('bot.core.position_manager.SolanaClient'), \
+             patch('bot.core.position_manager.ArbitrumClient'):
             
             mock_asgard.return_value = AsyncMock()
             mock_hl.return_value = AsyncMock()
@@ -739,12 +747,12 @@ class TestRebalanceLogic:
         # Reset to neutral
         mock_drifted_position.asgard.current_token_a_price = Decimal("100")
         
-        with patch('src.core.position_manager.AsgardPositionManager') as mock_asgard, \
-             patch('src.core.position_manager.HyperliquidTrader') as mock_hl, \
-             patch('src.core.position_manager.PriceConsensus') as mock_consensus, \
-             patch('src.core.position_manager.FillValidator'), \
-             patch('src.core.position_manager.SolanaClient'), \
-             patch('src.core.position_manager.ArbitrumClient'):
+        with patch('bot.core.position_manager.AsgardPositionManager') as mock_asgard, \
+             patch('bot.core.position_manager.HyperliquidTrader') as mock_hl, \
+             patch('bot.core.position_manager.PriceConsensus') as mock_consensus, \
+             patch('bot.core.position_manager.FillValidator'), \
+             patch('bot.core.position_manager.SolanaClient'), \
+             patch('bot.core.position_manager.ArbitrumClient'):
             
             mock_asgard.return_value = AsyncMock()
             mock_hl.return_value = AsyncMock()
@@ -759,12 +767,12 @@ class TestRebalanceLogic:
     @pytest.mark.asyncio
     async def test_rebalance_needed_but_not_cost_effective(self, mock_drifted_position):
         """Test rebalance needed but not cost-effective."""
-        with patch('src.core.position_manager.AsgardPositionManager') as mock_asgard, \
-             patch('src.core.position_manager.HyperliquidTrader') as mock_hl, \
-             patch('src.core.position_manager.PriceConsensus') as mock_consensus, \
-             patch('src.core.position_manager.FillValidator'), \
-             patch('src.core.position_manager.SolanaClient'), \
-             patch('src.core.position_manager.ArbitrumClient'):
+        with patch('bot.core.position_manager.AsgardPositionManager') as mock_asgard, \
+             patch('bot.core.position_manager.HyperliquidTrader') as mock_hl, \
+             patch('bot.core.position_manager.PriceConsensus') as mock_consensus, \
+             patch('bot.core.position_manager.FillValidator'), \
+             patch('bot.core.position_manager.SolanaClient'), \
+             patch('bot.core.position_manager.ArbitrumClient'):
             
             mock_asgard.return_value = AsyncMock()
             mock_hl.return_value = AsyncMock()
@@ -860,12 +868,12 @@ class TestPositionTracking:
     @pytest.mark.asyncio
     async def test_get_position(self, mock_positions):
         """Test retrieving a specific position."""
-        with patch('src.core.position_manager.AsgardPositionManager') as mock_asgard, \
-             patch('src.core.position_manager.HyperliquidTrader') as mock_hl, \
-             patch('src.core.position_manager.PriceConsensus') as mock_consensus, \
-             patch('src.core.position_manager.FillValidator'), \
-             patch('src.core.position_manager.SolanaClient'), \
-             patch('src.core.position_manager.ArbitrumClient'):
+        with patch('bot.core.position_manager.AsgardPositionManager') as mock_asgard, \
+             patch('bot.core.position_manager.HyperliquidTrader') as mock_hl, \
+             patch('bot.core.position_manager.PriceConsensus') as mock_consensus, \
+             patch('bot.core.position_manager.FillValidator'), \
+             patch('bot.core.position_manager.SolanaClient'), \
+             patch('bot.core.position_manager.ArbitrumClient'):
             
             mock_asgard.return_value = AsyncMock()
             mock_hl.return_value = AsyncMock()
@@ -889,12 +897,12 @@ class TestPositionTracking:
     @pytest.mark.asyncio
     async def test_get_open_positions(self, mock_positions):
         """Test filtering for open positions only."""
-        with patch('src.core.position_manager.AsgardPositionManager') as mock_asgard, \
-             patch('src.core.position_manager.HyperliquidTrader') as mock_hl, \
-             patch('src.core.position_manager.PriceConsensus') as mock_consensus, \
-             patch('src.core.position_manager.FillValidator'), \
-             patch('src.core.position_manager.SolanaClient'), \
-             patch('src.core.position_manager.ArbitrumClient'):
+        with patch('bot.core.position_manager.AsgardPositionManager') as mock_asgard, \
+             patch('bot.core.position_manager.HyperliquidTrader') as mock_hl, \
+             patch('bot.core.position_manager.PriceConsensus') as mock_consensus, \
+             patch('bot.core.position_manager.FillValidator'), \
+             patch('bot.core.position_manager.SolanaClient'), \
+             patch('bot.core.position_manager.ArbitrumClient'):
             
             mock_asgard.return_value = AsyncMock()
             mock_hl.return_value = AsyncMock()
@@ -917,12 +925,12 @@ class TestPositionManagerLifecycle:
     @pytest.mark.asyncio
     async def test_context_manager_initialization(self):
         """Test that context manager properly initializes components."""
-        with patch('src.core.position_manager.AsgardPositionManager') as mock_asgard, \
-             patch('src.core.position_manager.HyperliquidTrader') as mock_hl, \
-             patch('src.core.position_manager.PriceConsensus') as mock_consensus, \
-             patch('src.core.position_manager.FillValidator'), \
-             patch('src.core.position_manager.SolanaClient') as mock_solana, \
-             patch('src.core.position_manager.ArbitrumClient') as mock_arbitrum:
+        with patch('bot.core.position_manager.AsgardPositionManager') as mock_asgard, \
+             patch('bot.core.position_manager.HyperliquidTrader') as mock_hl, \
+             patch('bot.core.position_manager.PriceConsensus') as mock_consensus, \
+             patch('bot.core.position_manager.FillValidator'), \
+             patch('bot.core.position_manager.SolanaClient') as mock_solana, \
+             patch('bot.core.position_manager.ArbitrumClient') as mock_arbitrum:
             
             mock_asgard.return_value = MagicMock()
             mock_hl.return_value = MagicMock()
@@ -961,3 +969,307 @@ class TestPositionManagerLifecycle:
         assert manager.fill_validator is mock_validator
         assert manager.solana_client is mock_solana
         assert manager.arbitrum_client is mock_arbitrum
+
+
+class TestHyperliquidBalancePreflight:
+    """Tests for Hyperliquid clearinghouse balance in preflight."""
+
+    @pytest.fixture
+    def mock_opportunity(self):
+        """Create a mock opportunity with $10k deployed capital."""
+        return ArbitrageOpportunity(
+            id="test-opp-hl",
+            asset=Asset.SOL,
+            selected_protocol=Protocol.MARGINFI,
+            asgard_rates=AsgardRates(
+                protocol_id=0,
+                token_a_mint="So11111111111111111111111111111111111111112",
+                token_b_mint="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+                token_a_lending_apy=Decimal("0.05"),
+                token_b_borrowing_apy=Decimal("0.08"),
+                token_b_max_borrow_capacity=Decimal("1000000"),
+            ),
+            current_funding=FundingRate(
+                timestamp=datetime.utcnow(),
+                coin="SOL",
+                rate_8hr=Decimal("-0.0001"),
+            ),
+            predicted_funding=FundingRate(
+                timestamp=datetime.utcnow(),
+                coin="SOL",
+                rate_8hr=Decimal("-0.0001"),
+            ),
+            funding_volatility=Decimal("0.1"),
+            leverage=Decimal("3"),
+            deployed_capital_usd=Decimal("10000"),
+            position_size_usd=Decimal("30000"),
+            score=OpportunityScore(
+                funding_apy=Decimal("0.10"),
+                net_carry_apy=Decimal("-0.01"),
+            ),
+            price_deviation=Decimal("0.001"),
+            preflight_checks_passed=False,
+        )
+
+    @pytest.mark.asyncio
+    async def test_hl_balance_sufficient_no_bridge_needed(self, mock_opportunity):
+        """Test preflight passes without bridge when HL has enough."""
+        mock_solana = AsyncMock()
+        mock_solana.get_balance = AsyncMock(return_value=1.0)
+        mock_solana.get_token_balance = AsyncMock(return_value=10000)
+
+        mock_arbitrum = AsyncMock()
+        mock_arbitrum.get_balance = AsyncMock(return_value=Decimal("0.1"))
+        mock_arbitrum.get_usdc_balance = AsyncMock(return_value=Decimal("5000"))
+
+        mock_hl_trader = AsyncMock()
+        mock_hl_trader.get_deposited_balance = AsyncMock(return_value=6000.0)  # > 5000 margin
+
+        mock_consensus = AsyncMock()
+        mock_consensus.check_consensus = AsyncMock(return_value=MagicMock(
+            is_within_threshold=True,
+            price_deviation=Decimal("0.001"),
+        ))
+
+        manager = PositionManager(
+            asgard_manager=AsyncMock(),
+            hyperliquid_trader=mock_hl_trader,
+            price_consensus=mock_consensus,
+            fill_validator=MagicMock(),
+            solana_client=mock_solana,
+            arbitrum_client=mock_arbitrum,
+        )
+
+        result = await manager.run_preflight_checks(mock_opportunity)
+
+        assert result.checks["wallet_balance"] is True
+        assert manager._needs_bridge_deposit is False
+
+    @pytest.mark.asyncio
+    async def test_hl_balance_low_arb_usdc_available_sets_bridge_flag(self, mock_opportunity):
+        """Test that low HL balance + available Arb USDC sets bridge flag."""
+        mock_solana = AsyncMock()
+        mock_solana.get_balance = AsyncMock(return_value=1.0)
+        mock_solana.get_token_balance = AsyncMock(return_value=10000)
+
+        mock_arbitrum = AsyncMock()
+        mock_arbitrum.get_balance = AsyncMock(return_value=Decimal("0.1"))
+        mock_arbitrum.get_usdc_balance = AsyncMock(return_value=Decimal("6000"))
+
+        mock_hl_trader = AsyncMock()
+        mock_hl_trader.get_deposited_balance = AsyncMock(return_value=100.0)  # Low
+
+        mock_consensus = AsyncMock()
+        mock_consensus.check_consensus = AsyncMock(return_value=MagicMock(
+            is_within_threshold=True,
+            price_deviation=Decimal("0.001"),
+        ))
+
+        manager = PositionManager(
+            asgard_manager=AsyncMock(),
+            hyperliquid_trader=mock_hl_trader,
+            price_consensus=mock_consensus,
+            fill_validator=MagicMock(),
+            solana_client=mock_solana,
+            arbitrum_client=mock_arbitrum,
+        )
+
+        result = await manager.run_preflight_checks(mock_opportunity)
+
+        assert result.checks["wallet_balance"] is True  # Soft pass
+        assert manager._needs_bridge_deposit is True
+        assert manager._bridge_deposit_amount > 0
+
+    @pytest.mark.asyncio
+    async def test_hl_and_arb_both_low_fails(self, mock_opportunity):
+        """Test preflight fails when both HL and Arbitrum USDC are low."""
+        mock_solana = AsyncMock()
+        mock_solana.get_balance = AsyncMock(return_value=1.0)
+        mock_solana.get_token_balance = AsyncMock(return_value=10000)
+
+        mock_arbitrum = AsyncMock()
+        mock_arbitrum.get_balance = AsyncMock(return_value=Decimal("0.1"))
+        mock_arbitrum.get_usdc_balance = AsyncMock(return_value=Decimal("100"))  # Too low
+
+        mock_hl_trader = AsyncMock()
+        mock_hl_trader.get_deposited_balance = AsyncMock(return_value=50.0)  # Also low
+
+        mock_consensus = AsyncMock()
+        mock_consensus.check_consensus = AsyncMock(return_value=MagicMock(
+            is_within_threshold=True,
+            price_deviation=Decimal("0.001"),
+        ))
+
+        manager = PositionManager(
+            asgard_manager=AsyncMock(),
+            hyperliquid_trader=mock_hl_trader,
+            price_consensus=mock_consensus,
+            fill_validator=MagicMock(),
+            solana_client=mock_solana,
+            arbitrum_client=mock_arbitrum,
+        )
+
+        result = await manager.run_preflight_checks(mock_opportunity)
+
+        assert result.checks["wallet_balance"] is False
+        assert any("balance" in e.lower() for e in result.errors)
+
+    @pytest.mark.asyncio
+    async def test_eth_too_low_for_bridge_fails(self, mock_opportunity):
+        """Test preflight fails when ETH is below bridge threshold."""
+        mock_solana = AsyncMock()
+        mock_solana.get_balance = AsyncMock(return_value=1.0)
+        mock_solana.get_token_balance = AsyncMock(return_value=10000)
+
+        mock_arbitrum = AsyncMock()
+        mock_arbitrum.get_balance = AsyncMock(return_value=Decimal("0.001"))  # Too low
+
+        manager = PositionManager(
+            asgard_manager=AsyncMock(),
+            hyperliquid_trader=AsyncMock(),
+            price_consensus=AsyncMock(),
+            fill_validator=MagicMock(),
+            solana_client=mock_solana,
+            arbitrum_client=mock_arbitrum,
+        )
+
+        result = await manager.run_preflight_checks(mock_opportunity)
+
+        assert result.checks["wallet_balance"] is False
+
+
+class TestAutoBridgeDeposit:
+    """Tests for auto-bridge deposit before HL short."""
+
+    @pytest.mark.asyncio
+    async def test_auto_deposit_called_when_flag_set(self):
+        """Test that depositor is called when _needs_bridge_deposit is True."""
+        mock_depositor = AsyncMock()
+        mock_depositor.deposit = AsyncMock(return_value=MagicMock(
+            success=True,
+            deposit_tx_hash="0xbridge",
+        ))
+
+        mock_hl_trader = AsyncMock()
+        mock_hl_trader.update_leverage = AsyncMock()
+        mock_hl_trader.open_short = AsyncMock(return_value=MagicMock(
+            success=True,
+            order_id="order1",
+            avg_px="100.0",
+        ))
+        mock_hl_trader.get_position = AsyncMock(return_value=MagicMock(
+            coin="SOL",
+            size=-50.0,
+            entry_px=100.0,
+            leverage=3,
+            margin_used=1666.0,
+            margin_fraction=0.25,
+            unrealized_pnl=0.0,
+        ))
+
+        manager = PositionManager(
+            asgard_manager=AsyncMock(),
+            hyperliquid_trader=mock_hl_trader,
+            fill_validator=MagicMock(),
+        )
+        manager._depositor = mock_depositor
+        manager._needs_bridge_deposit = True
+        manager._bridge_deposit_amount = 5000.0
+
+        result = await manager._open_hyperliquid_position(
+            position_id="test-pos",
+            coin="SOL",
+            size_sol=Decimal("50"),
+            leverage=3,
+        )
+
+        assert result.success is True
+        mock_depositor.deposit.assert_called_once_with(5000.0)
+        # Flag should be cleared
+        assert manager._needs_bridge_deposit is False
+
+    @pytest.mark.asyncio
+    async def test_auto_deposit_failure_blocks_short(self):
+        """Test that failed bridge deposit prevents opening short."""
+        mock_depositor = AsyncMock()
+        mock_depositor.deposit = AsyncMock(return_value=MagicMock(
+            success=False,
+            error="Bridge tx failed",
+        ))
+
+        manager = PositionManager(
+            asgard_manager=AsyncMock(),
+            hyperliquid_trader=AsyncMock(),
+            fill_validator=MagicMock(),
+        )
+        manager._depositor = mock_depositor
+        manager._needs_bridge_deposit = True
+        manager._bridge_deposit_amount = 5000.0
+
+        result = await manager._open_hyperliquid_position(
+            position_id="test-pos",
+            coin="SOL",
+            size_sol=Decimal("50"),
+            leverage=3,
+        )
+
+        assert result.success is False
+        assert "Bridge deposit failed" in result.error
+
+    @pytest.mark.asyncio
+    async def test_no_depositor_when_bridge_needed_fails(self):
+        """Test failure when bridge is needed but no depositor configured."""
+        manager = PositionManager(
+            asgard_manager=AsyncMock(),
+            hyperliquid_trader=AsyncMock(),
+            fill_validator=MagicMock(),
+        )
+        manager._needs_bridge_deposit = True
+        manager._bridge_deposit_amount = 5000.0
+        # No depositor set
+
+        result = await manager._open_hyperliquid_position(
+            position_id="test-pos",
+            coin="SOL",
+            size_sol=Decimal("50"),
+            leverage=3,
+        )
+
+        assert result.success is False
+        assert "no depositor" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_no_bridge_proceeds_normally(self):
+        """Test that short opens normally when no bridge is needed."""
+        mock_hl_trader = AsyncMock()
+        mock_hl_trader.update_leverage = AsyncMock()
+        mock_hl_trader.open_short = AsyncMock(return_value=MagicMock(
+            success=True,
+            order_id="order1",
+            avg_px="100.0",
+        ))
+        mock_hl_trader.get_position = AsyncMock(return_value=MagicMock(
+            coin="SOL",
+            size=-50.0,
+            entry_px=100.0,
+            leverage=3,
+            margin_used=1666.0,
+            margin_fraction=0.25,
+            unrealized_pnl=0.0,
+        ))
+
+        manager = PositionManager(
+            asgard_manager=AsyncMock(),
+            hyperliquid_trader=mock_hl_trader,
+            fill_validator=MagicMock(),
+        )
+        # _needs_bridge_deposit is False by default
+
+        result = await manager._open_hyperliquid_position(
+            position_id="test-pos",
+            coin="SOL",
+            size_sol=Decimal("50"),
+            leverage=3,
+        )
+
+        assert result.success is True

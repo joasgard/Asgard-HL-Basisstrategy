@@ -5,7 +5,7 @@ import pytest
 from decimal import Decimal
 from unittest.mock import MagicMock, AsyncMock, patch
 
-from src.dashboard.setup.validators import (
+from backend.dashboard.setup.validators import (
     ValidationResult, FundingStatus, SetupValidator
 )
 
@@ -183,7 +183,7 @@ class TestValidatePrivyCredentials:
         assert "Invalid App ID" in result.error
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.privy_client.PrivyClient')
+    @patch('backend.dashboard.privy_client.PrivyClient')
     async def test_valid_format_no_client(self, mock_client_class):
         """Test valid format - creates client and validates connection."""
         mock_client = AsyncMock()
@@ -200,7 +200,7 @@ class TestValidatePrivyCredentials:
         mock_client.close.assert_called_once()
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.privy_client.PrivyClient')
+    @patch('backend.dashboard.privy_client.PrivyClient')
     async def test_with_client_success(self, mock_client_class):
         """Test with client that succeeds."""
         mock_client = AsyncMock()
@@ -215,7 +215,7 @@ class TestValidatePrivyCredentials:
         mock_client.list_users.assert_called_once_with(limit=1)
     
     @pytest.mark.asyncio
-    @patch('src.dashboard.privy_client.PrivyClient')
+    @patch('backend.dashboard.privy_client.PrivyClient')
     async def test_with_client_failure(self, mock_client_class):
         """Test with client that fails."""
         mock_client = AsyncMock()

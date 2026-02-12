@@ -2,7 +2,7 @@
 import pytest
 from decimal import Decimal
 
-from src.security.transaction_validator import (
+from shared.security.transaction_validator import (
     TransactionValidator,
     ValidationResult,
     TransactionValidation,

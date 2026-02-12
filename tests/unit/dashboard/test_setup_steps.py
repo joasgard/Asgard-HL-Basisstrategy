@@ -6,8 +6,8 @@ import json
 from decimal import Decimal
 from unittest.mock import MagicMock, patch, AsyncMock
 
-from src.dashboard.setup.steps import SetupState, SetupSteps
-from src.security.encryption import EncryptionManager
+from backend.dashboard.setup.steps import SetupState, SetupSteps
+from shared.security.encryption import EncryptionManager
 
 
 class TestSetupState:
@@ -306,29 +306,25 @@ class TestCreateWallets:
             }.get(key, None))
         mock_db.get_config = AsyncMock(side_effect=mock_get_config_final)
         
-        # Mock the PrivyClient class
-        with patch('src.dashboard.privy_client.PrivyClient') as mock_client_class:
+        # Mock the PrivyClient class — wallets are now created by frontend SDK,
+        # setup just verifies connection and stores provider flag
+        with patch('backend.dashboard.privy_client.PrivyClient') as mock_client_class:
             mock_client = AsyncMock()
-            mock_client.create_user_wallet = AsyncMock(side_effect=[
-                {"address": "0xevm123", "id": "evm_id"},
-                {"address": "solana456", "id": "sol_id"}
-            ])
             mock_client.close = AsyncMock()
             mock_client_class.return_value = mock_client
-            
+
             progress_calls = []
             def progress_cb(pct):
                 progress_calls.append(pct)
-            
+
             # Pass privy_client=True to trigger SDK path
             mock_privy = MagicMock()  # Just a flag, actual client is mocked
             steps = SetupSteps(db=mock_db, privy_client=mock_privy)
             result = await steps.create_wallets(progress_callback=progress_cb)
-            
+
             assert result["success"] is True
             mock_client_class.assert_called_once_with(app_id="app_id", app_secret="app_secret")
-            mock_db.set_config.assert_any_call("wallet_evm_address", "0xevm123")
-            mock_db.set_config.assert_any_call("wallet_solana_address", "solana456")
+            mock_db.set_config.assert_any_call("wallet_provider", "privy")
     
     @pytest.mark.asyncio
     async def test_create_wallets_demo_mode(self):
@@ -544,7 +540,7 @@ class TestConfigureStrategy:
     @pytest.mark.asyncio
     async def test_configure_strategy_invalid_preset(self):
         """Test strategy configuration with invalid preset."""
-        from src.dashboard.setup.validators import ValidationResult, SetupValidator
+        from backend.dashboard.setup.validators import ValidationResult, SetupValidator
         mock_db = AsyncMock()
         
         # Use real validator to test actual validation
@@ -557,7 +553,7 @@ class TestConfigureStrategy:
     @pytest.mark.asyncio
     async def test_configure_strategy_invalid_leverage(self):
         """Test strategy configuration with invalid leverage."""
-        from src.dashboard.setup.validators import ValidationResult, SetupValidator
+        from backend.dashboard.setup.validators import ValidationResult, SetupValidator
         mock_db = AsyncMock()
         
         # Use real validator to test actual validation

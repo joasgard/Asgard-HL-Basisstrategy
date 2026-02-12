@@ -13,16 +13,16 @@ from decimal import Decimal
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.core.bot import DeltaNeutralBot, BotConfig
-from src.core.risk_engine import ExitReason, RiskLevel, ExitDecision
-from src.core.pause_controller import CircuitBreakerType
-from src.models.position import (
+from bot.core.bot import DeltaNeutralBot, BotConfig
+from bot.core.risk_engine import ExitReason, RiskLevel, ExitDecision
+from bot.core.pause_controller import CircuitBreakerType
+from shared.models.position import (
     AsgardPosition, 
     HyperliquidPosition, 
     CombinedPosition,
     PositionReference
 )
-from src.models.common import Asset, Protocol
+from shared.models.common import Asset, Protocol
 
 
 @pytest.fixture
@@ -200,15 +200,15 @@ class TestEmergencyHealthFactor:
     async def test_emergency_close_critical_health_factor(self, critical_health_position):
         """Test emergency close when health factor is critical."""
         
-        with patch('src.core.bot.StatePersistence') as mock_state, \
-             patch('src.core.bot.SolanaClient'), \
-             patch('src.core.bot.ArbitrumClient'), \
-             patch('src.core.bot.RiskEngine') as mock_risk_class, \
-             patch('src.core.bot.PositionSizer'), \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController') as mock_pause_class, \
-             patch('src.core.bot.PositionManager') as mock_pm_class, \
-             patch('src.core.bot.OpportunityDetector'):
+        with patch('bot.core.bot.StatePersistence') as mock_state, \
+             patch('bot.core.bot.SolanaClient'), \
+             patch('bot.core.bot.ArbitrumClient'), \
+             patch('bot.core.bot.RiskEngine') as mock_risk_class, \
+             patch('bot.core.bot.PositionSizer'), \
+             patch('bot.core.bot.LSTMonitor'), \
+             patch('bot.core.bot.PauseController') as mock_pause_class, \
+             patch('bot.core.bot.PositionManager') as mock_pm_class, \
+             patch('bot.core.bot.OpportunityDetector'):
             
             mock_state_instance = AsyncMock()
             mock_state.return_value = mock_state_instance
@@ -263,15 +263,15 @@ class TestEmergencyHealthFactor:
     async def test_emergency_close_critical_margin_fraction(self, critical_margin_position):
         """Test emergency close when margin fraction is critical."""
         
-        with patch('src.core.bot.StatePersistence') as mock_state, \
-             patch('src.core.bot.SolanaClient'), \
-             patch('src.core.bot.ArbitrumClient'), \
-             patch('src.core.bot.RiskEngine') as mock_risk_class, \
-             patch('src.core.bot.PositionSizer'), \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController') as mock_pause_class, \
-             patch('src.core.bot.PositionManager') as mock_pm_class, \
-             patch('src.core.bot.OpportunityDetector'):
+        with patch('bot.core.bot.StatePersistence') as mock_state, \
+             patch('bot.core.bot.SolanaClient'), \
+             patch('bot.core.bot.ArbitrumClient'), \
+             patch('bot.core.bot.RiskEngine') as mock_risk_class, \
+             patch('bot.core.bot.PositionSizer'), \
+             patch('bot.core.bot.LSTMonitor'), \
+             patch('bot.core.bot.PauseController') as mock_pause_class, \
+             patch('bot.core.bot.PositionManager') as mock_pm_class, \
+             patch('bot.core.bot.OpportunityDetector'):
             
             mock_state_instance = AsyncMock()
             mock_state.return_value = mock_state_instance
@@ -330,15 +330,15 @@ class TestEmergencyLSTDepeg:
     async def test_emergency_close_lst_critical_premium(self, lst_position):
         """Test emergency close when LST has critical premium."""
         
-        with patch('src.core.bot.StatePersistence') as mock_state, \
-             patch('src.core.bot.SolanaClient'), \
-             patch('src.core.bot.ArbitrumClient'), \
-             patch('src.core.bot.RiskEngine') as mock_risk_class, \
-             patch('src.core.bot.PositionSizer'), \
-             patch('src.core.bot.LSTMonitor') as mock_lst_class, \
-             patch('src.core.bot.PauseController') as mock_pause_class, \
-             patch('src.core.bot.PositionManager') as mock_pm_class, \
-             patch('src.core.bot.OpportunityDetector'):
+        with patch('bot.core.bot.StatePersistence') as mock_state, \
+             patch('bot.core.bot.SolanaClient'), \
+             patch('bot.core.bot.ArbitrumClient'), \
+             patch('bot.core.bot.RiskEngine') as mock_risk_class, \
+             patch('bot.core.bot.PositionSizer'), \
+             patch('bot.core.bot.LSTMonitor') as mock_lst_class, \
+             patch('bot.core.bot.PauseController') as mock_pause_class, \
+             patch('bot.core.bot.PositionManager') as mock_pm_class, \
+             patch('bot.core.bot.OpportunityDetector'):
             
             mock_state_instance = AsyncMock()
             mock_state.return_value = mock_state_instance
@@ -402,15 +402,15 @@ class TestEmergencyLSTDepeg:
     async def test_emergency_close_lst_critical_discount(self, lst_position):
         """Test emergency close when LST has critical discount."""
         
-        with patch('src.core.bot.StatePersistence') as mock_state, \
-             patch('src.core.bot.SolanaClient'), \
-             patch('src.core.bot.ArbitrumClient'), \
-             patch('src.core.bot.RiskEngine') as mock_risk_class, \
-             patch('src.core.bot.PositionSizer'), \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController') as mock_pause_class, \
-             patch('src.core.bot.PositionManager') as mock_pm_class, \
-             patch('src.core.bot.OpportunityDetector'):
+        with patch('bot.core.bot.StatePersistence') as mock_state, \
+             patch('bot.core.bot.SolanaClient'), \
+             patch('bot.core.bot.ArbitrumClient'), \
+             patch('bot.core.bot.RiskEngine') as mock_risk_class, \
+             patch('bot.core.bot.PositionSizer'), \
+             patch('bot.core.bot.LSTMonitor'), \
+             patch('bot.core.bot.PauseController') as mock_pause_class, \
+             patch('bot.core.bot.PositionManager') as mock_pm_class, \
+             patch('bot.core.bot.OpportunityDetector'):
             
             mock_state_instance = AsyncMock()
             mock_state.return_value = mock_state_instance
@@ -465,15 +465,15 @@ class TestEmergencyPriceDeviation:
     async def test_emergency_close_price_deviation(self, healthy_position):
         """Test emergency close when price deviation exceeds threshold."""
         
-        with patch('src.core.bot.StatePersistence') as mock_state, \
-             patch('src.core.bot.SolanaClient'), \
-             patch('src.core.bot.ArbitrumClient'), \
-             patch('src.core.bot.RiskEngine') as mock_risk_class, \
-             patch('src.core.bot.PositionSizer'), \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController') as mock_pause_class, \
-             patch('src.core.bot.PositionManager') as mock_pm_class, \
-             patch('src.core.bot.OpportunityDetector'):
+        with patch('bot.core.bot.StatePersistence') as mock_state, \
+             patch('bot.core.bot.SolanaClient'), \
+             patch('bot.core.bot.ArbitrumClient'), \
+             patch('bot.core.bot.RiskEngine') as mock_risk_class, \
+             patch('bot.core.bot.PositionSizer'), \
+             patch('bot.core.bot.LSTMonitor'), \
+             patch('bot.core.bot.PauseController') as mock_pause_class, \
+             patch('bot.core.bot.PositionManager') as mock_pm_class, \
+             patch('bot.core.bot.OpportunityDetector'):
             
             mock_state_instance = AsyncMock()
             mock_state.return_value = mock_state_instance
@@ -530,15 +530,15 @@ class TestEmergencyChainOutage:
     async def test_emergency_close_solana_outage(self, healthy_position):
         """Test emergency close when Solana is down."""
         
-        with patch('src.core.bot.StatePersistence') as mock_state, \
-             patch('src.core.bot.SolanaClient'), \
-             patch('src.core.bot.ArbitrumClient'), \
-             patch('src.core.bot.RiskEngine') as mock_risk_class, \
-             patch('src.core.bot.PositionSizer'), \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController') as mock_pause_class, \
-             patch('src.core.bot.PositionManager') as mock_pm_class, \
-             patch('src.core.bot.OpportunityDetector'):
+        with patch('bot.core.bot.StatePersistence') as mock_state, \
+             patch('bot.core.bot.SolanaClient'), \
+             patch('bot.core.bot.ArbitrumClient'), \
+             patch('bot.core.bot.RiskEngine') as mock_risk_class, \
+             patch('bot.core.bot.PositionSizer'), \
+             patch('bot.core.bot.LSTMonitor'), \
+             patch('bot.core.bot.PauseController') as mock_pause_class, \
+             patch('bot.core.bot.PositionManager') as mock_pm_class, \
+             patch('bot.core.bot.OpportunityDetector'):
             
             mock_state_instance = AsyncMock()
             mock_state.return_value = mock_state_instance
@@ -587,15 +587,15 @@ class TestEmergencyChainOutage:
     async def test_emergency_close_arbitrum_outage(self, healthy_position):
         """Test emergency close when Arbitrum is down."""
         
-        with patch('src.core.bot.StatePersistence') as mock_state, \
-             patch('src.core.bot.SolanaClient'), \
-             patch('src.core.bot.ArbitrumClient'), \
-             patch('src.core.bot.RiskEngine') as mock_risk_class, \
-             patch('src.core.bot.PositionSizer'), \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController') as mock_pause_class, \
-             patch('src.core.bot.PositionManager') as mock_pm_class, \
-             patch('src.core.bot.OpportunityDetector'):
+        with patch('bot.core.bot.StatePersistence') as mock_state, \
+             patch('bot.core.bot.SolanaClient'), \
+             patch('bot.core.bot.ArbitrumClient'), \
+             patch('bot.core.bot.RiskEngine') as mock_risk_class, \
+             patch('bot.core.bot.PositionSizer'), \
+             patch('bot.core.bot.LSTMonitor'), \
+             patch('bot.core.bot.PauseController') as mock_pause_class, \
+             patch('bot.core.bot.PositionManager') as mock_pm_class, \
+             patch('bot.core.bot.OpportunityDetector'):
             
             mock_state_instance = AsyncMock()
             mock_state.return_value = mock_state_instance
@@ -648,15 +648,15 @@ class TestCircuitBreakerTriggers:
     async def test_circuit_breaker_triggers_on_critical_exit(self, critical_health_position):
         """Test that circuit breaker is triggered on critical exit conditions."""
         
-        with patch('src.core.bot.StatePersistence') as mock_state, \
-             patch('src.core.bot.SolanaClient'), \
-             patch('src.core.bot.ArbitrumClient'), \
-             patch('src.core.bot.RiskEngine') as mock_risk_class, \
-             patch('src.core.bot.PositionSizer'), \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController') as mock_pause_class, \
-             patch('src.core.bot.PositionManager') as mock_pm_class, \
-             patch('src.core.bot.OpportunityDetector'):
+        with patch('bot.core.bot.StatePersistence') as mock_state, \
+             patch('bot.core.bot.SolanaClient'), \
+             patch('bot.core.bot.ArbitrumClient'), \
+             patch('bot.core.bot.RiskEngine') as mock_risk_class, \
+             patch('bot.core.bot.PositionSizer'), \
+             patch('bot.core.bot.LSTMonitor'), \
+             patch('bot.core.bot.PauseController') as mock_pause_class, \
+             patch('bot.core.bot.PositionManager') as mock_pm_class, \
+             patch('bot.core.bot.OpportunityDetector'):
             
             mock_state_instance = AsyncMock()
             mock_state.return_value = mock_state_instance
@@ -709,15 +709,15 @@ class TestEmergencyExitPriority:
     async def test_chain_outage_highest_priority(self, healthy_position):
         """Test that chain outage has highest exit priority."""
         
-        with patch('src.core.bot.StatePersistence') as mock_state, \
-             patch('src.core.bot.SolanaClient'), \
-             patch('src.core.bot.ArbitrumClient'), \
-             patch('src.core.bot.RiskEngine') as mock_risk_class, \
-             patch('src.core.bot.PositionSizer'), \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController') as mock_pause_class, \
-             patch('src.core.bot.PositionManager') as mock_pm_class, \
-             patch('src.core.bot.OpportunityDetector'):
+        with patch('bot.core.bot.StatePersistence') as mock_state, \
+             patch('bot.core.bot.SolanaClient'), \
+             patch('bot.core.bot.ArbitrumClient'), \
+             patch('bot.core.bot.RiskEngine') as mock_risk_class, \
+             patch('bot.core.bot.PositionSizer'), \
+             patch('bot.core.bot.LSTMonitor'), \
+             patch('bot.core.bot.PauseController') as mock_pause_class, \
+             patch('bot.core.bot.PositionManager') as mock_pm_class, \
+             patch('bot.core.bot.OpportunityDetector'):
             
             mock_state_instance = AsyncMock()
             mock_state.return_value = mock_state_instance

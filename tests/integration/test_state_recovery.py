@@ -13,15 +13,15 @@ from decimal import Decimal
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.core.bot import DeltaNeutralBot, BotConfig
-from src.models.position import (
+from bot.core.bot import DeltaNeutralBot, BotConfig
+from shared.models.position import (
     AsgardPosition, 
     HyperliquidPosition, 
     CombinedPosition,
     PositionReference
 )
-from src.models.common import Asset, Protocol
-from src.state.persistence import StatePersistence, RecoveryResult
+from shared.models.common import Asset, Protocol
+from bot.state.persistence import StatePersistence, RecoveryResult
 
 
 @pytest.fixture
@@ -131,15 +131,15 @@ class TestPositionRecovery:
         await persistence.close()
         
         # Now create a new bot and verify it recovers the position
-        with patch('src.core.bot.StatePersistence') as mock_state, \
-             patch('src.core.bot.SolanaClient'), \
-             patch('src.core.bot.ArbitrumClient'), \
-             patch('src.core.bot.RiskEngine'), \
-             patch('src.core.bot.PositionSizer'), \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController'), \
-             patch('src.core.bot.PositionManager') as mock_pm_class, \
-             patch('src.core.bot.OpportunityDetector'):
+        with patch('bot.core.bot.StatePersistence') as mock_state, \
+             patch('bot.core.bot.SolanaClient'), \
+             patch('bot.core.bot.ArbitrumClient'), \
+             patch('bot.core.bot.RiskEngine'), \
+             patch('bot.core.bot.PositionSizer'), \
+             patch('bot.core.bot.LSTMonitor'), \
+             patch('bot.core.bot.PauseController'), \
+             patch('bot.core.bot.PositionManager') as mock_pm_class, \
+             patch('bot.core.bot.OpportunityDetector'):
             
             # Use the real persistence with the temp db
             real_persistence = StatePersistence(db_path=temp_db_path)
@@ -158,10 +158,10 @@ class TestPositionRecovery:
             await bot._recover_state()
             
             # Verify position was recovered
-            assert len(bot._positions) == 1
-            assert mock_open_position.position_id in bot._positions
-            
-            recovered = bot._positions[mock_open_position.position_id]
+            assert sum(len(v) for v in bot._positions.values()) == 1
+            assert mock_open_position.position_id in bot._positions.get("default", {})
+
+            recovered = bot._positions["default"][mock_open_position.position_id]
             assert recovered.asgard.asset == Asset.SOL
             assert recovered.status == "open"
             
@@ -221,15 +221,15 @@ class TestPositionRecovery:
         await persistence.close()
         
         # Recover positions
-        with patch('src.core.bot.StatePersistence') as mock_state, \
-             patch('src.core.bot.SolanaClient'), \
-             patch('src.core.bot.ArbitrumClient'), \
-             patch('src.core.bot.RiskEngine'), \
-             patch('src.core.bot.PositionSizer'), \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController'), \
-             patch('src.core.bot.PositionManager') as mock_pm_class, \
-             patch('src.core.bot.OpportunityDetector'):
+        with patch('bot.core.bot.StatePersistence') as mock_state, \
+             patch('bot.core.bot.SolanaClient'), \
+             patch('bot.core.bot.ArbitrumClient'), \
+             patch('bot.core.bot.RiskEngine'), \
+             patch('bot.core.bot.PositionSizer'), \
+             patch('bot.core.bot.LSTMonitor'), \
+             patch('bot.core.bot.PauseController'), \
+             patch('bot.core.bot.PositionManager') as mock_pm_class, \
+             patch('bot.core.bot.OpportunityDetector'):
             
             real_persistence = StatePersistence(db_path=temp_db_path)
             mock_state.return_value = real_persistence
@@ -247,9 +247,10 @@ class TestPositionRecovery:
             await bot._recover_state()
             
             # Verify all positions were recovered
-            assert len(bot._positions) == 3
+            assert sum(len(v) for v in bot._positions.values()) == 3
+            all_positions = bot.get_positions()
             for pos in positions:
-                assert pos.position_id in bot._positions
+                assert pos.position_id in all_positions
             
             await bot.shutdown()
     
@@ -266,15 +267,15 @@ class TestPositionRecovery:
         await persistence.close()
         
         # Try to recover
-        with patch('src.core.bot.StatePersistence') as mock_state, \
-             patch('src.core.bot.SolanaClient'), \
-             patch('src.core.bot.ArbitrumClient'), \
-             patch('src.core.bot.RiskEngine'), \
-             patch('src.core.bot.PositionSizer'), \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController'), \
-             patch('src.core.bot.PositionManager') as mock_pm_class, \
-             patch('src.core.bot.OpportunityDetector'):
+        with patch('bot.core.bot.StatePersistence') as mock_state, \
+             patch('bot.core.bot.SolanaClient'), \
+             patch('bot.core.bot.ArbitrumClient'), \
+             patch('bot.core.bot.RiskEngine'), \
+             patch('bot.core.bot.PositionSizer'), \
+             patch('bot.core.bot.LSTMonitor'), \
+             patch('bot.core.bot.PauseController'), \
+             patch('bot.core.bot.PositionManager') as mock_pm_class, \
+             patch('bot.core.bot.OpportunityDetector'):
             
             real_persistence = StatePersistence(db_path=temp_db_path)
             mock_state.return_value = real_persistence
@@ -292,7 +293,7 @@ class TestPositionRecovery:
             await bot._recover_state()
             
             # Verify closed position was NOT recovered
-            assert len(bot._positions) == 0
+            assert sum(len(v) for v in bot._positions.values()) == 0
             
             await bot.shutdown()
     
@@ -312,15 +313,15 @@ class TestPositionRecovery:
         await persistence.close()
         
         # Recover
-        with patch('src.core.bot.StatePersistence') as mock_state, \
-             patch('src.core.bot.SolanaClient'), \
-             patch('src.core.bot.ArbitrumClient'), \
-             patch('src.core.bot.RiskEngine'), \
-             patch('src.core.bot.PositionSizer'), \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController'), \
-             patch('src.core.bot.PositionManager') as mock_pm_class, \
-             patch('src.core.bot.OpportunityDetector'):
+        with patch('bot.core.bot.StatePersistence') as mock_state, \
+             patch('bot.core.bot.SolanaClient'), \
+             patch('bot.core.bot.ArbitrumClient'), \
+             patch('bot.core.bot.RiskEngine'), \
+             patch('bot.core.bot.PositionSizer'), \
+             patch('bot.core.bot.LSTMonitor'), \
+             patch('bot.core.bot.PauseController'), \
+             patch('bot.core.bot.PositionManager') as mock_pm_class, \
+             patch('bot.core.bot.OpportunityDetector'):
             
             real_persistence = StatePersistence(db_path=temp_db_path)
             mock_state.return_value = real_persistence
@@ -338,9 +339,10 @@ class TestPositionRecovery:
             await bot._recover_state()
             
             # Verify only open position was recovered
-            assert len(bot._positions) == 1
-            assert mock_open_position.position_id in bot._positions
-            assert mock_closed_position.position_id not in bot._positions
+            assert sum(len(v) for v in bot._positions.values()) == 1
+            all_positions = bot.get_positions()
+            assert mock_open_position.position_id in all_positions
+            assert mock_closed_position.position_id not in all_positions
             
             await bot.shutdown()
 
@@ -352,18 +354,18 @@ class TestPositionPersistence:
     async def test_position_saved_on_open(self, mock_open_position, temp_db_path):
         """Test that position is saved to database when opened."""
         
-        with patch('src.core.bot.StatePersistence') as mock_state, \
-             patch('src.core.bot.SolanaClient') as mock_solana, \
-             patch('src.core.bot.ArbitrumClient') as mock_arbitrum, \
-             patch('src.core.bot.RiskEngine'), \
-             patch('src.core.bot.PositionSizer') as mock_sizer, \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController'), \
-             patch('src.core.bot.PositionManager') as mock_pm_class, \
-             patch('src.core.bot.OpportunityDetector'):
+        with patch('bot.core.bot.StatePersistence') as mock_state, \
+             patch('bot.core.bot.SolanaClient') as mock_solana, \
+             patch('bot.core.bot.ArbitrumClient') as mock_arbitrum, \
+             patch('bot.core.bot.RiskEngine'), \
+             patch('bot.core.bot.PositionSizer') as mock_sizer, \
+             patch('bot.core.bot.LSTMonitor'), \
+             patch('bot.core.bot.PauseController'), \
+             patch('bot.core.bot.PositionManager') as mock_pm_class, \
+             patch('bot.core.bot.OpportunityDetector'):
             
             # Use real persistence
-            from src.core.position_sizer import PositionSize, SizingResult
+            from bot.core.position_sizer import PositionSize, SizingResult
             
             real_persistence = StatePersistence(db_path=temp_db_path)
             mock_state.return_value = real_persistence
@@ -407,8 +409,8 @@ class TestPositionPersistence:
             await bot.setup()
             
             # Create mock opportunity
-            from src.models.opportunity import ArbitrageOpportunity, OpportunityScore
-            from src.models.funding import FundingRate, AsgardRates
+            from shared.models.opportunity import ArbitrageOpportunity, OpportunityScore
+            from shared.models.funding import FundingRate, AsgardRates
             
             opportunity = ArbitrageOpportunity(
                 id="test_opp_save",
@@ -466,15 +468,15 @@ class TestPositionPersistence:
         await persistence.close()
         
         # Now simulate exit
-        with patch('src.core.bot.StatePersistence') as mock_state, \
-             patch('src.core.bot.SolanaClient'), \
-             patch('src.core.bot.ArbitrumClient'), \
-             patch('src.core.bot.RiskEngine'), \
-             patch('src.core.bot.PositionSizer'), \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController'), \
-             patch('src.core.bot.PositionManager') as mock_pm_class, \
-             patch('src.core.bot.OpportunityDetector'):
+        with patch('bot.core.bot.StatePersistence') as mock_state, \
+             patch('bot.core.bot.SolanaClient'), \
+             patch('bot.core.bot.ArbitrumClient'), \
+             patch('bot.core.bot.RiskEngine'), \
+             patch('bot.core.bot.PositionSizer'), \
+             patch('bot.core.bot.LSTMonitor'), \
+             patch('bot.core.bot.PauseController'), \
+             patch('bot.core.bot.PositionManager') as mock_pm_class, \
+             patch('bot.core.bot.OpportunityDetector'):
             
             real_persistence = StatePersistence(db_path=temp_db_path)
             mock_state.return_value = real_persistence
@@ -489,8 +491,8 @@ class TestPositionPersistence:
             bot = DeltaNeutralBot(config=config)
             await bot.setup()
             
-            bot._positions[mock_open_position.position_id] = mock_open_position
-            
+            bot._positions.setdefault("default", {})[mock_open_position.position_id] = mock_open_position
+
             # Execute exit
             await bot._execute_exit(mock_open_position, "test_exit")
             
@@ -518,15 +520,15 @@ class TestStateRecovery:
     async def test_recovery_on_empty_database(self, temp_db_path):
         """Test recovery when database is empty."""
         
-        with patch('src.core.bot.StatePersistence') as mock_state, \
-             patch('src.core.bot.SolanaClient'), \
-             patch('src.core.bot.ArbitrumClient'), \
-             patch('src.core.bot.RiskEngine'), \
-             patch('src.core.bot.PositionSizer'), \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController'), \
-             patch('src.core.bot.PositionManager') as mock_pm_class, \
-             patch('src.core.bot.OpportunityDetector'):
+        with patch('bot.core.bot.StatePersistence') as mock_state, \
+             patch('bot.core.bot.SolanaClient'), \
+             patch('bot.core.bot.ArbitrumClient'), \
+             patch('bot.core.bot.RiskEngine'), \
+             patch('bot.core.bot.PositionSizer'), \
+             patch('bot.core.bot.LSTMonitor'), \
+             patch('bot.core.bot.PauseController'), \
+             patch('bot.core.bot.PositionManager') as mock_pm_class, \
+             patch('bot.core.bot.OpportunityDetector'):
             
             real_persistence = StatePersistence(db_path=temp_db_path)
             await real_persistence.setup()  # Create empty database
@@ -547,7 +549,7 @@ class TestStateRecovery:
             await bot._recover_state()
             
             # Verify no positions recovered
-            assert len(bot._positions) == 0
+            assert sum(len(v) for v in bot._positions.values()) == 0
             
             await bot.shutdown()
     
@@ -562,15 +564,15 @@ class TestStateRecovery:
         await persistence.close()
         
         # Recover and verify state
-        with patch('src.core.bot.StatePersistence') as mock_state, \
-             patch('src.core.bot.SolanaClient'), \
-             patch('src.core.bot.ArbitrumClient'), \
-             patch('src.core.bot.RiskEngine'), \
-             patch('src.core.bot.PositionSizer'), \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController'), \
-             patch('src.core.bot.PositionManager') as mock_pm_class, \
-             patch('src.core.bot.OpportunityDetector'):
+        with patch('bot.core.bot.StatePersistence') as mock_state, \
+             patch('bot.core.bot.SolanaClient'), \
+             patch('bot.core.bot.ArbitrumClient'), \
+             patch('bot.core.bot.RiskEngine'), \
+             patch('bot.core.bot.PositionSizer'), \
+             patch('bot.core.bot.LSTMonitor'), \
+             patch('bot.core.bot.PauseController'), \
+             patch('bot.core.bot.PositionManager') as mock_pm_class, \
+             patch('bot.core.bot.OpportunityDetector'):
             
             real_persistence = StatePersistence(db_path=temp_db_path)
             mock_state.return_value = real_persistence
@@ -588,7 +590,7 @@ class TestStateRecovery:
             await bot._recover_state()
             
             # Verify position state is preserved
-            recovered = bot._positions[mock_open_position.position_id]
+            recovered = bot._positions["default"][mock_open_position.position_id]
             assert recovered.asgard.position_pda == mock_open_position.asgard.position_pda
             assert recovered.asgard.asset == mock_open_position.asgard.asset
             assert recovered.asgard.protocol == mock_open_position.asgard.protocol
@@ -653,15 +655,15 @@ class TestRecoveryWithLSTPositions:
         await persistence.close()
         
         # Recover
-        with patch('src.core.bot.StatePersistence') as mock_state, \
-             patch('src.core.bot.SolanaClient'), \
-             patch('src.core.bot.ArbitrumClient'), \
-             patch('src.core.bot.RiskEngine'), \
-             patch('src.core.bot.PositionSizer'), \
-             patch('src.core.bot.LSTMonitor'), \
-             patch('src.core.bot.PauseController'), \
-             patch('src.core.bot.PositionManager') as mock_pm_class, \
-             patch('src.core.bot.OpportunityDetector'):
+        with patch('bot.core.bot.StatePersistence') as mock_state, \
+             patch('bot.core.bot.SolanaClient'), \
+             patch('bot.core.bot.ArbitrumClient'), \
+             patch('bot.core.bot.RiskEngine'), \
+             patch('bot.core.bot.PositionSizer'), \
+             patch('bot.core.bot.LSTMonitor'), \
+             patch('bot.core.bot.PauseController'), \
+             patch('bot.core.bot.PositionManager') as mock_pm_class, \
+             patch('bot.core.bot.OpportunityDetector'):
             
             real_persistence = StatePersistence(db_path=temp_db_path)
             mock_state.return_value = real_persistence
@@ -679,8 +681,8 @@ class TestRecoveryWithLSTPositions:
             await bot._recover_state()
             
             # Verify LST position recovered correctly
-            assert len(bot._positions) == 1
-            recovered = bot._positions[lst_position.position_id]
+            assert sum(len(v) for v in bot._positions.values()) == 1
+            recovered = bot._positions["default"][lst_position.position_id]
             assert recovered.asgard.asset == Asset.JITOSOL
             assert recovered.asgard.protocol == Protocol.KAMINO
             
