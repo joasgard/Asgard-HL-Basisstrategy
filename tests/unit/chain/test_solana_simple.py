@@ -8,7 +8,7 @@ from shared.chain.solana import SolanaClient
 class TestSolanaClientInit:
     """Tests for SolanaClient initialization."""
     
-    @patch('shared.common.chain.solana.get_settings')
+    @patch('shared.chain.solana.get_settings')
     def test_init_uses_settings_rpc_url(self, mock_get_settings):
         """Test that client uses RPC URL from settings."""
         mock_settings = MagicMock()
@@ -16,35 +16,35 @@ class TestSolanaClientInit:
         mock_settings.solana_wallet_address = "test_wallet_address"
         mock_get_settings.return_value = mock_settings
         
-        with patch('shared.common.chain.solana.AsyncClient') as mock_async_client:
+        with patch('shared.chain.solana.AsyncClient') as mock_async_client:
             client = SolanaClient()
             
             mock_async_client.assert_called_once()
             call_args = mock_async_client.call_args
             assert "https://test.solana.com" in str(call_args)
     
-    @patch('shared.common.chain.solana.get_settings')
+    @patch('shared.chain.solana.get_settings')
     def test_init_accepts_custom_rpc_url(self, mock_get_settings):
         """Test that client accepts custom RPC URL."""
         mock_settings = MagicMock()
         mock_settings.solana_wallet_address = "test_wallet_address"
         mock_get_settings.return_value = mock_settings
         
-        with patch('shared.common.chain.solana.AsyncClient') as mock_async_client:
+        with patch('shared.chain.solana.AsyncClient') as mock_async_client:
             client = SolanaClient(rpc_url="https://custom.solana.com")
             
             mock_async_client.assert_called_once()
             call_args = mock_async_client.call_args
             assert "https://custom.solana.com" in str(call_args)
     
-    @patch('shared.common.chain.solana.get_settings')
+    @patch('shared.chain.solana.get_settings')
     def test_wallet_address_property(self, mock_get_settings):
         """Test wallet_address property returns address from settings."""
         mock_settings = MagicMock()
         mock_settings.solana_wallet_address = "HN7cAB5L9j8rBZKF"
         mock_get_settings.return_value = mock_settings
         
-        with patch('shared.common.chain.solana.AsyncClient'):
+        with patch('shared.chain.solana.AsyncClient'):
             client = SolanaClient()
             
             assert client.wallet_address == "HN7cAB5L9j8rBZKF"
@@ -53,7 +53,7 @@ class TestSolanaClientInit:
 class TestSolanaClientMethods:
     """Tests for SolanaClient methods (without retry decorator)."""
     
-    @patch('shared.common.chain.solana.get_settings')
+    @patch('shared.chain.solana.get_settings')
     def test_client_has_required_methods(self, mock_get_settings):
         """Test that client has all required methods."""
         mock_settings = MagicMock()
@@ -61,7 +61,7 @@ class TestSolanaClientMethods:
         mock_settings.solana_wallet_address = "test_address"
         mock_get_settings.return_value = mock_settings
         
-        with patch('shared.common.chain.solana.AsyncClient'):
+        with patch('shared.chain.solana.AsyncClient'):
             client = SolanaClient()
             
             # Check methods exist

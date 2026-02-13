@@ -22,6 +22,14 @@ vi.mock('../../../stores', () => ({
   useUIStore: () => ({
     setGlobalLoading: mockSetGlobalLoading,
   }),
+  useSettingsStore: (selector?: (state: Record<string, unknown>) => unknown) => {
+    const store = {
+      minPositionSize: 100,
+      maxPositionSize: 50000,
+      defaultLeverage: 3.0,
+    };
+    return selector ? selector(store) : store;
+  },
 }));
 
 describe('OpenPositionModal - Coverage', () => {
@@ -50,13 +58,10 @@ describe('OpenPositionModal - Coverage', () => {
     });
   });
 
-  it('should change asset selection', () => {
+  it('should display SOL asset in title', () => {
     render(<OpenPositionModal onClose={onClose} />);
-    
-    const selects = screen.getAllByRole('combobox');
-    if (selects.length > 0) {
-      fireEvent.change(selects[0], { target: { value: 'jitoSOL' } });
-    }
+
+    expect(screen.getByText('Open SOL Position')).toBeInTheDocument();
   });
 
   it('should change leverage slider', () => {

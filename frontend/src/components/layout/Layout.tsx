@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { DepositModal } from '../modals/DepositModal';
+import { WithdrawModal } from '../modals/WithdrawModal';
 import { useAuth } from '../../hooks/useAuth';
 
 interface LayoutProps {
@@ -12,6 +13,7 @@ export function Layout({ children }: LayoutProps) {
   const { authenticated, user, login, logout } = usePrivy();
   const { backendSynced, syncError, retrySync } = useAuth();
   const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
+  const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
   const [showSyncError, setShowSyncError] = useState(false);
 
   // Show sync error if backend sync fails
@@ -72,6 +74,15 @@ export function Layout({ children }: LayoutProps) {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                   Deposit
+                </button>
+                <button
+                  onClick={() => setIsWithdrawModalOpen(true)}
+                  className="px-3 py-2 bg-gray-600 hover:bg-gray-500 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                  </svg>
+                  Withdraw
                 </button>
                 <button
                   onClick={logout}
@@ -142,9 +153,15 @@ export function Layout({ children }: LayoutProps) {
       </main>
 
       {/* Deposit Modal */}
-      <DepositModal 
-        isOpen={isDepositModalOpen} 
-        onClose={() => setIsDepositModalOpen(false)} 
+      <DepositModal
+        isOpen={isDepositModalOpen}
+        onClose={() => setIsDepositModalOpen(false)}
+      />
+
+      {/* Withdraw Modal */}
+      <WithdrawModal
+        isOpen={isWithdrawModalOpen}
+        onClose={() => setIsWithdrawModalOpen(false)}
       />
     </div>
   );

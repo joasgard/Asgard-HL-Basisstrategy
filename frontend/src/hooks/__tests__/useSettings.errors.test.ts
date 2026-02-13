@@ -29,7 +29,12 @@ const mockStore = {
 };
 
 vi.mock('../../stores', () => ({
-  useSettingsStore: () => mockStore,
+  useSettingsStore: (selector?: (state: unknown) => unknown) => {
+    if (selector) {
+      return selector(mockStore);
+    }
+    return mockStore;
+  },
   useUIStore: () => ({
     addToast: vi.fn(),
   }),

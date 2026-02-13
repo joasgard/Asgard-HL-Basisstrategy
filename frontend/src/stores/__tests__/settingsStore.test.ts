@@ -94,15 +94,15 @@ describe('settingsStore', () => {
   });
 
   it('should load settings from API', async () => {
-    const mockSettings = {
-      defaultLeverage: 2.0,
-      minPositionSize: 500,
-      maxPositionSize: 10000,
-    };
-
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve(mockSettings),
+      json: () => Promise.resolve({
+        settings: {
+          default_leverage: 2.0,
+          min_position_size: 500,
+          max_position_size: 10000,
+        },
+      }),
     });
 
     const store = useSettingsStore.getState();

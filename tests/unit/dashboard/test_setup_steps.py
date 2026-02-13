@@ -366,13 +366,13 @@ class TestCreateWallets:
             "privy_app_id_plain": "app_id",
             "privy_app_secret_plain": "app_secret"
         }.get(key))
-        
-        mock_privy = AsyncMock()
-        mock_privy.create_wallet = AsyncMock(side_effect=Exception("API error"))
-        
-        steps = SetupSteps(db=mock_db, privy_client=mock_privy)
-        result = await steps.create_wallets()
-        
+
+        # The code creates PrivyClient internally; mock it to raise
+        with patch('backend.dashboard.privy_client.PrivyClient', side_effect=Exception("API error")):
+            mock_privy = MagicMock()  # Truthy flag to enter the privy branch
+            steps = SetupSteps(db=mock_db, privy_client=mock_privy)
+            result = await steps.create_wallets()
+
         assert result["success"] is False
         assert "Failed to create wallets" in result["error"]
 

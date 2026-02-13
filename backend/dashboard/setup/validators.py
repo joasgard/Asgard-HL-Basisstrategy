@@ -21,31 +21,33 @@ class ValidationResult:
 @dataclass
 class FundingStatus:
     """Wallet funding status."""
-    evm_funded: bool
     solana_sol_funded: bool
     solana_usdc_funded: bool
+    hl_funded: bool
     balances: Dict[str, Decimal]
 
 
 class SetupValidator:
     """Validates configuration at each wizard step."""
-    
+
     # Minimum funding requirements
-    MIN_EVM_USDC = Decimal("100")
     MIN_SOLANA_SOL = Decimal("0.1")
     MIN_SOLANA_USDC = Decimal("100")
-    
+    MIN_HL_USDC = Decimal("100")  # Hyperliquid clearinghouse USDC
+
     def __init__(
         self,
         privy_client=None,
         solana_client=None,
         arbitrum_client=None,
-        asgard_client=None
+        asgard_client=None,
+        hl_trader=None,
     ):
         self.privy = privy_client
         self.solana = solana_client
         self.arbitrum = arbitrum_client
         self.asgard = asgard_client
+        self.hl_trader = hl_trader
     
     async def validate_password(self, password: str) -> ValidationResult:
         """
@@ -135,32 +137,24 @@ class SetupValidator:
         solana_address: Optional[str] = None
     ) -> ValidationResult:
         """
-        Check wallet balances across chains.
-        
+        Check wallet balances on Solana and Hyperliquid.
+
+        Arbitrum is NOT checked — it is only a pass-through for deposits to HL.
+
         Args:
-            evm_address: EVM wallet address
+            evm_address: EVM wallet address (used for HL balance lookup)
             solana_address: Solana wallet address
-            
+
         Returns:
             ValidationResult with FundingStatus in details
         """
         balances = {
-            "evm_usdc": Decimal("0"),
             "solana_sol": Decimal("0"),
-            "solana_usdc": Decimal("0")
+            "solana_usdc": Decimal("0"),
+            "hl_usdc": Decimal("0"),
         }
-        
-        # Check EVM balance if client available
-        if evm_address and self.arbitrum:
-            try:
-                balances["evm_usdc"] = await self.arbitrum.get_usdc_balance(evm_address)
-            except Exception as e:
-                return ValidationResult(
-                    valid=False,
-                    error=f"Failed to check EVM balance: {str(e)}"
-                )
-        
-        # Check Solana balances if client available
+
+        # Check Solana balances
         if solana_address and self.solana:
             try:
                 balances["solana_sol"] = await self.solana.get_sol_balance(solana_address)
@@ -170,28 +164,34 @@ class SetupValidator:
                     valid=False,
                     error=f"Failed to check Solana balance: {str(e)}"
                 )
-        
+
+        # Check Hyperliquid clearinghouse balance
+        if self.hl_trader:
+            try:
+                hl_balance = await self.hl_trader.get_deposited_balance()
+                balances["hl_usdc"] = Decimal(str(hl_balance))
+            except Exception as e:
+                return ValidationResult(
+                    valid=False,
+                    error=f"Failed to check Hyperliquid balance: {str(e)}"
+                )
+
         # Determine funding status
         funding_status = FundingStatus(
-            evm_funded=balances["evm_usdc"] >= self.MIN_EVM_USDC,
             solana_sol_funded=balances["solana_sol"] >= self.MIN_SOLANA_SOL,
             solana_usdc_funded=balances["solana_usdc"] >= self.MIN_SOLANA_USDC,
-            balances=balances
+            hl_funded=balances["hl_usdc"] >= self.MIN_HL_USDC,
+            balances=balances,
         )
-        
-        # All must be funded
+
         all_funded = all([
-            funding_status.evm_funded,
             funding_status.solana_sol_funded,
-            funding_status.solana_usdc_funded
+            funding_status.solana_usdc_funded,
+            funding_status.hl_funded,
         ])
-        
+
         if not all_funded:
             missing = []
-            if not funding_status.evm_funded:
-                missing.append(
-                    f"EVM: {balances['evm_usdc']} USDC (need {self.MIN_EVM_USDC})"
-                )
             if not funding_status.solana_sol_funded:
                 missing.append(
                     f"Solana SOL: {balances['solana_sol']} (need {self.MIN_SOLANA_SOL})"
@@ -200,13 +200,18 @@ class SetupValidator:
                 missing.append(
                     f"Solana USDC: {balances['solana_usdc']} (need {self.MIN_SOLANA_USDC})"
                 )
-            
+            if not funding_status.hl_funded:
+                missing.append(
+                    f"Hyperliquid: {balances['hl_usdc']} USDC (need {self.MIN_HL_USDC}). "
+                    f"Deposit USDC to Hyperliquid from the dashboard."
+                )
+
             return ValidationResult(
                 valid=False,
                 error=f"Insufficient funding: {'; '.join(missing)}",
                 details={"funding_status": funding_status}
             )
-        
+
         return ValidationResult(
             valid=True,
             details={"funding_status": funding_status}

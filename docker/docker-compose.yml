@@ -67,8 +67,8 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
       target: production
-    image: delta-neutral-bot:latest
-    container_name: delta-neutral-bot
+    image: asgard-basis:latest
+    container_name: asgard-basis
     restart: unless-stopped
 
     # Security hardening
@@ -159,8 +159,8 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
       target: production
-    image: delta-neutral-bot:latest
-    container_name: delta-neutral-health
+    image: asgard-basis:latest
+    container_name: asgard-basis-health
     restart: unless-stopped
 
     # Security hardening
@@ -204,8 +204,8 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
       target: development
-    image: delta-neutral-bot:dev
-    container_name: delta-neutral-bot-dev
+    image: asgard-basis:dev
+    container_name: asgard-basis-dev
 
     depends_on:
       postgres:
@@ -250,8 +250,8 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
       target: production
-    image: delta-neutral-bot:latest
-    container_name: delta-neutral-bot-shadow
+    image: asgard-basis:latest
+    container_name: asgard-basis-shadow
     restart: "no"
 
     depends_on:

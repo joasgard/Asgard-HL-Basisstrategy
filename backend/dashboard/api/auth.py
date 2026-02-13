@@ -8,6 +8,7 @@ Implements v3.5 auth flow:
 - GET  /api/v1/auth/me - Return user + wallet addresses
 """
 
+import asyncio
 import logging
 import re
 import time
@@ -85,6 +86,8 @@ class UserInfoResponse(BaseModel):
     evm_address: Optional[str] = None
     is_new_user: bool = False
     created_at: Optional[str] = None
+    server_evm_address: Optional[str] = None
+    server_solana_address: Optional[str] = None
 
 
 def _check_rate_limit(identifier: str) -> tuple[bool, int]:
@@ -389,7 +392,9 @@ async def get_current_user_info(
     
     # Get user from database
     user = await db.fetchone(
-        "SELECT id, email, solana_address, evm_address, is_new_user, created_at FROM users WHERE id = $1",
+        """SELECT id, email, solana_address, evm_address, is_new_user, created_at,
+                  server_evm_address, server_solana_address
+           FROM users WHERE id = $1""",
         (session.privy_user_id,)
     )
 
@@ -405,7 +410,9 @@ async def get_current_user_info(
         solana_address=user.get("solana_address"),
         evm_address=user.get("evm_address"),
         is_new_user=bool(user.get("is_new_user", False)),
-        created_at=user.get("created_at")
+        created_at=user.get("created_at"),
+        server_evm_address=user.get("server_evm_address"),
+        server_solana_address=user.get("server_solana_address"),
     )
 
 
@@ -435,7 +442,9 @@ async def check_auth_status(
     
     # Get user info
     user = await db.fetchone(
-        "SELECT id, email, solana_address, evm_address, is_new_user, created_at FROM users WHERE id = $1",
+        """SELECT id, email, solana_address, evm_address, is_new_user, created_at,
+                  server_evm_address, server_solana_address
+           FROM users WHERE id = $1""",
         (session.privy_user_id,)
     )
 
@@ -474,7 +483,9 @@ async def check_auth_status(
             "solana_address": solana_address,
             "evm_address": evm_address,
             "is_new_user": bool(user.get("is_new_user", False)),
-            "created_at": user.get("created_at")
+            "created_at": user.get("created_at"),
+            "server_evm_address": user.get("server_evm_address"),
+            "server_solana_address": user.get("server_solana_address"),
         }
     }
 
@@ -493,6 +504,37 @@ class PrivySyncResponse(BaseModel):
     solana_address: Optional[str] = None
     evm_address: Optional[str] = None
     is_new_user: bool = True
+    wallets_provisioning: Optional[bool] = None
+    server_evm_address: Optional[str] = None
+    server_solana_address: Optional[str] = None
+
+
+async def _provision_server_wallets_background(user_id: str, db: Database) -> None:
+    """Provision server wallets for a user in a background task.
+
+    Runs as a fire-and-forget asyncio task so that login is not blocked
+    by the 1-3s Privy wallet creation calls.  Errors are logged but
+    never propagated — the frontend polls GET /api/v1/wallets/server
+    until the wallets appear.
+    """
+    try:
+        from bot.venues.server_wallets import ServerWalletService
+
+        svc = ServerWalletService(db)
+        wallets = await svc.ensure_wallets_for_user(user_id)
+        logger.info(
+            "server_wallets_provisioned",
+            extra={
+                "user_id": user_id,
+                "evm_wallet_id": wallets.evm_wallet_id,
+                "solana_wallet_id": wallets.solana_wallet_id,
+            },
+        )
+    except Exception:
+        logger.exception(
+            "server_wallet_provisioning_failed",
+            extra={"user_id": user_id},
+        )
 
 
 @router.post("/sync", response_model=PrivySyncResponse)
@@ -587,11 +629,42 @@ async def sync_privy_auth(
         set_session_cookie(response, session.id)
         set_csrf_cookie(response, session.csrf_token)
 
+        # Check server wallet provisioning status.
+        # Fast DB query — no Privy API call.
+        wallet_row = await db.fetchone(
+            """SELECT server_evm_wallet_id, server_evm_address,
+                      server_solana_wallet_id, server_solana_address
+               FROM users WHERE id = $1""",
+            (privy_user_id,),
+        )
+        wallets_provisioning = None
+        server_evm_address = None
+        server_solana_address = None
+
+        if wallet_row:
+            server_evm_address = wallet_row.get("server_evm_address")
+            server_solana_address = wallet_row.get("server_solana_address")
+            has_wallets = (
+                wallet_row.get("server_evm_wallet_id") is not None
+                and wallet_row.get("server_solana_wallet_id") is not None
+            )
+
+            if not has_wallets:
+                # Enqueue background provisioning — don't block login.
+                wallets_provisioning = True
+                asyncio.create_task(
+                    _provision_server_wallets_background(privy_user_id, db)
+                )
+                logger.info(
+                    "server_wallet_provisioning_enqueued",
+                    extra={"user_id": privy_user_id},
+                )
+
         # Audit log
         await db.execute(
             "INSERT INTO audit_log (action, \"user\", ip_address, details, success) VALUES ($1, $2, $3, $4, $5)",
             ("privy_sync", privy_user_id, client_ip,
-             sanitize_for_audit("privy_sync", {"is_new_user": is_new_user}), True)
+             sanitize_for_audit("privy_sync", {"is_new_user": is_new_user, "wallets_provisioning": wallets_provisioning or False}), True)
         )
 
         return PrivySyncResponse(
@@ -600,7 +673,10 @@ async def sync_privy_auth(
             email=data.email,
             solana_address=solana_address,
             evm_address=evm_address,
-            is_new_user=is_new_user
+            is_new_user=is_new_user,
+            wallets_provisioning=wallets_provisioning,
+            server_evm_address=server_evm_address,
+            server_solana_address=server_solana_address,
         )
 
     except HTTPException:

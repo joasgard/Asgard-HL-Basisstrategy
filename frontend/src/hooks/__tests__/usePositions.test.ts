@@ -14,6 +14,18 @@ vi.mock('../../api/positions', () => ({
   },
 }));
 
+vi.mock('@privy-io/react-auth', () => ({
+  usePrivy: () => ({ authenticated: true }),
+}));
+
+vi.mock('../../api/client', () => ({
+  formatErrorForDisplay: (err: unknown) => ({
+    title: 'Error',
+    message: (err as Error)?.message || 'Unknown error',
+    code: 'GEN-0001',
+  }),
+}));
+
 // Mock the stores
 vi.mock('../../stores', () => ({
   usePositionsStore: (selector?: (state: unknown) => unknown) => {
@@ -37,6 +49,7 @@ vi.mock('../../stores', () => ({
   },
   useUIStore: () => ({
     addToast: vi.fn(),
+    addErrorToast: vi.fn(),
   }),
 }));
 

@@ -55,8 +55,8 @@ def test_settings_validation_missing():
     def mock_load_secret(filename):
         return None  # All secrets missing
     
-    with patch('shared.common.config.settings.load_secret', side_effect=mock_load_secret):
-        with patch('shared.common.config.settings.SECRETS_DIR', settings_module.BASE_DIR / "nonexistent"):
+    with patch('shared.config.settings.load_secret', side_effect=mock_load_secret):
+        with patch('shared.config.settings.SECRETS_DIR', settings_module.BASE_DIR / "nonexistent"):
             settings = Settings()
             missing = settings.validate()
             
@@ -72,7 +72,7 @@ def test_settings_validation_missing():
 class TestSettingsPrivy:
     """Test settings with Privy configuration."""
     
-    @patch('shared.common.config.settings.load_secret')
+    @patch('shared.config.settings.load_secret')
     def test_check_required_secrets_privy(self, mock_load_secret):
         """Test that Privy secrets are checked."""
         # Mock empty secrets
@@ -85,7 +85,7 @@ class TestSettingsPrivy:
         assert "privy_app_id.txt" in missing
         assert "privy_app_secret.txt" in missing
     
-    @patch('shared.common.config.settings.load_secret')
+    @patch('shared.config.settings.load_secret')
     @patch('pathlib.Path.exists')
     def test_check_required_secrets_no_auth_key(self, mock_exists, mock_load_secret):
         """Test missing auth key file is detected."""
@@ -97,7 +97,7 @@ class TestSettingsPrivy:
         
         assert "privy_auth.pem" in missing
     
-    @patch('shared.common.config.settings.load_secret')
+    @patch('shared.config.settings.load_secret')
     @patch('pathlib.Path.exists')
     def test_all_secrets_present(self, mock_exists, mock_load_secret):
         """Test no missing secrets when all present."""

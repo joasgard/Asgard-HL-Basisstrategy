@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { usePositions } from '../../hooks';
-import { useSettingsStore, useUIStore } from '../../stores';
+import { useSettingsStore } from '../../stores';
 import { LoadingSpinner } from '../ui';
+import { PreflightChecklist } from './PreflightChecklist';
+import type { OpenPositionRequest } from '../../api/positions';
 
 interface OpenPositionModalProps {
   onClose: () => void;
@@ -19,18 +21,23 @@ export function OpenPositionModal({ onClose, defaultLeverage }: OpenPositionModa
   const maxPositionSize = useSettingsStore((state) => state.maxPositionSize);
   const defaultLeverageSetting = useSettingsStore((state) => state.defaultLeverage);
   const { openPosition } = usePositions();
-  const { setGlobalLoading } = useUIStore();
 
   const asset = 'SOL';
   const [leverage, setLeverage] = useState(defaultLeverage ?? defaultLeverageSetting);
   const [size, setSize] = useState(1000);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showPreflight, setShowPreflight] = useState(false);
+  const [preflightRequest, setPreflightRequest] = useState<OpenPositionRequest | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const req: OpenPositionRequest = { asset, leverage, size_usd: size };
+    setPreflightRequest(req);
+    setShowPreflight(true);
     setIsSubmitting(true);
-    setGlobalLoading(true, 'Opening position...');
+  };
 
+  const handlePreflightPassed = useCallback(async () => {
     try {
       await openPosition(asset, leverage, size);
       onClose();
@@ -38,9 +45,14 @@ export function OpenPositionModal({ onClose, defaultLeverage }: OpenPositionModa
       console.error('Failed to open position:', error);
     } finally {
       setIsSubmitting(false);
-      setGlobalLoading(false);
     }
-  };
+  }, [asset, leverage, size, openPosition, onClose]);
+
+  const handlePreflightDismiss = useCallback(() => {
+    setShowPreflight(false);
+    setPreflightRequest(null);
+    setIsSubmitting(false);
+  }, []);
 
   // Calculate position with transaction costs for delta neutrality
   // To be delta neutral, we need: Long Exposure = Short Exposure after fees
@@ -189,6 +201,14 @@ export function OpenPositionModal({ onClose, defaultLeverage }: OpenPositionModa
           </div>
         </form>
       </div>
+
+      {showPreflight && preflightRequest && (
+        <PreflightChecklist
+          request={preflightRequest}
+          onAllPassed={handlePreflightPassed}
+          onDismiss={handlePreflightDismiss}
+        />
+      )}
     </div>
   );
 }

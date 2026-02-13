@@ -88,11 +88,25 @@ class BotBridge:
         self._cache[key] = value
         self._cache_timestamp[key] = time.time()
     
-    async def _request(self, method: str, path: str, **kwargs) -> httpx.Response:
-        """Make authenticated request to bot API."""
+    async def _request(
+        self, method: str, path: str, user_id: str = None, **kwargs
+    ) -> httpx.Response:
+        """Make authenticated request to bot API.
+
+        If *user_id* is provided, a short-lived JWT containing the user_id
+        is generated and sent as the Bearer token (C6/N5). Otherwise the
+        legacy raw token is used.
+        """
         headers = kwargs.pop("headers", {})
-        headers["Authorization"] = f"Bearer {self._internal_token}"
-        
+
+        if user_id and self._internal_token:
+            from shared.auth.internal_jwt import generate_internal_jwt
+            token = generate_internal_jwt(user_id, self._internal_token)
+        else:
+            token = self._internal_token
+
+        headers["Authorization"] = f"Bearer {token}"
+
         try:
             response = await self._client.request(
                 method, path, headers=headers, **kwargs
@@ -123,8 +137,9 @@ class BotBridge:
         # Slow path: fetch from bot with short timeout
         async def _fetch():
             async with self._lock:
-                params = {"user_id": user_id} if user_id else {}
-                response = await self._request("GET", "/internal/positions", params=params)
+                response = await self._request(
+                    "GET", "/internal/positions", user_id=user_id
+                )
                 data = response.json()
                 
                 positions = {
@@ -232,15 +247,15 @@ class BotBridge:
             "asset": asset,
             "leverage": leverage,
             "size_usd": size_usd,
-            "user_id": user_id
         }
         if protocol:
             payload["protocol"] = protocol
-        
+
         response = await self._request(
             "POST",
             "/internal/positions/open",
-            json=payload
+            user_id=user_id,
+            json=payload,
         )
         result = response.json()
         

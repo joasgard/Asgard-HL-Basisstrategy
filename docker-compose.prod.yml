@@ -63,7 +63,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile
       target: production
-    image: delta-neutral-bot:latest
+    image: asgard-basis:latest
     container_name: basis-app
     restart: unless-stopped
 

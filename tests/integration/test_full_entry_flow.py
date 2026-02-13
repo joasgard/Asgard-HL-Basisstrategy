@@ -154,7 +154,6 @@ class TestFullEntryFlow:
              patch('bot.core.bot.ArbitrumClient') as mock_arbitrum, \
              patch('bot.core.bot.RiskEngine'), \
              patch('bot.core.bot.PositionSizer') as mock_sizer, \
-             patch('bot.core.bot.LSTMonitor'), \
              patch('bot.core.bot.PauseController'), \
              patch('bot.core.bot.PositionManager') as mock_pm_class, \
              patch('bot.core.bot.OpportunityDetector'):
@@ -233,7 +232,6 @@ class TestFullEntryFlow:
              patch('bot.core.bot.ArbitrumClient') as mock_arbitrum, \
              patch('bot.core.bot.RiskEngine'), \
              patch('bot.core.bot.PositionSizer') as mock_sizer, \
-             patch('bot.core.bot.LSTMonitor'), \
              patch('bot.core.bot.PauseController'), \
              patch('bot.core.bot.PositionManager') as mock_pm_class, \
              patch('bot.core.bot.OpportunityDetector'):
@@ -292,7 +290,6 @@ class TestFullEntryFlow:
              patch('bot.core.bot.ArbitrumClient') as mock_arbitrum, \
              patch('bot.core.bot.RiskEngine'), \
              patch('bot.core.bot.PositionSizer') as mock_sizer, \
-             patch('bot.core.bot.LSTMonitor'), \
              patch('bot.core.bot.PauseController'), \
              patch('bot.core.bot.PositionManager') as mock_pm_class, \
              patch('bot.core.bot.OpportunityDetector'):
@@ -351,7 +348,6 @@ class TestFullEntryFlow:
              patch('bot.core.bot.ArbitrumClient') as mock_arbitrum, \
              patch('bot.core.bot.RiskEngine'), \
              patch('bot.core.bot.PositionSizer') as mock_sizer, \
-             patch('bot.core.bot.LSTMonitor'), \
              patch('bot.core.bot.PauseController'), \
              patch('bot.core.bot.PositionManager') as mock_pm_class, \
              patch('bot.core.bot.OpportunityDetector'):
@@ -475,7 +471,6 @@ class TestEntryWithLST:
              patch('bot.core.bot.ArbitrumClient') as mock_arbitrum, \
              patch('bot.core.bot.RiskEngine'), \
              patch('bot.core.bot.PositionSizer') as mock_sizer, \
-             patch('bot.core.bot.LSTMonitor'), \
              patch('bot.core.bot.PauseController'), \
              patch('bot.core.bot.PositionManager') as mock_pm_class, \
              patch('bot.core.bot.OpportunityDetector'):
@@ -565,7 +560,6 @@ class TestEntryCallbacks:
              patch('bot.core.bot.ArbitrumClient') as mock_arbitrum, \
              patch('bot.core.bot.RiskEngine'), \
              patch('bot.core.bot.PositionSizer') as mock_sizer, \
-             patch('bot.core.bot.LSTMonitor'), \
              patch('bot.core.bot.PauseController'), \
              patch('bot.core.bot.PositionManager') as mock_pm_class, \
              patch('bot.core.bot.OpportunityDetector'):

@@ -329,18 +329,25 @@ class DeltaNeutralBot:
         
         self._running = True
         self._stats.start_time = datetime.utcnow()
-        
+
         logger.info("Starting main bot loop...")
-        
+
+        # Verify server wallets for all active users
+        await self._verify_server_wallets()
+
         # Recover state from previous run
         await self._recover_state()
-        
+
+        # Start background services
+        background_tasks = [
+            self._monitor_loop(),
+            self._scan_loop(),
+        ]
+        background_tasks.extend(self._start_background_services())
+
         # Start main loops
         try:
-            await asyncio.gather(
-                self._monitor_loop(),
-                self._scan_loop(),
-            )
+            await asyncio.gather(*background_tasks)
         except asyncio.CancelledError:
             logger.info("Main loops cancelled")
         finally:
@@ -368,6 +375,89 @@ class DeltaNeutralBot:
             return_exceptions=True,
         )
     
+    async def _verify_server_wallets(self):
+        """
+        Verify server wallets for all active users at startup.
+
+        Loads wallet contexts from DB, checks that wallets exist and have
+        policies attached, verifies minimum balances. Logs per-user status.
+        Non-fatal — bot continues even if some wallets have issues.
+        """
+        try:
+            from shared.db.database import Database
+
+            db = Database()
+            await db.connect()
+            try:
+                rows = await db.fetchall(
+                    """SELECT id, server_evm_wallet_id, server_evm_address,
+                              server_solana_wallet_id, server_solana_address
+                       FROM users
+                       WHERE server_evm_wallet_id IS NOT NULL
+                          OR server_solana_wallet_id IS NOT NULL"""
+                )
+            finally:
+                await db.close()
+
+            if not rows:
+                logger.info("server_wallet_verify: no users with server wallets")
+                return
+
+            for row in rows:
+                user_id = row["id"]
+                evm_ok = bool(row.get("server_evm_wallet_id") and row.get("server_evm_address"))
+                sol_ok = bool(row.get("server_solana_wallet_id") and row.get("server_solana_address"))
+
+                if evm_ok and sol_ok:
+                    logger.info(
+                        "server_wallet_verified",
+                        user_id=user_id,
+                        evm_wallet_id=row["server_evm_wallet_id"],
+                        evm_address=row["server_evm_address"],
+                        solana_wallet_id=row["server_solana_wallet_id"],
+                        solana_address=row["server_solana_address"],
+                    )
+                else:
+                    logger.warning(
+                        "server_wallet_incomplete",
+                        user_id=user_id,
+                        has_evm=evm_ok,
+                        has_solana=sol_ok,
+                    )
+
+            logger.info(
+                "server_wallet_verify_complete",
+                total_users=len(rows),
+            )
+
+        except Exception as e:
+            logger.error(f"server_wallet_verify_error: {e}")
+
+    def _start_background_services(self) -> list:
+        """
+        Start background services (gas funder, deposit reconciler).
+
+        Returns list of coroutines to add to asyncio.gather.
+        Non-fatal — individual service failures don't prevent bot startup.
+        """
+        tasks = []
+
+        try:
+            from bot.services.gas_funder import run_gas_funder_loop
+            tasks.append(run_gas_funder_loop())
+            logger.info("background_service_registered: gas_funder")
+        except Exception as e:
+            logger.warning(f"gas_funder_not_available: {e}")
+
+        try:
+            from bot.services.deposit_reconciler import run_deposit_reconciler_loop
+            tasks.append(run_deposit_reconciler_loop())
+            logger.info("background_service_registered: deposit_reconciler")
+        except Exception as e:
+            logger.warning(f"deposit_reconciler_not_available: {e}")
+
+        return tasks
+
     async def _monitor_loop(self):
         """
         Monitor loop - checks positions and risk conditions.
@@ -462,12 +552,14 @@ class DeltaNeutralBot:
             
             # Trigger circuit breaker for critical exits
             if exit_decision.reason in [
-                ExitReason.ASGARD_HEALTH_FACTOR,
-                ExitReason.HYPERLIQUID_MARGIN,
+                ExitReason.HEALTH_FACTOR,
+                ExitReason.MARGIN_FRACTION,
+                ExitReason.LST_DEPEG,
             ]:
                 breaker_type = {
-                    ExitReason.ASGARD_HEALTH_FACTOR: CircuitBreakerType.ASGARD_HEALTH,
-                    ExitReason.HYPERLIQUID_MARGIN: CircuitBreakerType.HYPERLIQUID_MARGIN,
+                    ExitReason.HEALTH_FACTOR: CircuitBreakerType.ASGARD_HEALTH,
+                    ExitReason.MARGIN_FRACTION: CircuitBreakerType.HYPERLIQUID_MARGIN,
+                    ExitReason.LST_DEPEG: CircuitBreakerType.LST_DEPEG,
                 }.get(exit_decision.reason)
                 
                 if breaker_type:
@@ -550,7 +642,6 @@ class DeltaNeutralBot:
             # Open position
             result = await self._position_manager.open_position(
                 opportunity=opportunity,
-                capital_deployment=sizing_result.size,
             )
             
             if result.success and result.position:
@@ -582,11 +673,19 @@ class DeltaNeutralBot:
     async def _execute_exit(self, position: CombinedPosition, reason: str):
         """Execute position exit."""
         logger.info(f"Executing exit for {position.position_id}: {reason}")
-        
+
         try:
-            result = await self._position_manager.close_position(position.position_id)
-            
-            if result:
+            # Map reason string to ExitReason enum
+            try:
+                exit_reason = ExitReason(reason)
+            except ValueError:
+                exit_reason = ExitReason.MANUAL
+
+            result = await self._position_manager.close_position(
+                position.position_id, reason=exit_reason
+            )
+
+            if result.success:
                 user_id = position.user_id or "default"
                 if user_id in self._positions and position.position_id in self._positions[user_id]:
                     del self._positions[user_id][position.position_id]
@@ -613,8 +712,8 @@ class DeltaNeutralBot:
                 
                 logger.info(f"Position closed: {position.position_id}")
             else:
-                logger.error(f"Failed to close position: {position.position_id}")
-                
+                logger.error(f"Failed to close position: {position.position_id}: {result.error}")
+
         except Exception as e:
             logger.error(f"Exit execution error: {e}")
     

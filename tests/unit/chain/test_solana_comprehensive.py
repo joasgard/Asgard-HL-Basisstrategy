@@ -26,8 +26,8 @@ from shared.chain.solana import SolanaClient
 @pytest.fixture(autouse=True, scope="module")
 def disable_retries():
     """Disable tenacity retries for all chain tests."""
-    with patch('shared.common.utils.retry.tenacity_retry', lambda **kwargs: lambda f: f):
-        with patch('shared.common.utils.retry.before_sleep_log', lambda *args, **kwargs: None):
+    with patch('shared.utils.retry.tenacity_retry', lambda **kwargs: lambda f: f):
+        with patch('shared.utils.retry.before_sleep_log', lambda *args, **kwargs: None):
             yield
 
 
@@ -52,37 +52,37 @@ def mock_async_client():
 class TestSolanaClientInitialization:
     """Tests for SolanaClient initialization."""
     
-    @patch('shared.common.chain.solana.get_settings')
+    @patch('shared.chain.solana.get_settings')
     def test_init_with_default_rpc(self, mock_get_settings, mock_settings):
         """Test initialization with default RPC URL from settings."""
         mock_get_settings.return_value = mock_settings
         
-        with patch('shared.common.chain.solana.AsyncClient') as mock_client_class:
+        with patch('shared.chain.solana.AsyncClient') as mock_client_class:
             client = SolanaClient()
             
             mock_client_class.assert_called_once()
             call_args = mock_client_class.call_args
             assert mock_settings.solana_rpc_url in str(call_args)
     
-    @patch('shared.common.chain.solana.get_settings')
+    @patch('shared.chain.solana.get_settings')
     def test_init_with_custom_rpc(self, mock_get_settings, mock_settings):
         """Test initialization with custom RPC URL."""
         mock_get_settings.return_value = mock_settings
         custom_url = "https://custom.rpc.com"
         
-        with patch('shared.common.chain.solana.AsyncClient') as mock_client_class:
+        with patch('shared.chain.solana.AsyncClient') as mock_client_class:
             client = SolanaClient(rpc_url=custom_url)
             
             mock_client_class.assert_called_once()
             call_args = mock_client_class.call_args
             assert custom_url in str(call_args)
     
-    @patch('shared.common.chain.solana.get_settings')
+    @patch('shared.chain.solana.get_settings')
     def test_wallet_address_property(self, mock_get_settings, mock_settings):
         """Test wallet_address property returns settings value."""
         mock_get_settings.return_value = mock_settings
         
-        with patch('shared.common.chain.solana.AsyncClient'):
+        with patch('shared.chain.solana.AsyncClient'):
             client = SolanaClient()
             
             assert client.wallet_address == mock_settings.solana_wallet_address
@@ -93,7 +93,7 @@ class TestSolanaGetBalance:
     """Tests for get_balance method."""
     
     @pytest.mark.asyncio
-    @patch('shared.common.chain.solana.get_settings')
+    @patch('shared.chain.solana.get_settings')
     async def test_get_balance_default_wallet(self, mock_get_settings, mock_settings):
         """Test getting balance for default wallet."""
         mock_get_settings.return_value = mock_settings
@@ -101,7 +101,7 @@ class TestSolanaGetBalance:
         mock_response = MagicMock()
         mock_response.value = 1_000_000_000  # 1 SOL in lamports
         
-        with patch('shared.common.chain.solana.AsyncClient') as mock_client_class:
+        with patch('shared.chain.solana.AsyncClient') as mock_client_class:
             mock_client = MagicMock()
             mock_client.get_balance = AsyncMock(return_value=mock_response)
             mock_client_class.return_value = mock_client
@@ -113,7 +113,7 @@ class TestSolanaGetBalance:
             mock_client.get_balance.assert_called_once()
     
     @pytest.mark.asyncio
-    @patch('shared.common.chain.solana.get_settings')
+    @patch('shared.chain.solana.get_settings')
     async def test_get_balance_custom_pubkey(self, mock_get_settings, mock_settings):
         """Test getting balance for custom pubkey."""
         mock_get_settings.return_value = mock_settings
@@ -122,7 +122,7 @@ class TestSolanaGetBalance:
         mock_response = MagicMock()
         mock_response.value = 500_000_000  # 0.5 SOL
         
-        with patch('shared.common.chain.solana.AsyncClient') as mock_client_class:
+        with patch('shared.chain.solana.AsyncClient') as mock_client_class:
             mock_client = MagicMock()
             mock_client.get_balance = AsyncMock(return_value=mock_response)
             mock_client_class.return_value = mock_client
@@ -133,7 +133,7 @@ class TestSolanaGetBalance:
             assert balance == 0.5
     
     @pytest.mark.asyncio
-    @patch('shared.common.chain.solana.get_settings')
+    @patch('shared.chain.solana.get_settings')
     async def test_get_balance_zero(self, mock_get_settings, mock_settings):
         """Test getting zero balance."""
         mock_get_settings.return_value = mock_settings
@@ -141,7 +141,7 @@ class TestSolanaGetBalance:
         mock_response = MagicMock()
         mock_response.value = 0
         
-        with patch('shared.common.chain.solana.AsyncClient') as mock_client_class:
+        with patch('shared.chain.solana.AsyncClient') as mock_client_class:
             mock_client = MagicMock()
             mock_client.get_balance = AsyncMock(return_value=mock_response)
             mock_client_class.return_value = mock_client
@@ -152,7 +152,7 @@ class TestSolanaGetBalance:
             assert balance == 0.0
     
     @pytest.mark.asyncio
-    @patch('shared.common.chain.solana.get_settings')
+    @patch('shared.chain.solana.get_settings')
     async def test_get_balance_none_response(self, mock_get_settings, mock_settings):
         """Test handling None response value."""
         mock_get_settings.return_value = mock_settings
@@ -160,7 +160,7 @@ class TestSolanaGetBalance:
         mock_response = MagicMock()
         mock_response.value = None
         
-        with patch('shared.common.chain.solana.AsyncClient') as mock_client_class:
+        with patch('shared.chain.solana.AsyncClient') as mock_client_class:
             mock_client = MagicMock()
             mock_client.get_balance = AsyncMock(return_value=mock_response)
             mock_client_class.return_value = mock_client
@@ -176,7 +176,7 @@ class TestSolanaGetTokenBalance:
     """Tests for get_token_balance method."""
     
     @pytest.mark.asyncio
-    @patch('shared.common.chain.solana.get_settings')
+    @patch('shared.chain.solana.get_settings')
     async def test_get_token_balance_success(self, mock_get_settings, mock_settings):
         """Test getting token balance successfully."""
         mock_get_settings.return_value = mock_settings
@@ -195,7 +195,7 @@ class TestSolanaGetTokenBalance:
         mock_balance_response.value.amount = "1000000"
         mock_balance_response.value.decimals = 6
         
-        with patch('shared.common.chain.solana.AsyncClient') as mock_client_class:
+        with patch('shared.chain.solana.AsyncClient') as mock_client_class:
             mock_client = MagicMock()
             mock_client.get_token_accounts_by_owner = AsyncMock(return_value=mock_accounts_response)
             mock_client.get_token_account_balance = AsyncMock(return_value=mock_balance_response)
@@ -207,7 +207,7 @@ class TestSolanaGetTokenBalance:
             assert balance == 1.0  # 1 USDC (6 decimals)
     
     @pytest.mark.asyncio
-    @patch('shared.common.chain.solana.get_settings')
+    @patch('shared.chain.solana.get_settings')
     async def test_get_token_balance_no_account(self, mock_get_settings, mock_settings):
         """Test getting token balance when no account exists."""
         mock_get_settings.return_value = mock_settings
@@ -216,7 +216,7 @@ class TestSolanaGetTokenBalance:
         mock_accounts_response = MagicMock()
         mock_accounts_response.value = []  # No accounts
         
-        with patch('shared.common.chain.solana.AsyncClient') as mock_client_class:
+        with patch('shared.chain.solana.AsyncClient') as mock_client_class:
             mock_client = MagicMock()
             mock_client.get_token_accounts_by_owner = AsyncMock(return_value=mock_accounts_response)
             mock_client_class.return_value = mock_client
@@ -227,7 +227,7 @@ class TestSolanaGetTokenBalance:
             assert balance == 0.0
     
     @pytest.mark.asyncio
-    @patch('shared.common.chain.solana.get_settings')
+    @patch('shared.chain.solana.get_settings')
     async def test_get_token_balance_custom_owner(self, mock_get_settings, mock_settings):
         """Test getting token balance for custom owner."""
         mock_get_settings.return_value = mock_settings
@@ -237,7 +237,7 @@ class TestSolanaGetTokenBalance:
         mock_accounts_response = MagicMock()
         mock_accounts_response.value = []
         
-        with patch('shared.common.chain.solana.AsyncClient') as mock_client_class:
+        with patch('shared.chain.solana.AsyncClient') as mock_client_class:
             mock_client = MagicMock()
             mock_client.get_token_accounts_by_owner = AsyncMock(return_value=mock_accounts_response)
             mock_client_class.return_value = mock_client
@@ -255,7 +255,7 @@ class TestSolanaGetLatestBlockhash:
     """Tests for get_latest_blockhash method."""
     
     @pytest.mark.asyncio
-    @patch('shared.common.chain.solana.get_settings')
+    @patch('shared.chain.solana.get_settings')
     async def test_get_latest_blockhash_success(self, mock_get_settings, mock_settings):
         """Test getting latest blockhash."""
         mock_get_settings.return_value = mock_settings
@@ -266,7 +266,7 @@ class TestSolanaGetLatestBlockhash:
         mock_response = MagicMock()
         mock_response.value = mock_blockhash_value
         
-        with patch('shared.common.chain.solana.AsyncClient') as mock_client_class:
+        with patch('shared.chain.solana.AsyncClient') as mock_client_class:
             mock_client = MagicMock()
             mock_client.get_latest_blockhash = AsyncMock(return_value=mock_response)
             mock_client_class.return_value = mock_client
@@ -277,7 +277,7 @@ class TestSolanaGetLatestBlockhash:
             assert blockhash == "EET5P9x6iE5z1T7vQ6T6v6T6v6T6v6T6v6T6v6T6v6T"
     
     @pytest.mark.asyncio
-    @patch('shared.common.chain.solana.get_settings')
+    @patch('shared.chain.solana.get_settings')
     async def test_get_latest_blockhash_none_response(self, mock_get_settings, mock_settings):
         """Test handling None response."""
         mock_get_settings.return_value = mock_settings
@@ -285,7 +285,7 @@ class TestSolanaGetLatestBlockhash:
         mock_response = MagicMock()
         mock_response.value = None
         
-        with patch('shared.common.chain.solana.AsyncClient') as mock_client_class:
+        with patch('shared.chain.solana.AsyncClient') as mock_client_class:
             mock_client = MagicMock()
             mock_client.get_latest_blockhash = AsyncMock(return_value=mock_response)
             mock_client_class.return_value = mock_client
@@ -301,7 +301,7 @@ class TestSolanaGetSignatureStatus:
     """Tests for get_signature_status method."""
     
     @pytest.mark.asyncio
-    @patch('shared.common.chain.solana.get_settings')
+    @patch('shared.chain.solana.get_settings')
     async def test_get_signature_status_confirmed(self, mock_get_settings, mock_settings):
         """Test getting status for confirmed transaction."""
         mock_get_settings.return_value = mock_settings
@@ -317,7 +317,7 @@ class TestSolanaGetSignatureStatus:
         mock_response = MagicMock()
         mock_response.value = [mock_status]
         
-        with patch('shared.common.chain.solana.AsyncClient') as mock_client_class:
+        with patch('shared.chain.solana.AsyncClient') as mock_client_class:
             mock_client = MagicMock()
             mock_client.get_signature_statuses = AsyncMock(return_value=mock_response)
             mock_client_class.return_value = mock_client
@@ -330,7 +330,7 @@ class TestSolanaGetSignatureStatus:
             assert status["slot"] == 123456789
     
     @pytest.mark.asyncio
-    @patch('shared.common.chain.solana.get_settings')
+    @patch('shared.chain.solana.get_settings')
     async def test_get_signature_status_failed(self, mock_get_settings, mock_settings):
         """Test getting status for failed transaction."""
         mock_get_settings.return_value = mock_settings
@@ -344,7 +344,7 @@ class TestSolanaGetSignatureStatus:
         mock_response = MagicMock()
         mock_response.value = [mock_status]
         
-        with patch('shared.common.chain.solana.AsyncClient') as mock_client_class:
+        with patch('shared.chain.solana.AsyncClient') as mock_client_class:
             mock_client = MagicMock()
             mock_client.get_signature_statuses = AsyncMock(return_value=mock_response)
             mock_client_class.return_value = mock_client
@@ -356,7 +356,7 @@ class TestSolanaGetSignatureStatus:
             assert status["err"] is not None
     
     @pytest.mark.asyncio
-    @patch('shared.common.chain.solana.get_settings')
+    @patch('shared.chain.solana.get_settings')
     async def test_get_signature_status_not_found(self, mock_get_settings, mock_settings):
         """Test getting status for non-existent signature."""
         mock_get_settings.return_value = mock_settings
@@ -365,7 +365,7 @@ class TestSolanaGetSignatureStatus:
         mock_response = MagicMock()
         mock_response.value = [None]  # Not found
         
-        with patch('shared.common.chain.solana.AsyncClient') as mock_client_class:
+        with patch('shared.chain.solana.AsyncClient') as mock_client_class:
             mock_client = MagicMock()
             mock_client.get_signature_statuses = AsyncMock(return_value=mock_response)
             mock_client_class.return_value = mock_client
@@ -376,7 +376,7 @@ class TestSolanaGetSignatureStatus:
             assert status is None
     
     @pytest.mark.asyncio
-    @patch('shared.common.chain.solana.get_settings')
+    @patch('shared.chain.solana.get_settings')
     async def test_get_signature_status_empty_response(self, mock_get_settings, mock_settings):
         """Test handling empty response."""
         mock_get_settings.return_value = mock_settings
@@ -385,7 +385,7 @@ class TestSolanaGetSignatureStatus:
         mock_response = MagicMock()
         mock_response.value = []  # Empty
         
-        with patch('shared.common.chain.solana.AsyncClient') as mock_client_class:
+        with patch('shared.chain.solana.AsyncClient') as mock_client_class:
             mock_client = MagicMock()
             mock_client.get_signature_statuses = AsyncMock(return_value=mock_response)
             mock_client_class.return_value = mock_client
@@ -401,7 +401,7 @@ class TestSolanaConfirmTransaction:
     """Tests for confirm_transaction method."""
     
     @pytest.mark.asyncio
-    @patch('shared.common.chain.solana.get_settings')
+    @patch('shared.chain.solana.get_settings')
     async def test_confirm_transaction_success(self, mock_get_settings, mock_settings):
         """Test confirming a successful transaction."""
         mock_get_settings.return_value = mock_settings
@@ -415,7 +415,7 @@ class TestSolanaConfirmTransaction:
         mock_response = MagicMock()
         mock_response.value = [mock_status]
         
-        with patch('shared.common.chain.solana.AsyncClient') as mock_client_class:
+        with patch('shared.chain.solana.AsyncClient') as mock_client_class:
             mock_client = MagicMock()
             mock_client.get_signature_statuses = AsyncMock(return_value=mock_response)
             mock_client_class.return_value = mock_client
@@ -430,7 +430,7 @@ class TestSolanaConfirmTransaction:
             assert confirmed is True
     
     @pytest.mark.asyncio
-    @patch('shared.common.chain.solana.get_settings')
+    @patch('shared.chain.solana.get_settings')
     async def test_confirm_transaction_failed(self, mock_get_settings, mock_settings):
         """Test confirming a failed transaction."""
         mock_get_settings.return_value = mock_settings
@@ -444,7 +444,7 @@ class TestSolanaConfirmTransaction:
         mock_response = MagicMock()
         mock_response.value = [mock_status]
         
-        with patch('shared.common.chain.solana.AsyncClient') as mock_client_class:
+        with patch('shared.chain.solana.AsyncClient') as mock_client_class:
             mock_client = MagicMock()
             mock_client.get_signature_statuses = AsyncMock(return_value=mock_response)
             mock_client_class.return_value = mock_client
@@ -459,7 +459,7 @@ class TestSolanaConfirmTransaction:
                 )
     
     @pytest.mark.asyncio
-    @patch('shared.common.chain.solana.get_settings')
+    @patch('shared.chain.solana.get_settings')
     async def test_confirm_transaction_timeout(self, mock_get_settings, mock_settings):
         """Test transaction confirmation timeout."""
         mock_get_settings.return_value = mock_settings
@@ -469,7 +469,7 @@ class TestSolanaConfirmTransaction:
         mock_response = MagicMock()
         mock_response.value = [None]
         
-        with patch('shared.common.chain.solana.AsyncClient') as mock_client_class:
+        with patch('shared.chain.solana.AsyncClient') as mock_client_class:
             mock_client = MagicMock()
             mock_client.get_signature_statuses = AsyncMock(return_value=mock_response)
             mock_client_class.return_value = mock_client
@@ -489,7 +489,7 @@ class TestSolanaHealthCheck:
     """Tests for health_check method."""
     
     @pytest.mark.asyncio
-    @patch('shared.common.chain.solana.get_settings')
+    @patch('shared.chain.solana.get_settings')
     async def test_health_check_healthy(self, mock_get_settings, mock_settings):
         """Test health check when healthy."""
         mock_get_settings.return_value = mock_settings
@@ -497,7 +497,7 @@ class TestSolanaHealthCheck:
         mock_response = MagicMock()
         mock_response.value = "ok"
         
-        with patch('shared.common.chain.solana.AsyncClient') as mock_client_class:
+        with patch('shared.chain.solana.AsyncClient') as mock_client_class:
             mock_client = MagicMock()
             mock_client.get_health = AsyncMock(return_value=mock_response)
             mock_client_class.return_value = mock_client
@@ -508,7 +508,7 @@ class TestSolanaHealthCheck:
             assert healthy is True
     
     @pytest.mark.asyncio
-    @patch('shared.common.chain.solana.get_settings')
+    @patch('shared.chain.solana.get_settings')
     async def test_health_check_unhealthy(self, mock_get_settings, mock_settings):
         """Test health check when unhealthy."""
         mock_get_settings.return_value = mock_settings
@@ -516,7 +516,7 @@ class TestSolanaHealthCheck:
         mock_response = MagicMock()
         mock_response.value = "behind"
         
-        with patch('shared.common.chain.solana.AsyncClient') as mock_client_class:
+        with patch('shared.chain.solana.AsyncClient') as mock_client_class:
             mock_client = MagicMock()
             mock_client.get_health = AsyncMock(return_value=mock_response)
             mock_client_class.return_value = mock_client
@@ -527,12 +527,12 @@ class TestSolanaHealthCheck:
             assert healthy is False
     
     @pytest.mark.asyncio
-    @patch('shared.common.chain.solana.get_settings')
+    @patch('shared.chain.solana.get_settings')
     async def test_health_check_exception(self, mock_get_settings, mock_settings):
         """Test health check with exception."""
         mock_get_settings.return_value = mock_settings
         
-        with patch('shared.common.chain.solana.AsyncClient') as mock_client_class:
+        with patch('shared.chain.solana.AsyncClient') as mock_client_class:
             mock_client = MagicMock()
             mock_client.get_health = AsyncMock(side_effect=Exception("RPC error"))
             mock_client_class.return_value = mock_client
@@ -548,12 +548,12 @@ class TestSolanaContextManager:
     """Tests for async context manager."""
     
     @pytest.mark.asyncio
-    @patch('shared.common.chain.solana.get_settings')
+    @patch('shared.chain.solana.get_settings')
     async def test_context_manager_closes_client(self, mock_get_settings, mock_settings):
         """Test that context manager closes client on exit."""
         mock_get_settings.return_value = mock_settings
         
-        with patch('shared.common.chain.solana.AsyncClient') as mock_client_class:
+        with patch('shared.chain.solana.AsyncClient') as mock_client_class:
             mock_client = MagicMock()
             mock_client.close = AsyncMock()
             mock_client_class.return_value = mock_client
@@ -564,12 +564,12 @@ class TestSolanaContextManager:
             mock_client.close.assert_called_once()
     
     @pytest.mark.asyncio
-    @patch('shared.common.chain.solana.get_settings')
+    @patch('shared.chain.solana.get_settings')
     async def test_context_manager_closes_on_exception(self, mock_get_settings, mock_settings):
         """Test that context manager closes client even on exception."""
         mock_get_settings.return_value = mock_settings
         
-        with patch('shared.common.chain.solana.AsyncClient') as mock_client_class:
+        with patch('shared.chain.solana.AsyncClient') as mock_client_class:
             mock_client = MagicMock()
             mock_client.close = AsyncMock()
             mock_client_class.return_value = mock_client
@@ -581,12 +581,12 @@ class TestSolanaContextManager:
             mock_client.close.assert_called_once()
     
     @pytest.mark.asyncio
-    @patch('shared.common.chain.solana.get_settings')
+    @patch('shared.chain.solana.get_settings')
     async def test_close_method(self, mock_get_settings, mock_settings):
         """Test explicit close method."""
         mock_get_settings.return_value = mock_settings
         
-        with patch('shared.common.chain.solana.AsyncClient') as mock_client_class:
+        with patch('shared.chain.solana.AsyncClient') as mock_client_class:
             mock_client = MagicMock()
             mock_client.close = AsyncMock()
             mock_client_class.return_value = mock_client
@@ -602,7 +602,7 @@ class TestSolanaSendTransaction:
     """Tests for send_transaction method."""
     
     @pytest.mark.asyncio
-    @patch('shared.common.chain.solana.get_settings')
+    @patch('shared.chain.solana.get_settings')
     async def test_send_transaction_success(self, mock_get_settings, mock_settings):
         """Test sending transaction successfully."""
         mock_get_settings.return_value = mock_settings
@@ -610,7 +610,7 @@ class TestSolanaSendTransaction:
         mock_response = MagicMock()
         mock_response.value = Signature.from_string("2KtEN8azUhSKGK7ZEfGG2Lv41bg7sMhrQeuc3Pk9FXn6zFMjVFUW7NCuBzfDwT2btVDCRCCVnWok6259J3JiKKFp")
         
-        with patch('shared.common.chain.solana.AsyncClient') as mock_client_class:
+        with patch('shared.chain.solana.AsyncClient') as mock_client_class:
             mock_client = MagicMock()
             mock_client.send_transaction = AsyncMock(return_value=mock_response)
             mock_client_class.return_value = mock_client
@@ -626,7 +626,7 @@ class TestSolanaSendTransaction:
             mock_client.send_transaction.assert_called_once()
     
     @pytest.mark.asyncio
-    @patch('shared.common.chain.solana.get_settings')
+    @patch('shared.chain.solana.get_settings')
     async def test_send_transaction_none_response(self, mock_get_settings, mock_settings):
         """Test handling None response."""
         mock_get_settings.return_value = mock_settings
@@ -634,7 +634,7 @@ class TestSolanaSendTransaction:
         mock_response = MagicMock()
         mock_response.value = None
         
-        with patch('shared.common.chain.solana.AsyncClient') as mock_client_class:
+        with patch('shared.chain.solana.AsyncClient') as mock_client_class:
             mock_client = MagicMock()
             mock_client.send_transaction = AsyncMock(return_value=mock_response)
             mock_client_class.return_value = mock_client

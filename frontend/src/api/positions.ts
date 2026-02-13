@@ -39,6 +39,18 @@ export interface OpenPositionRequest {
   size_usd: number;
 }
 
+export interface PreflightCheck {
+  key: string;
+  label: string;
+  passed: boolean;
+  error: string | null;
+}
+
+export interface PreflightResponse {
+  passed: boolean;
+  checks: PreflightCheck[];
+}
+
 export const positionsApi = {
   async list(): Promise<Position[]> {
     const response = await apiClient.get('/positions');
@@ -52,6 +64,11 @@ export const positionsApi = {
 
   async open(request: OpenPositionRequest): Promise<{ job_id: string }> {
     const response = await apiClient.post('/positions/open', request);
+    return response.data;
+  },
+
+  async preflight(request: OpenPositionRequest): Promise<PreflightResponse> {
+    const response = await apiClient.post('/positions/preflight', request);
     return response.data;
   },
 

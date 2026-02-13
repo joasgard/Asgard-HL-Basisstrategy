@@ -273,7 +273,7 @@ class TestEvaluateExit:
         )
         assert result is not None
         assert result.should_exit is True
-        assert result.reason == ExitReason.ASGARD_HEALTH_FACTOR
+        assert result.reason == ExitReason.HEALTH_FACTOR
 
     def test_exit_asgard_health_exactly_threshold(self):
         """Test exit triggered at exactly the 10% threshold."""
@@ -285,7 +285,7 @@ class TestEvaluateExit:
         )
         assert result is not None
         assert result.should_exit is True
-        assert result.reason == ExitReason.ASGARD_HEALTH_FACTOR
+        assert result.reason == ExitReason.HEALTH_FACTOR
 
     def test_no_exit_asgard_health_above_threshold(self):
         """Test no exit when Asgard health is above threshold."""
@@ -308,7 +308,7 @@ class TestEvaluateExit:
         )
         assert result is not None
         assert result.should_exit is True
-        assert result.reason == ExitReason.HYPERLIQUID_MARGIN
+        assert result.reason == ExitReason.MARGIN_FRACTION
 
     def test_exit_funding_flip(self):
         """Test exit triggered by funding rate flipping positive."""
@@ -355,7 +355,7 @@ class TestEvaluateExit:
             asgard_health=0.08,  # Critical
             current_funding={"funding": 0.001},  # Also flipped
         )
-        assert result.reason == ExitReason.ASGARD_HEALTH_FACTOR
+        assert result.reason == ExitReason.HEALTH_FACTOR
 
     def test_no_hl_position_skips_margin_check(self):
         """Test that missing HL position data doesn't trigger exit."""
@@ -413,7 +413,7 @@ class TestExecuteExit:
         }
         exit_decision = ExitDecision(
             should_exit=True,
-            reason=ExitReason.ASGARD_HEALTH_FACTOR,
+            reason=ExitReason.HEALTH_FACTOR,
             details={"message": "Health critical"},
         )
 
@@ -466,7 +466,7 @@ class TestExecuteExit:
         }
         exit_decision = ExitDecision(
             should_exit=True,
-            reason=ExitReason.HYPERLIQUID_MARGIN,
+            reason=ExitReason.MARGIN_FRACTION,
             details={"message": "Margin critical"},
         )
 
@@ -528,7 +528,7 @@ class TestExecuteExit:
         }
         exit_decision = ExitDecision(
             should_exit=True,
-            reason=ExitReason.ASGARD_HEALTH_FACTOR,
+            reason=ExitReason.HEALTH_FACTOR,
             details={"message": "Health critical"},
         )
 
@@ -622,7 +622,7 @@ class TestCheckPosition:
             await monitor._check_position(ctx, pos_info, funding_rates={})
             mock_exit.assert_called_once()
             exit_decision = mock_exit.call_args.kwargs.get("exit_decision") or mock_exit.call_args[0][3]
-            assert exit_decision.reason == ExitReason.ASGARD_HEALTH_FACTOR
+            assert exit_decision.reason == ExitReason.HEALTH_FACTOR
 
 
 # ---------------------------------------------------------------------------

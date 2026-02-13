@@ -22,17 +22,16 @@ Execution Order (Exit):
 2. Close Asgard long
 3. Max single-leg exposure: 120 seconds
 """
-import asyncio
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Dict, List, Optional, Callable
+from typing import Dict, List, Optional
 
 from shared.chain.solana import SolanaClient
 from shared.chain.arbitrum import ArbitrumClient
 from shared.config.assets import Asset, get_asset_metadata, AssetMetadata
-from shared.config.settings import get_settings, get_risk_limits
+from shared.config.settings import get_risk_limits
 from bot.core.fill_validator import FillValidator, FillInfo
 from bot.core.price_consensus import PriceConsensus, ConsensusResult
 from shared.models.common import Protocol, TransactionState, ExitReason
@@ -45,7 +44,6 @@ from shared.models.position import (
 )
 from shared.utils.logger import get_logger
 from bot.venues.asgard.manager import AsgardPositionManager, OpenPositionResult
-from bot.venues.hyperliquid.depositor import HyperliquidDepositor
 from bot.venues.hyperliquid.trader import HyperliquidTrader, OrderResult, PositionInfo
 from bot.venues.user_context import UserTradingContext
 
@@ -207,11 +205,6 @@ class PositionManager:
         self._positions: Dict[str, CombinedPosition] = {}
         self._contexts: Dict[str, OpenPositionContext] = {}
 
-        # Bridge deposit state
-        self._depositor: Optional[HyperliquidDepositor] = None
-        self._needs_bridge_deposit: bool = False
-        self._bridge_deposit_amount: float = 0.0
-
         # Risk limits
         self._risk_limits = get_risk_limits()
 
@@ -232,14 +225,12 @@ class PositionManager:
         Returns:
             PositionManager configured for this user
         """
-        manager = cls(
+        return cls(
             asgard_manager=ctx.get_asgard_manager(),
             hyperliquid_trader=ctx.get_hl_trader(),
             arbitrum_client=ctx.get_arb_client(),
             **kwargs,
         )
-        manager._depositor = ctx.get_hl_depositor()
-        return manager
     
     async def __aenter__(self):
         """Async context manager entry."""
@@ -382,44 +373,31 @@ class PositionManager:
         )
     
     async def _check_wallet_balance(self, opportunity: ArbitrageOpportunity) -> bool:
-        """Check wallet balances on Solana, Arbitrum, and Hyperliquid."""
-        settings = get_settings()
+        """Check wallet balances on Solana and Hyperliquid.
 
-        # Reset bridge deposit flag
-        self._needs_bridge_deposit = False
-        self._bridge_deposit_amount = 0.0
-
+        Solana: SOL for gas + USDC for Asgard collateral.
+        Hyperliquid: USDC clearinghouse balance for short margin.
+        Arbitrum is NOT checked — deposits to HL are user-initiated via the dashboard.
+        """
         # Check Solana balance (need SOL for gas + USDC for collateral)
         try:
             sol_balance = await self.solana_client.get_balance()
-            # Need at least 0.1 SOL for gas
             if sol_balance < 0.1:
                 logger.warning(f"Insufficient SOL balance: {sol_balance}")
                 return False
 
-            # Check USDC balance for collateral
             usdc_mint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
             usdc_balance = await self.solana_client.get_token_balance(usdc_mint)
             collateral_needed = float(opportunity.deployed_capital_usd) / 2
 
             if usdc_balance < collateral_needed * 0.95:  # 5% buffer
                 logger.warning(
-                    f"Insufficient USDC balance: {usdc_balance} < {collateral_needed}"
+                    f"Insufficient Solana USDC balance: {usdc_balance} < {collateral_needed}"
                 )
                 return False
 
         except Exception as e:
             logger.warning(f"Failed to check Solana balance: {e}")
-            return True
-
-        # Check Arbitrum balance (need ETH for gas, possibly for bridge txs)
-        try:
-            eth_balance = await self.arbitrum_client.get_balance()
-            if eth_balance < Decimal("0.002"):
-                logger.warning(f"Insufficient ETH balance for bridge gas: {eth_balance}")
-                return False
-        except Exception as e:
-            logger.warning(f"Failed to check Arbitrum balance: {e}")
             return True
 
         # Check Hyperliquid clearinghouse balance
@@ -428,32 +406,15 @@ class PositionManager:
             margin_needed = float(opportunity.deployed_capital_usd) / 2  # Short leg margin
 
             if hl_balance >= margin_needed * 0.95:
-                # HL has enough funds
                 logger.info(f"HL clearinghouse balance OK: ${hl_balance:.2f}")
             else:
-                # HL is low — check if Arbitrum USDC can cover it
-                shortfall = margin_needed - hl_balance
-                arb_usdc = float(
-                    await self.arbitrum_client.get_usdc_balance()
+                logger.warning(
+                    f"Insufficient Hyperliquid balance: ${hl_balance:.2f} < ${margin_needed:.2f}. "
+                    f"User must deposit USDC to Hyperliquid from the dashboard."
                 )
-
-                if arb_usdc >= shortfall * 0.95:
-                    # Soft pass: bridge deposit needed before short
-                    self._needs_bridge_deposit = True
-                    self._bridge_deposit_amount = shortfall
-                    logger.info(
-                        f"HL balance low (${hl_balance:.2f}), "
-                        f"will bridge ${shortfall:.2f} from Arbitrum (${arb_usdc:.2f} available)"
-                    )
-                else:
-                    logger.warning(
-                        f"Insufficient funds for HL short: "
-                        f"HL=${hl_balance:.2f}, Arb USDC=${arb_usdc:.2f}, need=${margin_needed:.2f}"
-                    )
-                    return False
+                return False
         except Exception as e:
             logger.warning(f"Failed to check Hyperliquid balance: {e}")
-            # Don't fail — the open_short() call will catch it anyway
             return True
 
         return True
@@ -479,22 +440,23 @@ class PositionManager:
         market_data = AsgardMarketData(self.asgard_manager.client if self.asgard_manager else None)
         
         try:
-            best_protocol = await market_data.select_best_protocol(
+            best_result = await market_data.select_best_protocol(
                 opportunity.asset,
                 float(opportunity.position_size_usd),
                 float(opportunity.leverage)
             )
-            
-            if best_protocol is None:
+
+            if best_result is None:
                 return False
-            
-            # Verify it's the same protocol we selected
-            if best_protocol != opportunity.selected_protocol:
+
+            # select_best_protocol returns a NetCarryResult; compare .protocol
+            if best_result.protocol != opportunity.selected_protocol:
                 logger.warning(
-                    f"Best protocol changed from {opportunity.selected_protocol} to {best_protocol}"
+                    f"Best protocol changed from {opportunity.selected_protocol} to {best_result.protocol}"
                 )
-                return False
-            
+                # Still valid — a different protocol has capacity, update the opportunity
+                opportunity.selected_protocol = best_result.protocol
+
             return True
         except Exception as e:
             logger.warning(f"Protocol capacity check failed: {e}")
@@ -736,10 +698,6 @@ class PositionManager:
             protocol=protocol,
         )
     
-    def _get_depositor(self) -> Optional[HyperliquidDepositor]:
-        """Get the depositor instance (may be None if not wired)."""
-        return self._depositor
-
     async def _open_hyperliquid_position(
         self,
         position_id: str,
@@ -756,31 +714,6 @@ class PositionManager:
             avg_px: Optional[str] = None
             position_info: Optional[HyperliquidPosition] = None
             error: Optional[str] = None
-
-        # Auto-deposit from Arbitrum if needed
-        if self._needs_bridge_deposit:
-            depositor = self._get_depositor()
-            if depositor is None:
-                return HyperliquidOpenResult(
-                    success=False,
-                    error="Bridge deposit needed but no depositor configured",
-                )
-
-            logger.info(
-                f"Bridging ${self._bridge_deposit_amount:.2f} USDC "
-                f"from Arbitrum to Hyperliquid before opening short"
-            )
-            deposit_result = await depositor.deposit(self._bridge_deposit_amount)
-
-            if not deposit_result.success:
-                return HyperliquidOpenResult(
-                    success=False,
-                    error=f"Bridge deposit failed: {deposit_result.error}",
-                )
-
-            logger.info("Bridge deposit succeeded, proceeding with short")
-            self._needs_bridge_deposit = False
-            self._bridge_deposit_amount = 0.0
 
         # First update leverage
         try:

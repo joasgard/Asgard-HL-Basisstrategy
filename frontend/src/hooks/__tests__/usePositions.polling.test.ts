@@ -13,28 +13,46 @@ vi.mock('../../api/positions', () => ({
   },
 }));
 
+vi.mock('@privy-io/react-auth', () => ({
+  usePrivy: () => ({ authenticated: true }),
+}));
+
+vi.mock('../../api/client', () => ({
+  formatErrorForDisplay: (err: unknown) => ({
+    title: 'Error',
+    message: (err as Error)?.message || 'Unknown error',
+    code: 'GEN-0001',
+  }),
+}));
+
 const mockAddToast = vi.fn();
+const mockAddErrorToast = vi.fn();
 const mockUpdatePosition = vi.fn();
 
+const mockStore = {
+  positions: [],
+  isLoading: false,
+  error: null,
+  selectedPosition: null,
+  totalPnl: 0,
+  totalValue: 0,
+  openPositionsCount: 0,
+  setPositions: vi.fn(),
+  addPosition: vi.fn(),
+  updatePosition: mockUpdatePosition,
+  removePosition: vi.fn(),
+  setLoading: vi.fn(),
+  setError: vi.fn(),
+  selectPosition: vi.fn(),
+};
+
 vi.mock('../../stores', () => ({
-  usePositionsStore: () => ({
-    positions: [],
-    isLoading: false,
-    error: null,
-    selectedPosition: null,
-    totalPnl: 0,
-    totalValue: 0,
-    openPositionsCount: 0,
-    setPositions: vi.fn(),
-    addPosition: vi.fn(),
-    updatePosition: mockUpdatePosition,
-    removePosition: vi.fn(),
-    setLoading: vi.fn(),
-    setError: vi.fn(),
-    selectPosition: vi.fn(),
-  }),
+  usePositionsStore: (selector?: (state: Record<string, unknown>) => unknown) => {
+    return selector ? selector(mockStore as unknown as Record<string, unknown>) : mockStore;
+  },
   useUIStore: () => ({
     addToast: mockAddToast,
+    addErrorToast: mockAddErrorToast,
   }),
 }));
 

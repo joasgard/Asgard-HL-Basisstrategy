@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, AsyncMock
 mock_privy = MagicMock()
 
 # Create mock PrivyClient class
-mock_privy_client_class = MagicMock
+mock_privy_client_class = MagicMock()
 mock_privy_client_instance = MagicMock()
 mock_privy_client_instance.wallet.sign_typed_data = AsyncMock(return_value="0xmocksignature")
 mock_privy_client_instance.wallet.sign_solana_transaction = AsyncMock(return_value=MagicMock(

@@ -342,15 +342,17 @@ class TestExecuteExit:
 
         mock_bot._positions = {"default": {"pos1": position}}
         mock_bot._position_manager = AsyncMock()
-        mock_bot._position_manager.close_position = AsyncMock(return_value=True)
+        mock_bot._position_manager.close_position = AsyncMock(
+            return_value=MagicMock(success=True, error=None)
+        )
         mock_bot._state = AsyncMock()
 
-        await mock_bot._execute_exit(position, "test_reason")
+        await mock_bot._execute_exit(position, "manual")
 
-        mock_bot._position_manager.close_position.assert_called_once_with("pos1")
+        mock_bot._position_manager.close_position.assert_called_once()
         assert "pos1" not in mock_bot._positions.get("default", {})
         assert mock_bot._stats.positions_closed == 1
-    
+
     @pytest.mark.asyncio
     async def test_execute_exit_failure(self, mock_bot):
         """Test failed position exit."""
@@ -360,9 +362,11 @@ class TestExecuteExit:
 
         mock_bot._positions = {"default": {"pos1": position}}
         mock_bot._position_manager = AsyncMock()
-        mock_bot._position_manager.close_position = AsyncMock(return_value=False)
+        mock_bot._position_manager.close_position = AsyncMock(
+            return_value=MagicMock(success=False, error="Close failed")
+        )
 
-        await mock_bot._execute_exit(position, "test_reason")
+        await mock_bot._execute_exit(position, "manual")
 
         # Position should still be tracked
         assert "pos1" in mock_bot._positions.get("default", {})

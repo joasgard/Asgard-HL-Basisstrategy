@@ -136,7 +136,6 @@ class TestPositionRecovery:
              patch('bot.core.bot.ArbitrumClient'), \
              patch('bot.core.bot.RiskEngine'), \
              patch('bot.core.bot.PositionSizer'), \
-             patch('bot.core.bot.LSTMonitor'), \
              patch('bot.core.bot.PauseController'), \
              patch('bot.core.bot.PositionManager') as mock_pm_class, \
              patch('bot.core.bot.OpportunityDetector'):
@@ -226,7 +225,6 @@ class TestPositionRecovery:
              patch('bot.core.bot.ArbitrumClient'), \
              patch('bot.core.bot.RiskEngine'), \
              patch('bot.core.bot.PositionSizer'), \
-             patch('bot.core.bot.LSTMonitor'), \
              patch('bot.core.bot.PauseController'), \
              patch('bot.core.bot.PositionManager') as mock_pm_class, \
              patch('bot.core.bot.OpportunityDetector'):
@@ -272,7 +270,6 @@ class TestPositionRecovery:
              patch('bot.core.bot.ArbitrumClient'), \
              patch('bot.core.bot.RiskEngine'), \
              patch('bot.core.bot.PositionSizer'), \
-             patch('bot.core.bot.LSTMonitor'), \
              patch('bot.core.bot.PauseController'), \
              patch('bot.core.bot.PositionManager') as mock_pm_class, \
              patch('bot.core.bot.OpportunityDetector'):
@@ -318,7 +315,6 @@ class TestPositionRecovery:
              patch('bot.core.bot.ArbitrumClient'), \
              patch('bot.core.bot.RiskEngine'), \
              patch('bot.core.bot.PositionSizer'), \
-             patch('bot.core.bot.LSTMonitor'), \
              patch('bot.core.bot.PauseController'), \
              patch('bot.core.bot.PositionManager') as mock_pm_class, \
              patch('bot.core.bot.OpportunityDetector'):
@@ -359,7 +355,6 @@ class TestPositionPersistence:
              patch('bot.core.bot.ArbitrumClient') as mock_arbitrum, \
              patch('bot.core.bot.RiskEngine'), \
              patch('bot.core.bot.PositionSizer') as mock_sizer, \
-             patch('bot.core.bot.LSTMonitor'), \
              patch('bot.core.bot.PauseController'), \
              patch('bot.core.bot.PositionManager') as mock_pm_class, \
              patch('bot.core.bot.OpportunityDetector'):
@@ -473,7 +468,6 @@ class TestPositionPersistence:
              patch('bot.core.bot.ArbitrumClient'), \
              patch('bot.core.bot.RiskEngine'), \
              patch('bot.core.bot.PositionSizer'), \
-             patch('bot.core.bot.LSTMonitor'), \
              patch('bot.core.bot.PauseController'), \
              patch('bot.core.bot.PositionManager') as mock_pm_class, \
              patch('bot.core.bot.OpportunityDetector'):
@@ -485,7 +479,7 @@ class TestPositionPersistence:
             mock_pm_class.return_value = mock_pm_instance
             mock_pm_instance.__aenter__ = AsyncMock(return_value=mock_pm_instance)
             mock_pm_instance.__aexit__ = AsyncMock(return_value=None)
-            mock_pm_instance.close_position = AsyncMock(return_value=True)
+            mock_pm_instance.close_position = AsyncMock(return_value=MagicMock(success=True, error=None))
             
             config = BotConfig(admin_api_key="test_key")
             bot = DeltaNeutralBot(config=config)
@@ -525,7 +519,6 @@ class TestStateRecovery:
              patch('bot.core.bot.ArbitrumClient'), \
              patch('bot.core.bot.RiskEngine'), \
              patch('bot.core.bot.PositionSizer'), \
-             patch('bot.core.bot.LSTMonitor'), \
              patch('bot.core.bot.PauseController'), \
              patch('bot.core.bot.PositionManager') as mock_pm_class, \
              patch('bot.core.bot.OpportunityDetector'):
@@ -569,7 +562,6 @@ class TestStateRecovery:
              patch('bot.core.bot.ArbitrumClient'), \
              patch('bot.core.bot.RiskEngine'), \
              patch('bot.core.bot.PositionSizer'), \
-             patch('bot.core.bot.LSTMonitor'), \
              patch('bot.core.bot.PauseController'), \
              patch('bot.core.bot.PositionManager') as mock_pm_class, \
              patch('bot.core.bot.OpportunityDetector'):
@@ -660,7 +652,6 @@ class TestRecoveryWithLSTPositions:
              patch('bot.core.bot.ArbitrumClient'), \
              patch('bot.core.bot.RiskEngine'), \
              patch('bot.core.bot.PositionSizer'), \
-             patch('bot.core.bot.LSTMonitor'), \
              patch('bot.core.bot.PauseController'), \
              patch('bot.core.bot.PositionManager') as mock_pm_class, \
              patch('bot.core.bot.OpportunityDetector'):

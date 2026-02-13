@@ -1,7 +1,9 @@
 """Positions API endpoints."""
 
 import asyncio
-from typing import List, Optional
+from datetime import datetime
+from decimal import Decimal
+from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 import uuid
@@ -21,6 +23,50 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/positions", tags=["positions"])
 
 
+# ---------------------------------------------------------------------------
+# DB fallback helpers (used when bot bridge is unavailable)
+# ---------------------------------------------------------------------------
+
+def _row_to_position_summary(row: Dict[str, Any]) -> PositionSummary:
+    """Convert a DB positions row to a PositionSummary with placeholder live data."""
+    data = {}
+    if row.get("data"):
+        try:
+            data = json.loads(row["data"]) if isinstance(row["data"], str) else row["data"]
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    opened_at = row.get("created_at") or datetime.utcnow()
+    hold_hours = (datetime.utcnow() - opened_at).total_seconds() / 3600 if isinstance(opened_at, datetime) else 0
+
+    return PositionSummary(
+        position_id=row["id"],
+        asset=data.get("asset", "SOL"),
+        status="open",
+        leverage=Decimal(str(data.get("leverage", 3))),
+        deployed_usd=Decimal(str(data.get("size_usd", 0))),
+        long_value_usd=Decimal("0"),
+        short_value_usd=Decimal("0"),
+        delta=Decimal("0"),
+        delta_ratio=Decimal("0"),
+        asgard_hf=Decimal("0"),
+        hyperliquid_mf=Decimal("0"),
+        total_pnl_usd=Decimal("0"),
+        funding_pnl_usd=Decimal("0"),
+        opened_at=opened_at,
+        hold_duration_hours=round(hold_hours, 2),
+    )
+
+
+async def _list_positions_from_db(user_id: str, db: Database) -> List[PositionSummary]:
+    """Read open positions from the database (no live data)."""
+    rows = await db.fetchall(
+        "SELECT id, user_id, data, created_at FROM positions WHERE user_id = $1 AND is_closed = 0",
+        (user_id,),
+    )
+    return [_row_to_position_summary(r) for r in rows]
+
+
 class OpenPositionRequest(BaseModel):
     """Request to open a new position."""
     asset: str = Field(..., description="Asset symbol (SOL, jitoSOL, jupSOL, INF)")
@@ -37,6 +83,20 @@ class OpenPositionResponse(BaseModel):
     position_id: Optional[str] = None
 
 
+class PreflightCheckResult(BaseModel):
+    """Result of a single preflight check."""
+    key: str
+    label: str
+    passed: bool
+    error: Optional[str] = None
+
+
+class PreflightResponse(BaseModel):
+    """Response from preflight checks."""
+    passed: bool
+    checks: List[PreflightCheckResult]
+
+
 class JobStatusResponse(BaseModel):
     """Status of a position opening job."""
     job_id: str
@@ -51,42 +111,67 @@ class JobStatusResponse(BaseModel):
 
 
 @router.get("", response_model=List[PositionSummary])
-async def list_positions(user: User = Depends(require_viewer)):
+async def list_positions(
+    user: User = Depends(require_viewer),
+    db: Database = Depends(get_db),
+):
     """
     List all open positions for the authenticated user.
     Requires viewer role or higher.
-    """
-    bot_bridge = require_bot_bridge()
 
-    try:
-        positions = await bot_bridge.get_positions(user_id=user.user_id)
-        return list(positions.values())
-    except Exception as e:
-        raise HTTPException(503, f"Bot unavailable: {e}")
+    Tries bot bridge first (live data); falls back to DB records.
+    """
+    from backend.dashboard.dependencies import get_bot_bridge
+
+    bot_bridge = get_bot_bridge()
+    if bot_bridge:
+        try:
+            positions = await bot_bridge.get_positions(user_id=user.user_id)
+            return list(positions.values())
+        except Exception:
+            pass  # Fall through to DB query
+
+    # Fallback: read positions from database
+    return await _list_positions_from_db(user.user_id, db)
 
 
 @router.get("/{position_id}", response_model=PositionDetail)
-async def get_position(position_id: str, user: User = Depends(require_viewer)):
+async def get_position(
+    position_id: str,
+    user: User = Depends(require_viewer),
+    db: Database = Depends(get_db),
+):
     """
     Get detailed information for a specific position.
     Requires viewer role or higher.
     """
-    bot_bridge = require_bot_bridge()
+    from backend.dashboard.dependencies import get_bot_bridge
 
-    try:
-        # First check if position belongs to user
-        positions = await bot_bridge.get_positions(user_id=user.user_id)
-        if position_id not in positions:
-            raise HTTPException(404, "Position not found")
+    bot_bridge = get_bot_bridge()
+    if bot_bridge:
+        try:
+            positions = await bot_bridge.get_positions(user_id=user.user_id)
+            if position_id not in positions:
+                raise HTTPException(404, "Position not found")
+            detail = await bot_bridge.get_position_detail(position_id)
+            return detail
+        except HTTPException:
+            raise
+        except Exception:
+            pass  # Fall through to DB query
 
-        detail = await bot_bridge.get_position_detail(position_id)
-        return detail
-    except HTTPException:
-        raise
-    except Exception as e:
-        if "404" in str(e):
-            raise HTTPException(404, "Position not found")
-        raise HTTPException(503, f"Bot unavailable: {e}")
+    # Fallback: read from database
+    row = await db.fetchone(
+        "SELECT id, user_id, data, created_at FROM positions WHERE id = $1 AND user_id = $2",
+        (position_id, user.user_id),
+    )
+    if not row:
+        raise HTTPException(404, "Position not found")
+    summary = _row_to_position_summary(row)
+    return PositionDetail(
+        **summary.model_dump(),
+        sizing={}, asgard={}, hyperliquid={}, pnl={}, risk={},
+    )
 
 
 @router.post("/open", response_model=OpenPositionResponse)
@@ -147,6 +232,53 @@ async def open_position(
     except Exception as e:
         logger.error(f"Failed to create position job: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to create position")
+
+
+@router.post("/preflight", response_model=PreflightResponse)
+async def run_preflight(
+    request: OpenPositionRequest,
+    user: User = Depends(require_operator),
+    db: Database = Depends(get_db),
+):
+    """
+    Run preflight checks without opening a position.
+
+    Returns structured per-check results so the UI can display a checklist.
+    """
+    from bot.venues.user_context import UserTradingContext
+    from bot.core.position_manager import PositionManager
+
+    try:
+        ctx = await UserTradingContext.from_user_id(user.user_id, db)
+    except (ValueError, ImportError) as e:
+        logger.warning(f"Cannot create trading context for preflight: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+    try:
+        async with ctx:
+            pm = PositionManager.from_user_context(ctx)
+            await pm.__aenter__()
+            try:
+                opportunity, _asset, _protocol = _build_opportunity(
+                    f"preflight-{uuid.uuid4()}", request
+                )
+                result = await pm.run_preflight_checks(opportunity)
+            finally:
+                await pm.__aexit__(None, None, None)
+    except Exception as e:
+        logger.error(f"Preflight checks crashed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Preflight checks failed unexpectedly")
+
+    # Map flat errors list back to individual checks.
+    # run_preflight_checks appends one error per failed check, in order.
+    error_iter = iter(result.errors)
+    checks: List[PreflightCheckResult] = []
+    for key, label in _CHECK_LABELS.items():
+        passed = result.checks.get(key, False)
+        error = None if passed else next(error_iter, None)
+        checks.append(PreflightCheckResult(key=key, label=label, passed=passed, error=error))
+
+    return PreflightResponse(passed=result.passed, checks=checks)
 
 
 def _map_error_to_code(error_msg: str, stage: str) -> str:
@@ -231,6 +363,79 @@ def _map_error_to_code(error_msg: str, stage: str) -> str:
     return "GEN-0001"
 
 
+def _build_opportunity(job_id: str, request: OpenPositionRequest):
+    """Build an ArbitrageOpportunity from an open-position request.
+
+    Returns (opportunity, asset_enum, selected_protocol).
+    """
+    from shared.config.assets import Asset
+    from shared.models.common import Protocol
+    from shared.models.funding import FundingRate, AsgardRates
+    from shared.models.opportunity import ArbitrageOpportunity, OpportunityScore
+
+    asset = Asset(request.asset.upper())
+
+    venue_map = {
+        "marginfi": Protocol.MARGINFI,
+        "kamino": Protocol.KAMINO,
+        "solend": Protocol.SOLEND,
+        "drift": Protocol.DRIFT,
+    }
+    selected_protocol = venue_map.get(
+        (request.venue or "").lower(), Protocol.KAMINO
+    )
+
+    deployed_capital = Decimal(str(request.size_usd))
+    leverage_dec = Decimal(str(request.leverage))
+    position_size = deployed_capital * leverage_dec
+
+    current_funding = FundingRate(
+        timestamp=datetime.utcnow(),
+        coin=asset.value,
+        rate_8hr=Decimal("-0.0001"),
+    )
+
+    asgard_rates = AsgardRates(
+        protocol_id=selected_protocol.value,
+        token_a_mint="",
+        token_b_mint="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        token_a_lending_apy=Decimal("0.05"),
+        token_b_borrowing_apy=Decimal("0.08"),
+        token_b_max_borrow_capacity=position_size * 2,
+    )
+
+    opportunity = ArbitrageOpportunity(
+        id=f"direct-{job_id}",
+        asset=asset,
+        selected_protocol=selected_protocol,
+        asgard_rates=asgard_rates,
+        current_funding=current_funding,
+        funding_volatility=Decimal("0.3"),
+        leverage=leverage_dec,
+        deployed_capital_usd=deployed_capital,
+        position_size_usd=position_size,
+        score=OpportunityScore(
+            funding_apy=abs(current_funding.rate_annual),
+            net_carry_apy=Decimal("0"),
+        ),
+        price_deviation=Decimal("0"),
+        preflight_checks_passed=False,
+    )
+
+    return opportunity, asset, selected_protocol
+
+
+# Check label mapping (insertion-ordered to match run_preflight_checks)
+_CHECK_LABELS = {
+    "wallet_balance": "Wallet balances",
+    "price_consensus": "Price consensus",
+    "funding_validation": "Funding rates",
+    "protocol_capacity": "Protocol capacity",
+    "fee_market": "Fee market",
+    "opportunity_simulation": "Position simulation",
+}
+
+
 async def _execute_position_direct(
     job_id: str,
     request: OpenPositionRequest,
@@ -245,7 +450,6 @@ async def _execute_position_direct(
     """
     from bot.venues.user_context import UserTradingContext
     from bot.core.position_manager import PositionManager
-    from shared.config.assets import Asset
 
     # Resolve user's wallets
     ctx = await UserTradingContext.from_user_id(user_id, db)
@@ -256,22 +460,7 @@ async def _execute_position_direct(
         await pm.__aenter__()
 
         try:
-            # Map asset string to enum
-            asset = Asset(request.asset.upper())
-
-            # Build a minimal opportunity for the position manager
-            from shared.models.opportunity import ArbitrageOpportunity
-            from decimal import Decimal
-
-            opportunity = ArbitrageOpportunity(
-                asset=asset,
-                total_expected_apy=Decimal("0"),
-                funding_rate=Decimal("0"),
-                net_carry_apy=Decimal("0"),
-                lst_staking_apy=Decimal("0"),
-                protocol=request.venue,
-                leverage=Decimal(str(request.leverage)),
-            )
+            opportunity, _asset, _protocol = _build_opportunity(job_id, request)
 
             # Run preflight checks
             preflight = await pm.run_preflight_checks(opportunity)
@@ -284,10 +473,7 @@ async def _execute_position_direct(
                 }
 
             # Execute position opening
-            result = await pm.open_position(
-                opportunity=opportunity,
-                capital_deployment=Decimal(str(request.size_usd)),
-            )
+            result = await pm.open_position(opportunity=opportunity)
 
             if result.success and result.position:
                 position = result.position
@@ -646,6 +832,81 @@ async def _execute_close_job(
             )
         except Exception:
             pass  # Best effort
+
+
+class CloseAllResponse(BaseModel):
+    """Response from closing all positions."""
+    success: bool
+    message: str
+    positions_closed: int = 0
+    job_ids: List[str] = []
+
+
+@router.post("/close-all", response_model=CloseAllResponse)
+async def close_all_positions(
+    user: User = Depends(require_operator),
+    db: Database = Depends(get_db),
+):
+    """
+    Emergency close ALL open positions for the current user.
+
+    Pauses the strategy first, then closes each position sequentially.
+    """
+    # Pause strategy immediately to prevent new entries
+    await db.execute(
+        """INSERT INTO user_strategy_config (user_id, enabled, paused_at, paused_reason)
+           VALUES ($1, FALSE, NOW(), 'emergency_close_all')
+           ON CONFLICT (user_id)
+           DO UPDATE SET enabled = FALSE, paused_at = NOW(),
+                         paused_reason = 'emergency_close_all', updated_at = NOW()""",
+        (user.user_id,),
+    )
+
+    # Get all open positions for this user
+    rows = await db.fetchall(
+        "SELECT id FROM positions WHERE user_id = $1 AND is_closed = 0",
+        (user.user_id,),
+    )
+
+    if not rows:
+        return CloseAllResponse(
+            success=True,
+            message="No open positions to close. Strategy paused.",
+            positions_closed=0,
+        )
+
+    # Create close jobs for each position
+    job_ids = []
+    for row in rows:
+        position_id = row["id"]
+        job_id = str(uuid.uuid4())
+
+        await db.execute(
+            """INSERT INTO position_jobs (job_id, user_id, status, params, created_at)
+               VALUES ($1, $2, 'pending', $3, NOW())""",
+            (job_id, user.user_id, json.dumps({
+                "action": "close",
+                "position_id": position_id,
+                "source": "emergency_close_all",
+            })),
+        )
+
+        asyncio.create_task(
+            _execute_close_job(job_id, position_id, user.user_id, db)
+        )
+        job_ids.append(job_id)
+
+    logger.warning(
+        "Emergency close-all for user %s: %d positions, jobs=%s",
+        user.user_id, len(rows), job_ids,
+    )
+
+    return CloseAllResponse(
+        success=True,
+        message=f"Closing {len(rows)} position(s). Strategy paused.",
+        positions_closed=len(rows),
+        job_ids=job_ids,
+    )
 
 
 @router.get("/jobs", response_model=List[JobStatusResponse])

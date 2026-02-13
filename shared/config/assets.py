@@ -33,7 +33,7 @@ ASSETS: Dict[Asset, AssetMetadata] = {
     ),
     Asset.JITOSOL: AssetMetadata(
         symbol="jitoSOL",
-        mint="jupSoLaHXQiZZTSfEWMTRRgpnyFm8f6sZdosWBjx93v",
+        mint="J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn",
         decimals=9,
         is_lst=True,
         staking_apy=0.08,  # ~8% staking yield

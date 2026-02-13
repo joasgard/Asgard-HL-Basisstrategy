@@ -53,7 +53,7 @@ describe('StrategyPerformance', () => {
     render(<StrategyPerformance leverage={3.0} />);
 
     expect(screen.getByText('HL Funding (annualized)')).toBeInTheDocument();
-    expect(screen.getByText('-3.00%')).toBeInTheDocument();
+    expect(screen.getByText('+3.00%')).toBeInTheDocument();
   });
 
   it('should render Asgard net APY', () => {

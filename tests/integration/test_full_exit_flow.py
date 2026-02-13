@@ -80,7 +80,6 @@ class TestFullExitFlow:
              patch('bot.core.bot.ArbitrumClient'), \
              patch('bot.core.bot.RiskEngine'), \
              patch('bot.core.bot.PositionSizer'), \
-             patch('bot.core.bot.LSTMonitor'), \
              patch('bot.core.bot.PauseController'), \
              patch('bot.core.bot.PositionManager') as mock_pm_class, \
              patch('bot.core.bot.OpportunityDetector'):
@@ -92,7 +91,7 @@ class TestFullExitFlow:
             mock_pm_class.return_value = mock_pm_instance
             mock_pm_instance.__aenter__ = AsyncMock(return_value=mock_pm_instance)
             mock_pm_instance.__aexit__ = AsyncMock(return_value=None)
-            mock_pm_instance.close_position = AsyncMock(return_value=True)
+            mock_pm_instance.close_position = AsyncMock(return_value=MagicMock(success=True, error=None))
             
             config = BotConfig(admin_api_key="test_key")
             bot = DeltaNeutralBot(config=config)
@@ -125,7 +124,6 @@ class TestFullExitFlow:
              patch('bot.core.bot.ArbitrumClient'), \
              patch('bot.core.bot.RiskEngine'), \
              patch('bot.core.bot.PositionSizer'), \
-             patch('bot.core.bot.LSTMonitor'), \
              patch('bot.core.bot.PauseController'), \
              patch('bot.core.bot.PositionManager') as mock_pm_class, \
              patch('bot.core.bot.OpportunityDetector'):
@@ -137,7 +135,7 @@ class TestFullExitFlow:
             mock_pm_class.return_value = mock_pm_instance
             mock_pm_instance.__aenter__ = AsyncMock(return_value=mock_pm_instance)
             mock_pm_instance.__aexit__ = AsyncMock(return_value=None)
-            mock_pm_instance.close_position = AsyncMock(return_value=True)
+            mock_pm_instance.close_position = AsyncMock(return_value=MagicMock(success=True, error=None))
             
             config = BotConfig(admin_api_key="test_key")
             bot = DeltaNeutralBot(config=config)
@@ -150,9 +148,9 @@ class TestFullExitFlow:
 
             # Note: The position manager is responsible for the ordering,
             # we just verify it was called
-            mock_pm_instance.close_position.assert_called_once_with(
-                mock_open_position.position_id
-            )
+            mock_pm_instance.close_position.assert_called_once()
+            call_args = mock_pm_instance.close_position.call_args
+            assert call_args[0][0] == mock_open_position.position_id
             
             await bot.shutdown()
     
@@ -165,7 +163,6 @@ class TestFullExitFlow:
              patch('bot.core.bot.ArbitrumClient'), \
              patch('bot.core.bot.RiskEngine'), \
              patch('bot.core.bot.PositionSizer'), \
-             patch('bot.core.bot.LSTMonitor'), \
              patch('bot.core.bot.PauseController'), \
              patch('bot.core.bot.PositionManager') as mock_pm_class, \
              patch('bot.core.bot.OpportunityDetector'):
@@ -206,7 +203,6 @@ class TestFullExitFlow:
              patch('bot.core.bot.ArbitrumClient'), \
              patch('bot.core.bot.RiskEngine') as mock_risk_class, \
              patch('bot.core.bot.PositionSizer'), \
-             patch('bot.core.bot.LSTMonitor'), \
              patch('bot.core.bot.PauseController') as mock_pause_class, \
              patch('bot.core.bot.PositionManager') as mock_pm_class, \
              patch('bot.core.bot.OpportunityDetector'):
@@ -231,7 +227,7 @@ class TestFullExitFlow:
             mock_pm_class.return_value = mock_pm_instance
             mock_pm_instance.__aenter__ = AsyncMock(return_value=mock_pm_instance)
             mock_pm_instance.__aexit__ = AsyncMock(return_value=None)
-            mock_pm_instance.close_position = AsyncMock(return_value=True)
+            mock_pm_instance.close_position = AsyncMock(return_value=MagicMock(success=True, error=None))
             
             config = BotConfig(
                 admin_api_key="test_key",
@@ -260,7 +256,6 @@ class TestFullExitFlow:
              patch('bot.core.bot.ArbitrumClient'), \
              patch('bot.core.bot.RiskEngine') as mock_risk_class, \
              patch('bot.core.bot.PositionSizer'), \
-             patch('bot.core.bot.LSTMonitor'), \
              patch('bot.core.bot.PauseController') as mock_pause_class, \
              patch('bot.core.bot.PositionManager') as mock_pm_class, \
              patch('bot.core.bot.OpportunityDetector'):
@@ -288,7 +283,7 @@ class TestFullExitFlow:
             mock_pm_class.return_value = mock_pm_instance
             mock_pm_instance.__aenter__ = AsyncMock(return_value=mock_pm_instance)
             mock_pm_instance.__aexit__ = AsyncMock(return_value=None)
-            mock_pm_instance.close_position = AsyncMock(return_value=True)
+            mock_pm_instance.close_position = AsyncMock(return_value=MagicMock(success=True, error=None))
             
             config = BotConfig(
                 admin_api_key="test_key",
@@ -330,7 +325,6 @@ class TestExitCallbacks:
              patch('bot.core.bot.ArbitrumClient'), \
              patch('bot.core.bot.RiskEngine'), \
              patch('bot.core.bot.PositionSizer'), \
-             patch('bot.core.bot.LSTMonitor'), \
              patch('bot.core.bot.PauseController'), \
              patch('bot.core.bot.PositionManager') as mock_pm_class, \
              patch('bot.core.bot.OpportunityDetector'):
@@ -342,7 +336,7 @@ class TestExitCallbacks:
             mock_pm_class.return_value = mock_pm_instance
             mock_pm_instance.__aenter__ = AsyncMock(return_value=mock_pm_instance)
             mock_pm_instance.__aexit__ = AsyncMock(return_value=None)
-            mock_pm_instance.close_position = AsyncMock(return_value=True)
+            mock_pm_instance.close_position = AsyncMock(return_value=MagicMock(success=True, error=None))
             
             config = BotConfig(admin_api_key="test_key")
             bot = DeltaNeutralBot(config=config)
@@ -379,7 +373,6 @@ class TestExitCallbacks:
              patch('bot.core.bot.ArbitrumClient'), \
              patch('bot.core.bot.RiskEngine'), \
              patch('bot.core.bot.PositionSizer'), \
-             patch('bot.core.bot.LSTMonitor'), \
              patch('bot.core.bot.PauseController'), \
              patch('bot.core.bot.PositionManager') as mock_pm_class, \
              patch('bot.core.bot.OpportunityDetector'):
@@ -391,7 +384,7 @@ class TestExitCallbacks:
             mock_pm_class.return_value = mock_pm_instance
             mock_pm_instance.__aenter__ = AsyncMock(return_value=mock_pm_instance)
             mock_pm_instance.__aexit__ = AsyncMock(return_value=None)
-            mock_pm_instance.close_position = AsyncMock(return_value=True)
+            mock_pm_instance.close_position = AsyncMock(return_value=MagicMock(success=True, error=None))
             
             config = BotConfig(admin_api_key="test_key")
             bot = DeltaNeutralBot(config=config)
@@ -461,7 +454,6 @@ class TestExitWithDifferentAssets:
              patch('bot.core.bot.ArbitrumClient'), \
              patch('bot.core.bot.RiskEngine'), \
              patch('bot.core.bot.PositionSizer'), \
-             patch('bot.core.bot.LSTMonitor'), \
              patch('bot.core.bot.PauseController'), \
              patch('bot.core.bot.PositionManager') as mock_pm_class, \
              patch('bot.core.bot.OpportunityDetector'):
@@ -473,7 +465,7 @@ class TestExitWithDifferentAssets:
             mock_pm_class.return_value = mock_pm_instance
             mock_pm_instance.__aenter__ = AsyncMock(return_value=mock_pm_instance)
             mock_pm_instance.__aexit__ = AsyncMock(return_value=None)
-            mock_pm_instance.close_position = AsyncMock(return_value=True)
+            mock_pm_instance.close_position = AsyncMock(return_value=MagicMock(success=True, error=None))
             
             config = BotConfig(admin_api_key="test_key")
             bot = DeltaNeutralBot(config=config)
@@ -502,7 +494,6 @@ class TestExitWhilePaused:
              patch('bot.core.bot.ArbitrumClient'), \
              patch('bot.core.bot.RiskEngine') as mock_risk_class, \
              patch('bot.core.bot.PositionSizer'), \
-             patch('bot.core.bot.LSTMonitor'), \
              patch('bot.core.bot.PauseController') as mock_pause_class, \
              patch('bot.core.bot.PositionManager') as mock_pm_class, \
              patch('bot.core.bot.OpportunityDetector'):

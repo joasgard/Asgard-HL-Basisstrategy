@@ -74,6 +74,8 @@ class ExitReason(str, Enum):
     CHAIN_OUTAGE = "chain_outage"
     STOP_LOSS = "stop_loss"
     TARGET_PROFIT = "target_profit"
+    NEGATIVE_APY = "negative_apy"
+    DELTA_DRIFT = "delta_drift"
 
 
 # Type aliases

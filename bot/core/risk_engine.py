@@ -21,6 +21,7 @@ from datetime import datetime, timedelta
 
 from shared.config.assets import Asset
 from shared.config.settings import get_risk_limits
+from shared.models.common import ExitReason
 from shared.models.position import AsgardPosition, HyperliquidPosition, CombinedPosition
 from shared.utils.logger import get_logger
 
@@ -34,17 +35,7 @@ class RiskLevel(Enum):
     CRITICAL = "critical"    # Immediate action required
 
 
-class ExitReason(Enum):
-    """Reason for position exit."""
-    NEGATIVE_APY = "negative_apy"
-    ASGARD_HEALTH_FACTOR = "asgard_health_factor"
-    HYPERLIQUID_MARGIN = "hyperliquid_margin"
-    PRICE_DEVIATION = "price_deviation"
-    LST_DEPEG = "lst_depeg"
-    MANUAL_OVERRIDE = "manual_override"
-    CHAIN_OUTAGE = "chain_outage"
-    FUNDING_FLIP = "funding_flip"
-    DELTA_DRIFT = "delta_drift"
+    # ExitReason is imported from shared.models.common
 
 
 @dataclass
@@ -215,6 +206,7 @@ class RiskEngine:
         self,
         position: AsgardPosition,
         current_health_factor: Optional[Decimal] = None,
+        user_id: Optional[str] = None,
     ) -> HealthCheckResult:
         """
         Check Asgard position health factor.
@@ -246,8 +238,11 @@ class RiskEngine:
         proximity_threshold = self.min_health_factor * (Decimal("1") + self.LIQUIDATION_PROXIMITY_PCT)
         in_proximity = hf <= proximity_threshold
         
+        # C4: Namespace proximity key by user_id for multi-tenant isolation
+        pda_key = position.position_pda
+        proximity_key = f"{user_id}:asgard_{pda_key}" if user_id else f"asgard_{pda_key}"
         proximity_start = self._update_proximity_tracking(
-            f"asgard_{position.position_pda}",
+            proximity_key,
             in_proximity
         )
         
@@ -270,6 +265,7 @@ class RiskEngine:
         self,
         position: HyperliquidPosition,
         current_margin_fraction: Optional[Decimal] = None,
+        user_id: Optional[str] = None,
     ) -> MarginCheckResult:
         """
         Check Hyperliquid margin fraction.
@@ -298,8 +294,11 @@ class RiskEngine:
         proximity_threshold = self.margin_fraction_threshold * (Decimal("1") + self.LIQUIDATION_PROXIMITY_PCT)
         in_proximity = mf <= proximity_threshold
         
+        # C4: Namespace proximity key by user_id for multi-tenant isolation
+        pos_key = position.position_id
+        proximity_key = f"{user_id}:hyperliquid_{pos_key}" if user_id else f"hyperliquid_{pos_key}"
         proximity_start = self._update_proximity_tracking(
-            f"hyperliquid_{position.position_id}",
+            proximity_key,
             in_proximity
         )
         
@@ -450,12 +449,12 @@ class RiskEngine:
         
         # 2. Asgard health factor check
         asgard_health = self.check_asgard_health(
-            position.asgard_position, current_health_factor
+            position.asgard, current_health_factor
         )
         if asgard_health.should_close:
             return ExitDecision(
                 should_exit=True,
-                reason=ExitReason.ASGARD_HEALTH_FACTOR,
+                reason=ExitReason.HEALTH_FACTOR,
                 level=asgard_health.level,
                 details={
                     "health_factor": float(asgard_health.health_factor),
@@ -467,12 +466,12 @@ class RiskEngine:
         
         # 3. Hyperliquid margin check
         hyperliquid_margin = self.check_hyperliquid_margin(
-            position.hyperliquid_position, current_margin_fraction
+            position.hyperliquid, current_margin_fraction
         )
         if hyperliquid_margin.should_close:
             return ExitDecision(
                 should_exit=True,
-                reason=ExitReason.HYPERLIQUID_MARGIN,
+                reason=ExitReason.MARGIN_FRACTION,
                 level=hyperliquid_margin.level,
                 details={
                     "margin_fraction": float(hyperliquid_margin.margin_fraction),
@@ -508,7 +507,7 @@ class RiskEngine:
         if current_apy is not None and current_apy < 0:
             # Only exit if closing cost < expected loss from holding
             # Assume 5 minutes of loss at current APY
-            position_value = position.asgard_position.position_size_usd
+            position_value = position.asgard.position_size_usd
             five_min_loss = position_value * abs(current_apy) * Decimal("5") / Decimal("525600")  # mins per year
             
             close_cost = estimated_close_cost or Decimal("0")
@@ -545,10 +544,16 @@ class RiskEngine:
                     timestamp=now,
                 )
         
-        # No exit trigger
+        # No exit trigger — report the worse of the two levels
+        _level_order = {RiskLevel.NORMAL: 0, RiskLevel.WARNING: 1, RiskLevel.CRITICAL: 2}
+        worst_level = (
+            asgard_health.level
+            if _level_order.get(asgard_health.level, 0) >= _level_order.get(hyperliquid_margin.level, 0)
+            else hyperliquid_margin.level
+        )
         return ExitDecision(
             should_exit=False,
-            level=max(asgard_health.level.value, hyperliquid_margin.level.value),
+            level=worst_level,
             timestamp=now,
         )
     
@@ -578,14 +583,17 @@ class RiskEngine:
     
     def get_risk_summary(self, position: CombinedPosition) -> Dict[str, Any]:
         """Get comprehensive risk summary for a position."""
-        asgard_health = self.check_asgard_health(position.asgard_position)
-        hyperliquid_margin = self.check_hyperliquid_margin(position.hyperliquid_position)
+        asgard_health = self.check_asgard_health(position.asgard)
+        hyperliquid_margin = self.check_hyperliquid_margin(position.hyperliquid)
         
+        _level_order = {RiskLevel.NORMAL: 0, RiskLevel.WARNING: 1, RiskLevel.CRITICAL: 2}
+        worst = (
+            asgard_health.level
+            if _level_order.get(asgard_health.level, 0) >= _level_order.get(hyperliquid_margin.level, 0)
+            else hyperliquid_margin.level
+        )
         return {
-            "overall_risk": max(
-                asgard_health.level.value, 
-                hyperliquid_margin.level.value
-            ),
+            "overall_risk": worst.value,
             "asgard": {
                 "health_factor": float(asgard_health.health_factor),
                 "level": asgard_health.level.value,

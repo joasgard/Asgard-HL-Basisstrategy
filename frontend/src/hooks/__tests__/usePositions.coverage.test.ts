@@ -13,6 +13,18 @@ vi.mock('../../api/positions', () => ({
   },
 }));
 
+vi.mock('@privy-io/react-auth', () => ({
+  usePrivy: () => ({ authenticated: true }),
+}));
+
+vi.mock('../../api/client', () => ({
+  formatErrorForDisplay: (err: unknown) => ({
+    title: 'Error',
+    message: (err as Error)?.message || 'Unknown error',
+    code: 'GEN-0001',
+  }),
+}));
+
 const mockStore = {
   positions: [],
   isLoading: false,
@@ -31,9 +43,12 @@ const mockStore = {
 };
 
 vi.mock('../../stores', () => ({
-  usePositionsStore: () => mockStore,
+  usePositionsStore: (selector?: (state: Record<string, unknown>) => unknown) => {
+    return selector ? selector(mockStore as unknown as Record<string, unknown>) : mockStore;
+  },
   useUIStore: () => ({
     addToast: vi.fn(),
+    addErrorToast: vi.fn(),
   }),
 }));
 
@@ -49,7 +64,7 @@ describe('usePositions - Additional Coverage', () => {
     await result.current.fetchPositions();
 
     await waitFor(() => {
-      expect(mockStore.setError).toHaveBeenCalledWith('Failed to fetch positions');
+      expect(mockStore.setError).toHaveBeenCalledWith('Unknown error');
     });
   });
 

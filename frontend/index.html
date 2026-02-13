@@ -23,6 +23,8 @@
   </head>
   <body>
     <div id="root"></div>
+    <script src="/buffer-global.js"></script>
+    <script>window.Buffer = bufferModule.Buffer; window.global = window;</script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

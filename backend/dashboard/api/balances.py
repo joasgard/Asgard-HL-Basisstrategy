@@ -125,41 +125,37 @@ async def _get_hl_clearinghouse_balance(evm_address: str) -> Optional[float]:
 
 def _check_sufficient_funds(
     solana: Optional[ChainBalance],
-    arbitrum: Optional[ChainBalance]
+    hl_clearinghouse: Optional[float],
 ) -> tuple[bool, str]:
     """
     Check if user has sufficient funds to trade.
-    
+
+    Checks:
+    - Solana: SOL for gas + USDC for Asgard collateral
+    - Hyperliquid: USDC clearinghouse balance for short margin
+
+    Arbitrum is NOT checked — it's only a pass-through for deposits to HL.
+
     Returns:
         (has_sufficient, reason)
     """
-    if not solana and not arbitrum:
-        return False, "No wallet addresses configured"
-    
     # Check Solana
-    if solana:
-        if solana.native_balance < 0.05:  # Need SOL for gas
-            return False, f"Insufficient SOL for gas: {solana.native_balance:.4f} SOL (need 0.05)"
-        
-        usdc_solana = next((t for t in solana.tokens if t.symbol == "USDC"), None)
-        if not usdc_solana or usdc_solana.balance < 10:
-            balance = usdc_solana.balance if usdc_solana else 0
-            return False, f"Insufficient USDC on Solana: ${balance:.2f} (need $10)"
-    else:
+    if not solana:
         return False, "Solana wallet not configured"
-    
-    # Check Arbitrum (warn if low, but don't block)
-    if arbitrum:
-        if arbitrum.native_balance < 0.001:  # Need ETH for gas
-            logger.warning("Low ETH balance on Arbitrum for gas")
-        
-        usdc_arbitrum = next((t for t in arbitrum.tokens if t.symbol == "USDC"), None)
-        if not usdc_arbitrum or usdc_arbitrum.balance < 10:
-            balance = usdc_arbitrum.balance if usdc_arbitrum else 0
-            return False, f"Insufficient USDC on Arbitrum: ${balance:.2f} (need $10)"
-    else:
-        return False, "Arbitrum wallet not configured"
-    
+
+    if solana.native_balance < 0.05:
+        return False, f"Insufficient SOL for gas: {solana.native_balance:.4f} SOL (need 0.05)"
+
+    usdc_solana = next((t for t in solana.tokens if t.symbol == "USDC"), None)
+    if not usdc_solana or usdc_solana.balance < 10:
+        balance = usdc_solana.balance if usdc_solana else 0
+        return False, f"Insufficient USDC on Solana: ${balance:.2f} (need $10)"
+
+    # Check Hyperliquid clearinghouse balance
+    if hl_clearinghouse is None or hl_clearinghouse < 10:
+        balance = hl_clearinghouse or 0
+        return False, f"Insufficient USDC on Hyperliquid: ${balance:.2f} (need $10). Deposit USDC to Hyperliquid first."
+
     return True, ""
 
 
@@ -175,16 +171,19 @@ async def get_balances(
     Requires authentication.
     """
     # Get user's wallet addresses from database
+    # Prefer server wallet addresses (Phase 5); fall back to embedded
     row = await db.fetchone(
-        "SELECT solana_address, evm_address FROM users WHERE id = $1",
+        """SELECT solana_address, evm_address,
+                  server_solana_address, server_evm_address
+           FROM users WHERE id = $1""",
         (user.user_id,)
     )
-    
+
     if not row:
         raise HTTPException(404, "User not found")
-    
-    solana_address = row.get("solana_address")
-    evm_address = row.get("evm_address")
+
+    solana_address = row.get("server_solana_address") or row.get("solana_address")
+    evm_address = row.get("server_evm_address") or row.get("evm_address")
     
     # Fetch balances
     solana_balance = None
@@ -198,8 +197,8 @@ async def get_balances(
         arbitrum_balance = await _get_arbitrum_balances(evm_address)
         hl_clearinghouse = await _get_hl_clearinghouse_balance(evm_address)
     
-    # Check if sufficient funds
-    has_sufficient, reason = _check_sufficient_funds(solana_balance, arbitrum_balance)
+    # Check if sufficient funds (Solana + HL clearinghouse)
+    has_sufficient, reason = _check_sufficient_funds(solana_balance, hl_clearinghouse)
     
     if not has_sufficient:
         logger.info(f"User {user.user_id} has insufficient funds: {reason}")

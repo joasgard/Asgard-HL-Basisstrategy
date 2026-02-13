@@ -1012,15 +1012,11 @@ class TestHyperliquidBalancePreflight:
         )
 
     @pytest.mark.asyncio
-    async def test_hl_balance_sufficient_no_bridge_needed(self, mock_opportunity):
-        """Test preflight passes without bridge when HL has enough."""
+    async def test_hl_balance_sufficient(self, mock_opportunity):
+        """Test preflight passes when HL has sufficient balance."""
         mock_solana = AsyncMock()
         mock_solana.get_balance = AsyncMock(return_value=1.0)
         mock_solana.get_token_balance = AsyncMock(return_value=10000)
-
-        mock_arbitrum = AsyncMock()
-        mock_arbitrum.get_balance = AsyncMock(return_value=Decimal("0.1"))
-        mock_arbitrum.get_usdc_balance = AsyncMock(return_value=Decimal("5000"))
 
         mock_hl_trader = AsyncMock()
         mock_hl_trader.get_deposited_balance = AsyncMock(return_value=6000.0)  # > 5000 margin
@@ -1037,24 +1033,19 @@ class TestHyperliquidBalancePreflight:
             price_consensus=mock_consensus,
             fill_validator=MagicMock(),
             solana_client=mock_solana,
-            arbitrum_client=mock_arbitrum,
+            arbitrum_client=AsyncMock(),
         )
 
         result = await manager.run_preflight_checks(mock_opportunity)
 
         assert result.checks["wallet_balance"] is True
-        assert manager._needs_bridge_deposit is False
 
     @pytest.mark.asyncio
-    async def test_hl_balance_low_arb_usdc_available_sets_bridge_flag(self, mock_opportunity):
-        """Test that low HL balance + available Arb USDC sets bridge flag."""
+    async def test_hl_balance_low_fails_preflight(self, mock_opportunity):
+        """Test preflight fails when HL balance is insufficient (no auto-bridge)."""
         mock_solana = AsyncMock()
         mock_solana.get_balance = AsyncMock(return_value=1.0)
         mock_solana.get_token_balance = AsyncMock(return_value=10000)
-
-        mock_arbitrum = AsyncMock()
-        mock_arbitrum.get_balance = AsyncMock(return_value=Decimal("0.1"))
-        mock_arbitrum.get_usdc_balance = AsyncMock(return_value=Decimal("6000"))
 
         mock_hl_trader = AsyncMock()
         mock_hl_trader.get_deposited_balance = AsyncMock(return_value=100.0)  # Low
@@ -1071,28 +1062,23 @@ class TestHyperliquidBalancePreflight:
             price_consensus=mock_consensus,
             fill_validator=MagicMock(),
             solana_client=mock_solana,
-            arbitrum_client=mock_arbitrum,
+            arbitrum_client=AsyncMock(),
         )
 
         result = await manager.run_preflight_checks(mock_opportunity)
 
-        assert result.checks["wallet_balance"] is True  # Soft pass
-        assert manager._needs_bridge_deposit is True
-        assert manager._bridge_deposit_amount > 0
+        assert result.checks["wallet_balance"] is False
+        assert any("balance" in e.lower() for e in result.errors)
 
     @pytest.mark.asyncio
-    async def test_hl_and_arb_both_low_fails(self, mock_opportunity):
-        """Test preflight fails when both HL and Arbitrum USDC are low."""
+    async def test_hl_balance_check_error_passes_gracefully(self, mock_opportunity):
+        """Test preflight passes when HL balance check errors (fail-open)."""
         mock_solana = AsyncMock()
         mock_solana.get_balance = AsyncMock(return_value=1.0)
         mock_solana.get_token_balance = AsyncMock(return_value=10000)
 
-        mock_arbitrum = AsyncMock()
-        mock_arbitrum.get_balance = AsyncMock(return_value=Decimal("0.1"))
-        mock_arbitrum.get_usdc_balance = AsyncMock(return_value=Decimal("100"))  # Too low
-
         mock_hl_trader = AsyncMock()
-        mock_hl_trader.get_deposited_balance = AsyncMock(return_value=50.0)  # Also low
+        mock_hl_trader.get_deposited_balance = AsyncMock(side_effect=Exception("API error"))
 
         mock_consensus = AsyncMock()
         mock_consensus.check_consensus = AsyncMock(return_value=MagicMock(
@@ -1106,170 +1092,10 @@ class TestHyperliquidBalancePreflight:
             price_consensus=mock_consensus,
             fill_validator=MagicMock(),
             solana_client=mock_solana,
-            arbitrum_client=mock_arbitrum,
+            arbitrum_client=AsyncMock(),
         )
 
         result = await manager.run_preflight_checks(mock_opportunity)
 
-        assert result.checks["wallet_balance"] is False
-        assert any("balance" in e.lower() for e in result.errors)
-
-    @pytest.mark.asyncio
-    async def test_eth_too_low_for_bridge_fails(self, mock_opportunity):
-        """Test preflight fails when ETH is below bridge threshold."""
-        mock_solana = AsyncMock()
-        mock_solana.get_balance = AsyncMock(return_value=1.0)
-        mock_solana.get_token_balance = AsyncMock(return_value=10000)
-
-        mock_arbitrum = AsyncMock()
-        mock_arbitrum.get_balance = AsyncMock(return_value=Decimal("0.001"))  # Too low
-
-        manager = PositionManager(
-            asgard_manager=AsyncMock(),
-            hyperliquid_trader=AsyncMock(),
-            price_consensus=AsyncMock(),
-            fill_validator=MagicMock(),
-            solana_client=mock_solana,
-            arbitrum_client=mock_arbitrum,
-        )
-
-        result = await manager.run_preflight_checks(mock_opportunity)
-
-        assert result.checks["wallet_balance"] is False
-
-
-class TestAutoBridgeDeposit:
-    """Tests for auto-bridge deposit before HL short."""
-
-    @pytest.mark.asyncio
-    async def test_auto_deposit_called_when_flag_set(self):
-        """Test that depositor is called when _needs_bridge_deposit is True."""
-        mock_depositor = AsyncMock()
-        mock_depositor.deposit = AsyncMock(return_value=MagicMock(
-            success=True,
-            deposit_tx_hash="0xbridge",
-        ))
-
-        mock_hl_trader = AsyncMock()
-        mock_hl_trader.update_leverage = AsyncMock()
-        mock_hl_trader.open_short = AsyncMock(return_value=MagicMock(
-            success=True,
-            order_id="order1",
-            avg_px="100.0",
-        ))
-        mock_hl_trader.get_position = AsyncMock(return_value=MagicMock(
-            coin="SOL",
-            size=-50.0,
-            entry_px=100.0,
-            leverage=3,
-            margin_used=1666.0,
-            margin_fraction=0.25,
-            unrealized_pnl=0.0,
-        ))
-
-        manager = PositionManager(
-            asgard_manager=AsyncMock(),
-            hyperliquid_trader=mock_hl_trader,
-            fill_validator=MagicMock(),
-        )
-        manager._depositor = mock_depositor
-        manager._needs_bridge_deposit = True
-        manager._bridge_deposit_amount = 5000.0
-
-        result = await manager._open_hyperliquid_position(
-            position_id="test-pos",
-            coin="SOL",
-            size_sol=Decimal("50"),
-            leverage=3,
-        )
-
-        assert result.success is True
-        mock_depositor.deposit.assert_called_once_with(5000.0)
-        # Flag should be cleared
-        assert manager._needs_bridge_deposit is False
-
-    @pytest.mark.asyncio
-    async def test_auto_deposit_failure_blocks_short(self):
-        """Test that failed bridge deposit prevents opening short."""
-        mock_depositor = AsyncMock()
-        mock_depositor.deposit = AsyncMock(return_value=MagicMock(
-            success=False,
-            error="Bridge tx failed",
-        ))
-
-        manager = PositionManager(
-            asgard_manager=AsyncMock(),
-            hyperliquid_trader=AsyncMock(),
-            fill_validator=MagicMock(),
-        )
-        manager._depositor = mock_depositor
-        manager._needs_bridge_deposit = True
-        manager._bridge_deposit_amount = 5000.0
-
-        result = await manager._open_hyperliquid_position(
-            position_id="test-pos",
-            coin="SOL",
-            size_sol=Decimal("50"),
-            leverage=3,
-        )
-
-        assert result.success is False
-        assert "Bridge deposit failed" in result.error
-
-    @pytest.mark.asyncio
-    async def test_no_depositor_when_bridge_needed_fails(self):
-        """Test failure when bridge is needed but no depositor configured."""
-        manager = PositionManager(
-            asgard_manager=AsyncMock(),
-            hyperliquid_trader=AsyncMock(),
-            fill_validator=MagicMock(),
-        )
-        manager._needs_bridge_deposit = True
-        manager._bridge_deposit_amount = 5000.0
-        # No depositor set
-
-        result = await manager._open_hyperliquid_position(
-            position_id="test-pos",
-            coin="SOL",
-            size_sol=Decimal("50"),
-            leverage=3,
-        )
-
-        assert result.success is False
-        assert "no depositor" in result.error.lower()
-
-    @pytest.mark.asyncio
-    async def test_no_bridge_proceeds_normally(self):
-        """Test that short opens normally when no bridge is needed."""
-        mock_hl_trader = AsyncMock()
-        mock_hl_trader.update_leverage = AsyncMock()
-        mock_hl_trader.open_short = AsyncMock(return_value=MagicMock(
-            success=True,
-            order_id="order1",
-            avg_px="100.0",
-        ))
-        mock_hl_trader.get_position = AsyncMock(return_value=MagicMock(
-            coin="SOL",
-            size=-50.0,
-            entry_px=100.0,
-            leverage=3,
-            margin_used=1666.0,
-            margin_fraction=0.25,
-            unrealized_pnl=0.0,
-        ))
-
-        manager = PositionManager(
-            asgard_manager=AsyncMock(),
-            hyperliquid_trader=mock_hl_trader,
-            fill_validator=MagicMock(),
-        )
-        # _needs_bridge_deposit is False by default
-
-        result = await manager._open_hyperliquid_position(
-            position_id="test-pos",
-            coin="SOL",
-            size_sol=Decimal("50"),
-            leverage=3,
-        )
-
-        assert result.success is True
+        # Fails open — HL check error doesn't block (open_short will catch it)
+        assert result.checks["wallet_balance"] is True

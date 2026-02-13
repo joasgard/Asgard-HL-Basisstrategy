@@ -26,6 +26,14 @@ vi.mock('../../../stores', () => ({
   useUIStore: () => ({
     setGlobalLoading: mockSetGlobalLoading,
   }),
+  useSettingsStore: (selector?: (state: Record<string, unknown>) => unknown) => {
+    const store = {
+      minPositionSize: 100,
+      maxPositionSize: 50000,
+      defaultLeverage: 3.0,
+    };
+    return selector ? selector(store) : store;
+  },
 }));
 
 describe('Modal Form Submissions', () => {

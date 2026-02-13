@@ -24,7 +24,8 @@ class TestDockerfile:
     def test_multi_stage_build(self, dockerfile_content):
         """Test Dockerfile uses multi-stage build."""
         assert "FROM" in dockerfile_content
-        assert "as builder" in dockerfile_content
+        assert "as frontend-builder" in dockerfile_content
+        assert "as python-builder" in dockerfile_content
         assert "as production" in dockerfile_content
     
     def test_production_target(self, dockerfile_content):
@@ -105,11 +106,11 @@ class TestDockerCompose:
         """Test environment variables are configured."""
         bot = compose_config["services"]["bot"]
         assert "environment" in bot
-        
+
         env = bot["environment"]
         # Check required variables are referenced
-        assert any("ASGARD_API_KEY" in str(e) for e in env)
-        assert any("SOLANA_PRIVATE_KEY" in str(e) for e in env)
+        assert any("SOLANA_RPC_URL" in str(e) for e in env)
+        assert any("ARBITRUM_RPC_URL" in str(e) for e in env)
     
     def test_volumes_configured(self, compose_config):
         """Test volumes are configured."""

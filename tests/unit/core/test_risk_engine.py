@@ -48,8 +48,8 @@ def mock_combined_position(mock_asgard_position, mock_hyperliquid_position):
     """Create a mock Combined position."""
     pos = MagicMock(spec=CombinedPosition)
     pos.position_id = "test_combined"
-    pos.asgard_position = mock_asgard_position
-    pos.hyperliquid_position = mock_hyperliquid_position
+    pos.asgard = mock_asgard_position
+    pos.hyperliquid = mock_hyperliquid_position
     return pos
 
 
@@ -309,7 +309,7 @@ class TestEvaluateExitTrigger:
         )
         
         assert decision.should_exit is True
-        assert decision.reason == ExitReason.ASGARD_HEALTH_FACTOR
+        assert decision.reason == ExitReason.HEALTH_FACTOR
         assert decision.level == RiskLevel.CRITICAL
     
     def test_exit_critical_margin(self, risk_engine, mock_combined_position):
@@ -320,7 +320,7 @@ class TestEvaluateExitTrigger:
         )
         
         assert decision.should_exit is True
-        assert decision.reason == ExitReason.HYPERLIQUID_MARGIN
+        assert decision.reason == ExitReason.MARGIN_FRACTION
     
     def test_exit_lst_depeg(self, risk_engine, mock_combined_position):
         """Test exit on LST depeg."""
@@ -346,7 +346,7 @@ class TestEvaluateExitTrigger:
         """Test exit when APY negative and close cost < expected loss."""
         # Very large position, high negative APY, low close cost
         # -50% APY on $20M position = $10M/year loss = $95/min
-        mock_combined_position.asgard_position.position_size_usd = Decimal("20000000")
+        mock_combined_position.asgard.position_size_usd = Decimal("20000000")
         
         decision = risk_engine.evaluate_exit_trigger(
             mock_combined_position,
@@ -362,7 +362,7 @@ class TestEvaluateExitTrigger:
     def test_no_exit_negative_apy_expensive(self, risk_engine, mock_combined_position):
         """Test no exit when closing cost > expected loss."""
         # Small position, small negative APY
-        mock_combined_position.asgard_position.position_size_usd = Decimal("10000")
+        mock_combined_position.asgard.position_size_usd = Decimal("10000")
         
         decision = risk_engine.evaluate_exit_trigger(
             mock_combined_position,
@@ -438,7 +438,7 @@ class TestRiskSummary:
     
     def test_risk_summary_with_warning(self, risk_engine, mock_combined_position):
         """Test risk summary with warning conditions."""
-        mock_combined_position.asgard_position.health_factor = Decimal("0.15")
+        mock_combined_position.asgard.health_factor = Decimal("0.15")
         
         summary = risk_engine.get_risk_summary(mock_combined_position)
         
@@ -492,7 +492,7 @@ class TestExitDecision:
         """Test ExitDecision creation."""
         decision = ExitDecision(
             should_exit=True,
-            reason=ExitReason.ASGARD_HEALTH_FACTOR,
+            reason=ExitReason.HEALTH_FACTOR,
             level=RiskLevel.CRITICAL,
             details={"health_factor": 0.05},
             estimated_close_cost=Decimal("50"),
@@ -500,7 +500,7 @@ class TestExitDecision:
         )
         
         assert decision.should_exit is True
-        assert decision.reason == ExitReason.ASGARD_HEALTH_FACTOR
+        assert decision.reason == ExitReason.HEALTH_FACTOR
         assert decision.level == RiskLevel.CRITICAL
         assert decision.details["health_factor"] == 0.05
         assert decision.estimated_close_cost == Decimal("50")

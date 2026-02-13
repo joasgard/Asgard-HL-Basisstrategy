@@ -8,7 +8,7 @@ from fastapi import status
 import logging
 
 from .exceptions import AsgardError, ValidationError, InsufficientFundsError
-from .codes import ErrorCode, get_error_info
+from .codes import ErrorCode, get_error_info, get_error_description
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ async def general_exception_handler(request: Request, exc: Exception) -> JSONRes
         content={
             "error_code": error_code.code,
             "message": error_code.message,
-            "description": error_code.description,
+            "description": get_error_description(error_code.code),
             "details": {"error": str(exc)},
         },
     )

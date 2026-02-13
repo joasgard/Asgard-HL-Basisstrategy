@@ -419,20 +419,25 @@ class TestExecuteIntent:
         scanner = _make_scanner(db=db)
 
         row = _make_intent_row()
-        criteria = {"all_passed": True, "checks": {}}
+        criteria = {"all_passed": True, "checks": {
+            "funding_rate": {"passed": True, "current_rate": -0.001},
+        }}
 
         mock_ctx = MagicMock()
         mock_ctx.__aenter__ = AsyncMock(return_value=mock_ctx)
         mock_ctx.__aexit__ = AsyncMock(return_value=False)
 
+        mock_position = MagicMock()
+        mock_position.position_id = "pos_123"
+
         mock_pm = MagicMock()
         mock_pm.__aenter__ = AsyncMock(return_value=mock_pm)
         mock_pm.__aexit__ = AsyncMock(return_value=None)
-        mock_pm.open_position = AsyncMock(return_value={
-            "success": True,
-            "position_id": "pos_123",
-            "asgard_pda": "pda_123",
-        })
+        mock_pm.open_position = AsyncMock(return_value=MagicMock(
+            success=True,
+            position=mock_position,
+            error=None,
+        ))
 
         with patch("bot.core.intent_scanner.UserTradingContext") as mock_utc:
             mock_utc.from_user_id = AsyncMock(return_value=mock_ctx)

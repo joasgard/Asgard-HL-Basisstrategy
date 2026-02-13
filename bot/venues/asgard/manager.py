@@ -104,18 +104,19 @@ class AsgardPositionManager:
         state_machine: Optional[TransactionStateMachine] = None,
         solana_wallet_address: Optional[str] = None,
         user_id: Optional[str] = None,
+        solana_wallet_id: Optional[str] = None,
     ):
-        """
-        Initialize position manager.
+        """Initialize position manager.
 
         Args:
-            client: AsgardClient instance
-            market_data: AsgardMarketData instance
-            tx_builder: AsgardTransactionBuilder instance
-            solana_client: SolanaClient for on-chain queries
-            state_machine: TransactionStateMachine for persistence
+            client: AsgardClient instance.
+            market_data: AsgardMarketData instance.
+            tx_builder: AsgardTransactionBuilder instance.
+            solana_client: SolanaClient for on-chain queries.
+            state_machine: TransactionStateMachine for persistence.
             solana_wallet_address: Solana wallet address for this user.
                                   If None, falls back to settings.
+            solana_wallet_id: Privy wallet ID for signing.
             user_id: User ID for multi-tenant logging.
         """
         self.client = client or AsgardClient()
@@ -124,6 +125,7 @@ class AsgardPositionManager:
         self.solana_client = solana_client
         self.state_machine = state_machine or TransactionStateMachine()
         self.user_id = user_id
+        self.solana_wallet_id = solana_wallet_id
 
         settings = get_settings()
         self.solana_wallet_address = solana_wallet_address or settings.solana_wallet_address
@@ -136,6 +138,7 @@ class AsgardPositionManager:
                     state_machine=self.state_machine,
                     wallet_address=self.solana_wallet_address,
                     user_id=self.user_id,
+                    wallet_id=self.solana_wallet_id,
                 )
             else:
                 logger.warning("Solana wallet address or Privy not configured, transaction signing disabled")

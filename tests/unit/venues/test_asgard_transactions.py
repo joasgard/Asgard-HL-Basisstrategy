@@ -24,14 +24,14 @@ class TestAsgardTransactionBuilderInit:
         mock_settings.privy_app_secret = "test_secret"
         mock_settings.privy_auth_key_path = "test.pem"
         mock_get_settings.return_value = mock_settings
-        
+
         builder = AsgardTransactionBuilder()
-        
+
         assert builder.wallet_address == "test_solana_address"
-        assert builder._privy is None  # Lazy loaded
-    
-    def test_privy_property_lazy_loads(self):
-        """Test that privy property lazy loads the client."""
+        assert builder._privy_signer is None  # Lazy loaded
+
+    def test_privy_signer_property_lazy_loads(self):
+        """Test that privy_signer property lazy loads the signer."""
         with patch('bot.venues.asgard.transactions.get_settings') as mock_settings:
             mock_settings.return_value = MagicMock(
                 solana_wallet_address="test_address",
@@ -39,22 +39,26 @@ class TestAsgardTransactionBuilderInit:
                 privy_app_secret="test_secret",
                 privy_auth_key_path="test.pem"
             )
-            
-            with patch('privy.PrivyClient') as mock_privy:
-                mock_client = MagicMock()
-                mock_privy.return_value = mock_client
-                
+
+            with patch('bot.venues.privy_signer.PrivyWalletSigner') as mock_cls:
+                mock_signer = MagicMock()
+                mock_cls.return_value = mock_signer
+
                 builder = AsgardTransactionBuilder()
-                
-                # First access should create client
-                privy = builder.privy
-                assert privy == mock_client
-                mock_privy.assert_called_once()
-                
+
+                # First access should create signer
+                signer = builder.privy_signer
+                assert signer == mock_signer
+                mock_cls.assert_called_once_with(
+                    wallet_id=None,
+                    wallet_address="test_address",
+                    user_id=None,
+                )
+
                 # Second access should return same instance
-                privy2 = builder.privy
-                assert privy2 == mock_client
-                mock_privy.assert_called_once()  # Not called again
+                signer2 = builder.privy_signer
+                assert signer2 == mock_signer
+                mock_cls.assert_called_once()  # Not called again
 
 
 class TestBuildCreatePosition:
@@ -133,10 +137,10 @@ class TestBuildCreatePosition:
 
 class TestSignTransaction:
     """Tests for transaction signing."""
-    
+
     @pytest.fixture
     def mock_builder(self):
-        """Create mock builder with mocked Privy."""
+        """Create mock builder with mocked Privy wallet signer."""
         with patch('bot.venues.asgard.transactions.get_settings') as mock_settings:
             mock_settings.return_value = MagicMock(
                 solana_wallet_address="test_address",
@@ -144,21 +148,21 @@ class TestSignTransaction:
                 privy_app_secret="test_secret",
                 privy_auth_key_path="test.pem"
             )
-            
+
             builder = AsgardTransactionBuilder()
             builder.state_machine = MagicMock()
-            
-            # Mock privy client
-            builder._privy = MagicMock()
-            builder._privy.wallet.sign_solana_transaction = AsyncMock(
-                return_value=MagicMock(
-                    signatures=["test_signature_123"],
-                    __bytes__=lambda self: b"signed_tx_bytes"
-                )
+
+            # Mock privy signer — sign_solana_transaction returns base64-encoded signed tx
+            import base64
+            signed_tx_b64 = base64.b64encode(b"signed_tx_bytes").decode()
+            mock_signer = MagicMock()
+            mock_signer.sign_solana_transaction = MagicMock(
+                return_value=signed_tx_b64
             )
-            
+            builder._privy_signer = mock_signer
+
             return builder
-    
+
     @pytest.mark.asyncio
     async def test_sign_transaction_success(self, mock_builder):
         """Test successful transaction signing."""
@@ -166,29 +170,26 @@ class TestSignTransaction:
             intent_id="test-intent",
             unsigned_tx=b"unsigned_tx"
         )
-        
+
         assert isinstance(result, SignResult)
         assert result.intent_id == "test-intent"
-        assert result.signature == "test_signature_123"
-        
-        # Verify state transition
-        mock_builder.state_machine.transition.assert_called_with(
-            "test-intent", mock_builder.state_machine.transition.call_args[0][1], 
-            signature="test_signature_123"
-        )
-    
+        # Signature is now the intent_id
+        assert result.signature == "test-intent"
+        # Signed tx should be base64-decoded bytes
+        assert result.signed_tx == b"signed_tx_bytes"
+
     @pytest.mark.asyncio
     async def test_sign_transaction_calls_privy(self, mock_builder):
-        """Test that signing delegates to Privy."""
+        """Test that signing delegates to Privy wallet signer."""
+        import base64
         await mock_builder.sign_transaction(
             intent_id="test",
             unsigned_tx=b"test_tx"
         )
-        
-        # Verify Privy was called
-        mock_builder._privy.wallet.sign_solana_transaction.assert_called_once_with(
-            wallet_address="test_address",
-            transaction=b"test_tx"
+
+        # Verify the signer was called with base64-encoded transaction
+        mock_builder._privy_signer.sign_solana_transaction.assert_called_once_with(
+            base64.b64encode(b"test_tx").decode()
         )
 
 

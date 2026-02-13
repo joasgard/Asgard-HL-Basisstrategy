@@ -1,0 +1,22 @@
+{
+  "evaluation_model": "DEFAULT-DENY + SPECIFIC-DENY-OVERRIDES",
+  "test_a_bridge_value0": "ALLOWED",
+  "test_b_random_value0": "DENIED",
+  "test_c_bridge_value_gt0": "DENIED",
+  "policy_id": "qbpzhg0e0yjkqk714rj0jo3u",
+  "wallet_id": "dg9b1ih1rf1cg7g1d77a9t6u",
+  "rules": [
+    {
+      "order": 1,
+      "name": "test_allow_bridge",
+      "action": "ALLOW",
+      "conditions_count": 1
+    },
+    {
+      "order": 2,
+      "name": "test_deny_value",
+      "action": "DENY",
+      "conditions_count": 1
+    }
+  ]
+}

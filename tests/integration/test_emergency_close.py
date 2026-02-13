@@ -205,7 +205,6 @@ class TestEmergencyHealthFactor:
              patch('bot.core.bot.ArbitrumClient'), \
              patch('bot.core.bot.RiskEngine') as mock_risk_class, \
              patch('bot.core.bot.PositionSizer'), \
-             patch('bot.core.bot.LSTMonitor'), \
              patch('bot.core.bot.PauseController') as mock_pause_class, \
              patch('bot.core.bot.PositionManager') as mock_pm_class, \
              patch('bot.core.bot.OpportunityDetector'):
@@ -217,7 +216,7 @@ class TestEmergencyHealthFactor:
             mock_risk_class.return_value = mock_risk_instance
             mock_risk_instance.evaluate_exit_trigger.return_value = ExitDecision(
                 should_exit=True,
-                reason=ExitReason.ASGARD_HEALTH_FACTOR,
+                reason=ExitReason.HEALTH_FACTOR,
                 level=RiskLevel.CRITICAL,
                 details={
                     "health_factor": 0.05,
@@ -233,7 +232,7 @@ class TestEmergencyHealthFactor:
             mock_pm_class.return_value = mock_pm_instance
             mock_pm_instance.__aenter__ = AsyncMock(return_value=mock_pm_instance)
             mock_pm_instance.__aexit__ = AsyncMock(return_value=None)
-            mock_pm_instance.close_position = AsyncMock(return_value=True)
+            mock_pm_instance.close_position = AsyncMock(return_value=MagicMock(success=True, error=None))
             
             config = BotConfig(
                 admin_api_key="test_key",
@@ -268,7 +267,6 @@ class TestEmergencyHealthFactor:
              patch('bot.core.bot.ArbitrumClient'), \
              patch('bot.core.bot.RiskEngine') as mock_risk_class, \
              patch('bot.core.bot.PositionSizer'), \
-             patch('bot.core.bot.LSTMonitor'), \
              patch('bot.core.bot.PauseController') as mock_pause_class, \
              patch('bot.core.bot.PositionManager') as mock_pm_class, \
              patch('bot.core.bot.OpportunityDetector'):
@@ -280,7 +278,7 @@ class TestEmergencyHealthFactor:
             mock_risk_class.return_value = mock_risk_instance
             mock_risk_instance.evaluate_exit_trigger.return_value = ExitDecision(
                 should_exit=True,
-                reason=ExitReason.HYPERLIQUID_MARGIN,
+                reason=ExitReason.MARGIN_FRACTION,
                 level=RiskLevel.CRITICAL,
                 details={
                     "margin_fraction": 0.05,
@@ -296,7 +294,7 @@ class TestEmergencyHealthFactor:
             mock_pm_class.return_value = mock_pm_instance
             mock_pm_instance.__aenter__ = AsyncMock(return_value=mock_pm_instance)
             mock_pm_instance.__aexit__ = AsyncMock(return_value=None)
-            mock_pm_instance.close_position = AsyncMock(return_value=True)
+            mock_pm_instance.close_position = AsyncMock(return_value=MagicMock(success=True, error=None))
             
             config = BotConfig(
                 admin_api_key="test_key",
@@ -335,22 +333,13 @@ class TestEmergencyLSTDepeg:
              patch('bot.core.bot.ArbitrumClient'), \
              patch('bot.core.bot.RiskEngine') as mock_risk_class, \
              patch('bot.core.bot.PositionSizer'), \
-             patch('bot.core.bot.LSTMonitor') as mock_lst_class, \
              patch('bot.core.bot.PauseController') as mock_pause_class, \
              patch('bot.core.bot.PositionManager') as mock_pm_class, \
              patch('bot.core.bot.OpportunityDetector'):
-            
+
             mock_state_instance = AsyncMock()
             mock_state.return_value = mock_state_instance
-            
-            # LST monitor detects critical depeg
-            mock_lst_instance = MagicMock()
-            mock_lst_class.return_value = mock_lst_instance
-            mock_lst_instance.check_lst_peg.return_value = MagicMock(
-                is_critical=True,
-                premium=Decimal("0.06"),  # > 5% critical threshold
-            )
-            
+
             mock_risk_instance = MagicMock()
             mock_risk_class.return_value = mock_risk_instance
             mock_risk_instance.evaluate_exit_trigger.return_value = ExitDecision(
@@ -372,7 +361,7 @@ class TestEmergencyLSTDepeg:
             mock_pm_class.return_value = mock_pm_instance
             mock_pm_instance.__aenter__ = AsyncMock(return_value=mock_pm_instance)
             mock_pm_instance.__aexit__ = AsyncMock(return_value=None)
-            mock_pm_instance.close_position = AsyncMock(return_value=True)
+            mock_pm_instance.close_position = AsyncMock(return_value=MagicMock(success=True, error=None))
             
             config = BotConfig(
                 admin_api_key="test_key",
@@ -407,7 +396,6 @@ class TestEmergencyLSTDepeg:
              patch('bot.core.bot.ArbitrumClient'), \
              patch('bot.core.bot.RiskEngine') as mock_risk_class, \
              patch('bot.core.bot.PositionSizer'), \
-             patch('bot.core.bot.LSTMonitor'), \
              patch('bot.core.bot.PauseController') as mock_pause_class, \
              patch('bot.core.bot.PositionManager') as mock_pm_class, \
              patch('bot.core.bot.OpportunityDetector'):
@@ -436,7 +424,7 @@ class TestEmergencyLSTDepeg:
             mock_pm_class.return_value = mock_pm_instance
             mock_pm_instance.__aenter__ = AsyncMock(return_value=mock_pm_instance)
             mock_pm_instance.__aexit__ = AsyncMock(return_value=None)
-            mock_pm_instance.close_position = AsyncMock(return_value=True)
+            mock_pm_instance.close_position = AsyncMock(return_value=MagicMock(success=True, error=None))
             
             config = BotConfig(
                 admin_api_key="test_key",
@@ -470,7 +458,6 @@ class TestEmergencyPriceDeviation:
              patch('bot.core.bot.ArbitrumClient'), \
              patch('bot.core.bot.RiskEngine') as mock_risk_class, \
              patch('bot.core.bot.PositionSizer'), \
-             patch('bot.core.bot.LSTMonitor'), \
              patch('bot.core.bot.PauseController') as mock_pause_class, \
              patch('bot.core.bot.PositionManager') as mock_pm_class, \
              patch('bot.core.bot.OpportunityDetector'):
@@ -498,7 +485,7 @@ class TestEmergencyPriceDeviation:
             mock_pm_class.return_value = mock_pm_instance
             mock_pm_instance.__aenter__ = AsyncMock(return_value=mock_pm_instance)
             mock_pm_instance.__aexit__ = AsyncMock(return_value=None)
-            mock_pm_instance.close_position = AsyncMock(return_value=True)
+            mock_pm_instance.close_position = AsyncMock(return_value=MagicMock(success=True, error=None))
             
             config = BotConfig(
                 admin_api_key="test_key",
@@ -517,8 +504,8 @@ class TestEmergencyPriceDeviation:
             # Verify position was closed
             assert len(bot._positions) == 0
             
-            # Note: PRICE_DEVIATION doesn't trigger circuit breaker (only ASGARD_HEALTH_FACTOR,
-            # HYPERLIQUID_MARGIN, and LST_DEPEG do per spec 8.4)
+            # Note: PRICE_DEVIATION doesn't trigger circuit breaker (only HEALTH_FACTOR,
+            # MARGIN_FRACTION, and LST_DEPEG do per spec 8.4)
             
             await bot.shutdown()
 
@@ -535,7 +522,6 @@ class TestEmergencyChainOutage:
              patch('bot.core.bot.ArbitrumClient'), \
              patch('bot.core.bot.RiskEngine') as mock_risk_class, \
              patch('bot.core.bot.PositionSizer'), \
-             patch('bot.core.bot.LSTMonitor'), \
              patch('bot.core.bot.PauseController') as mock_pause_class, \
              patch('bot.core.bot.PositionManager') as mock_pm_class, \
              patch('bot.core.bot.OpportunityDetector'):
@@ -562,7 +548,7 @@ class TestEmergencyChainOutage:
             mock_pm_class.return_value = mock_pm_instance
             mock_pm_instance.__aenter__ = AsyncMock(return_value=mock_pm_instance)
             mock_pm_instance.__aexit__ = AsyncMock(return_value=None)
-            mock_pm_instance.close_position = AsyncMock(return_value=True)
+            mock_pm_instance.close_position = AsyncMock(return_value=MagicMock(success=True, error=None))
             
             config = BotConfig(
                 admin_api_key="test_key",
@@ -592,7 +578,6 @@ class TestEmergencyChainOutage:
              patch('bot.core.bot.ArbitrumClient'), \
              patch('bot.core.bot.RiskEngine') as mock_risk_class, \
              patch('bot.core.bot.PositionSizer'), \
-             patch('bot.core.bot.LSTMonitor'), \
              patch('bot.core.bot.PauseController') as mock_pause_class, \
              patch('bot.core.bot.PositionManager') as mock_pm_class, \
              patch('bot.core.bot.OpportunityDetector'):
@@ -619,7 +604,7 @@ class TestEmergencyChainOutage:
             mock_pm_class.return_value = mock_pm_instance
             mock_pm_instance.__aenter__ = AsyncMock(return_value=mock_pm_instance)
             mock_pm_instance.__aexit__ = AsyncMock(return_value=None)
-            mock_pm_instance.close_position = AsyncMock(return_value=True)
+            mock_pm_instance.close_position = AsyncMock(return_value=MagicMock(success=True, error=None))
             
             config = BotConfig(
                 admin_api_key="test_key",
@@ -653,7 +638,6 @@ class TestCircuitBreakerTriggers:
              patch('bot.core.bot.ArbitrumClient'), \
              patch('bot.core.bot.RiskEngine') as mock_risk_class, \
              patch('bot.core.bot.PositionSizer'), \
-             patch('bot.core.bot.LSTMonitor'), \
              patch('bot.core.bot.PauseController') as mock_pause_class, \
              patch('bot.core.bot.PositionManager') as mock_pm_class, \
              patch('bot.core.bot.OpportunityDetector'):
@@ -665,7 +649,7 @@ class TestCircuitBreakerTriggers:
             mock_risk_class.return_value = mock_risk_instance
             mock_risk_instance.evaluate_exit_trigger.return_value = ExitDecision(
                 should_exit=True,
-                reason=ExitReason.ASGARD_HEALTH_FACTOR,
+                reason=ExitReason.HEALTH_FACTOR,
                 level=RiskLevel.CRITICAL,
             )
             
@@ -677,7 +661,7 @@ class TestCircuitBreakerTriggers:
             mock_pm_class.return_value = mock_pm_instance
             mock_pm_instance.__aenter__ = AsyncMock(return_value=mock_pm_instance)
             mock_pm_instance.__aexit__ = AsyncMock(return_value=None)
-            mock_pm_instance.close_position = AsyncMock(return_value=True)
+            mock_pm_instance.close_position = AsyncMock(return_value=MagicMock(success=True, error=None))
             
             config = BotConfig(
                 admin_api_key="test_key",
@@ -714,7 +698,6 @@ class TestEmergencyExitPriority:
              patch('bot.core.bot.ArbitrumClient'), \
              patch('bot.core.bot.RiskEngine') as mock_risk_class, \
              patch('bot.core.bot.PositionSizer'), \
-             patch('bot.core.bot.LSTMonitor'), \
              patch('bot.core.bot.PauseController') as mock_pause_class, \
              patch('bot.core.bot.PositionManager') as mock_pm_class, \
              patch('bot.core.bot.OpportunityDetector'):
@@ -739,7 +722,7 @@ class TestEmergencyExitPriority:
             mock_pm_class.return_value = mock_pm_instance
             mock_pm_instance.__aenter__ = AsyncMock(return_value=mock_pm_instance)
             mock_pm_instance.__aexit__ = AsyncMock(return_value=None)
-            mock_pm_instance.close_position = AsyncMock(return_value=True)
+            mock_pm_instance.close_position = AsyncMock(return_value=MagicMock(success=True, error=None))
             
             config = BotConfig(
                 admin_api_key="test_key",

@@ -1,15 +1,17 @@
 """
-Tests for HyperliquidDepositor — Arbitrum → HL bridge deposit flow.
+Tests for HyperliquidDepositor — Arbitrum ↔ HL deposit/withdraw flows.
 
 Covers:
-- Full deposit happy path (approve + bridge + poll)
-- Skipped approve when allowance sufficient
+- Full deposit happy path (USDC transfer to bridge + poll)
 - Insufficient USDC on Arbitrum
 - Insufficient ETH for gas
-- Approve tx failure
-- Bridge deposit tx failure
+- Bridge transfer tx failure
 - HL credit polling timeout
 - No HL trader (skips poll)
+- Withdrawal happy path
+- Withdrawal with insufficient HL balance
+- Withdrawal with no HL trader configured
+- Withdrawal submission failure
 """
 import pytest
 from decimal import Decimal
@@ -18,6 +20,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from bot.venues.hyperliquid.depositor import (
     HyperliquidDepositor,
     DepositResult,
+    WithdrawResult,
     MIN_ETH_FOR_BRIDGE,
 )
 
@@ -28,7 +31,6 @@ def mock_arb_client():
     client = MagicMock()
     client.w3 = MagicMock()
     client.w3.to_checksum_address = lambda addr: addr
-    client.w3.eth.contract = MagicMock()
 
     # Default: enough USDC and ETH
     client.get_usdc_balance = AsyncMock(return_value=Decimal("1000"))
@@ -39,6 +41,17 @@ def mock_arb_client():
     client.wait_for_transaction_receipt = AsyncMock(return_value={"status": 1})
 
     return client
+
+
+def _mock_usdc_contract():
+    """Create a mocked USDC contract with transfer function."""
+    mock_functions = MagicMock()
+    mock_functions.transfer.return_value.build_transaction = AsyncMock(
+        return_value={"from": "0xWallet", "nonce": 42}
+    )
+    contract = MagicMock()
+    contract.functions = mock_functions
+    return contract
 
 
 @pytest.fixture
@@ -75,9 +88,9 @@ def depositor(mock_arb_client, mock_hl_trader, mock_settings):
             bridge_contract="0xBridgeContract",
         )
 
-        # Mock the Privy signer
+        # Mock the Privy wallet signer
         mock_privy = MagicMock()
-        mock_privy.wallet.sign_transaction = AsyncMock(return_value=b"\x01\x02")
+        mock_privy.sign_eth_transaction = MagicMock(return_value="0x0102")
         dep._privy = mock_privy
 
         return dep
@@ -87,72 +100,30 @@ class TestDepositHappyPath:
     """Tests for successful deposit flow."""
 
     @pytest.mark.asyncio
-    async def test_full_deposit_with_approve(self, depositor, mock_arb_client):
-        """Test full flow: approve + deposit + poll."""
-        # Set up allowance check to return 0 (needs approve)
-        mock_allowance_call = AsyncMock(return_value=0)
-        mock_functions = MagicMock()
-        mock_functions.allowance.return_value.call = mock_allowance_call
-        mock_functions.approve.return_value.build_transaction = MagicMock(
-            return_value={"from": "0xWallet", "nonce": 42}
-        )
-
-        # Bridge deposit
-        mock_bridge_functions = MagicMock()
-        mock_bridge_functions.deposit.return_value.build_transaction = MagicMock(
-            return_value={"from": "0xWallet", "nonce": 43}
-        )
-
-        # Return USDC contract first, then bridge contract
-        usdc_contract = MagicMock()
-        usdc_contract.functions = mock_functions
-        bridge_contract = MagicMock()
-        bridge_contract.functions = mock_bridge_functions
-
-        mock_arb_client.w3.eth.contract.side_effect = [
-            usdc_contract,
-            bridge_contract,
-        ]
+    async def test_full_deposit_with_transfer(self, depositor, mock_arb_client):
+        """Test full flow: USDC transfer to bridge + poll."""
+        usdc_contract = _mock_usdc_contract()
+        mock_arb_client.w3.eth.contract.return_value = usdc_contract
 
         result = await depositor.deposit(500.0)
 
         assert result.success is True
-        assert result.approve_tx_hash == "0xtxhash"
+        assert result.approve_tx_hash is None  # no approve in transfer flow
         assert result.deposit_tx_hash == "0xtxhash"
         assert result.amount_usdc == Decimal("500")
 
     @pytest.mark.asyncio
-    async def test_deposit_skips_approve_when_allowance_sufficient(
-        self, depositor, mock_arb_client
-    ):
-        """Test that approve is skipped when allowance is already enough."""
-        # Allowance already covers the amount
-        raw_amount = 500 * 1_000_000
-        mock_allowance_call = AsyncMock(return_value=raw_amount + 1)
-        mock_functions = MagicMock()
-        mock_functions.allowance.return_value.call = mock_allowance_call
+    async def test_deposit_calls_transfer(self, depositor, mock_arb_client):
+        """Test that deposit calls USDC transfer(bridge, amount)."""
+        usdc_contract = _mock_usdc_contract()
+        mock_arb_client.w3.eth.contract.return_value = usdc_contract
 
-        usdc_contract = MagicMock()
-        usdc_contract.functions = mock_functions
+        await depositor.deposit(500.0)
 
-        # Bridge contract
-        mock_bridge_functions = MagicMock()
-        mock_bridge_functions.deposit.return_value.build_transaction = MagicMock(
-            return_value={"from": "0xWallet", "nonce": 42}
+        # Verify transfer was called with bridge address and raw amount
+        usdc_contract.functions.transfer.assert_called_once_with(
+            "0xBridgeContract", 500_000_000
         )
-        bridge_contract = MagicMock()
-        bridge_contract.functions = mock_bridge_functions
-
-        mock_arb_client.w3.eth.contract.side_effect = [
-            usdc_contract,
-            bridge_contract,
-        ]
-
-        result = await depositor.deposit(500.0)
-
-        assert result.success is True
-        assert result.approve_tx_hash is None  # No approve needed
-        assert result.deposit_tx_hash == "0xtxhash"
 
 
 class TestDepositInsufficientFunds:
@@ -183,18 +154,9 @@ class TestDepositTxFailures:
     """Tests for transaction failure scenarios."""
 
     @pytest.mark.asyncio
-    async def test_approve_tx_failure(self, depositor, mock_arb_client):
-        """Test failure when approve tx reverts."""
-        mock_allowance_call = AsyncMock(return_value=0)
-        mock_functions = MagicMock()
-        mock_functions.allowance.return_value.call = mock_allowance_call
-        mock_functions.approve.return_value.build_transaction = MagicMock(
-            return_value={"from": "0xWallet", "nonce": 42}
-        )
-
-        usdc_contract = MagicMock()
-        usdc_contract.functions = mock_functions
-
+    async def test_bridge_transfer_tx_failure(self, depositor, mock_arb_client):
+        """Test failure when USDC transfer tx reverts."""
+        usdc_contract = _mock_usdc_contract()
         mock_arb_client.w3.eth.contract.return_value = usdc_contract
 
         # Make send_raw_transaction fail
@@ -205,42 +167,7 @@ class TestDepositTxFailures:
         result = await depositor.deposit(500.0)
 
         assert result.success is False
-        assert "Approve tx failed" in result.error
-
-    @pytest.mark.asyncio
-    async def test_bridge_deposit_tx_failure(self, depositor, mock_arb_client):
-        """Test failure when bridge deposit tx reverts."""
-        # Allowance is sufficient (no approve needed)
-        raw_amount = 500 * 1_000_000
-        mock_allowance_call = AsyncMock(return_value=raw_amount + 1)
-        mock_functions = MagicMock()
-        mock_functions.allowance.return_value.call = mock_allowance_call
-
-        usdc_contract = MagicMock()
-        usdc_contract.functions = mock_functions
-
-        # Bridge contract
-        mock_bridge_functions = MagicMock()
-        mock_bridge_functions.deposit.return_value.build_transaction = MagicMock(
-            return_value={"from": "0xWallet", "nonce": 42}
-        )
-        bridge_contract = MagicMock()
-        bridge_contract.functions = mock_bridge_functions
-
-        mock_arb_client.w3.eth.contract.side_effect = [
-            usdc_contract,
-            bridge_contract,
-        ]
-
-        # First send_raw_transaction succeeds (bridge deposit), then fails
-        mock_arb_client.send_raw_transaction = AsyncMock(
-            side_effect=Exception("bridge reverted")
-        )
-
-        result = await depositor.deposit(500.0)
-
-        assert result.success is False
-        assert "Bridge deposit tx failed" in result.error
+        assert "Bridge transfer tx failed" in result.error
 
 
 class TestHlCreditPolling:
@@ -249,29 +176,8 @@ class TestHlCreditPolling:
     @pytest.mark.asyncio
     async def test_poll_detects_credit(self, depositor, mock_arb_client, mock_hl_trader):
         """Test that polling detects HL credit."""
-        # Arrange: balance goes from 100 → 100 → 600
-        # (mock_hl_trader side_effect already set up)
-
-        # Need to set up the contract mocks for the deposit to succeed
-        raw_amount = 500 * 1_000_000
-        mock_allowance_call = AsyncMock(return_value=raw_amount + 1)
-        mock_functions = MagicMock()
-        mock_functions.allowance.return_value.call = mock_allowance_call
-
-        usdc_contract = MagicMock()
-        usdc_contract.functions = mock_functions
-
-        mock_bridge_functions = MagicMock()
-        mock_bridge_functions.deposit.return_value.build_transaction = MagicMock(
-            return_value={"from": "0xWallet", "nonce": 42}
-        )
-        bridge_contract = MagicMock()
-        bridge_contract.functions = mock_bridge_functions
-
-        mock_arb_client.w3.eth.contract.side_effect = [
-            usdc_contract,
-            bridge_contract,
-        ]
+        usdc_contract = _mock_usdc_contract()
+        mock_arb_client.w3.eth.contract.return_value = usdc_contract
 
         with patch("bot.venues.hyperliquid.depositor.POLL_INTERVAL_SECONDS", 0.01):
             result = await depositor.deposit(500.0)
@@ -292,28 +198,11 @@ class TestHlCreditPolling:
             )
 
             mock_privy = MagicMock()
-            mock_privy.wallet.sign_transaction = AsyncMock(return_value=b"\x01\x02")
+            mock_privy.sign_eth_transaction = MagicMock(return_value="0x0102")
             dep._privy = mock_privy
 
-            # Set up contract mocks
-            raw_amount = 100 * 1_000_000
-            mock_allowance_call = AsyncMock(return_value=raw_amount + 1)
-            mock_functions = MagicMock()
-            mock_functions.allowance.return_value.call = mock_allowance_call
-            usdc_contract = MagicMock()
-            usdc_contract.functions = mock_functions
-
-            mock_bridge_functions = MagicMock()
-            mock_bridge_functions.deposit.return_value.build_transaction = MagicMock(
-                return_value={"from": "0xWallet", "nonce": 42}
-            )
-            bridge_contract = MagicMock()
-            bridge_contract.functions = mock_bridge_functions
-
-            mock_arb_client.w3.eth.contract.side_effect = [
-                usdc_contract,
-                bridge_contract,
-            ]
+            usdc_contract = _mock_usdc_contract()
+            mock_arb_client.w3.eth.contract.return_value = usdc_contract
 
             result = await dep.deposit(100.0)
 
@@ -341,3 +230,179 @@ class TestDepositResult:
         assert result.success is False
         assert result.approve_tx_hash is None
         assert result.deposit_tx_hash is None
+
+
+class TestWithdrawHappyPath:
+    """Tests for successful withdrawal flow."""
+
+    @pytest.mark.asyncio
+    async def test_full_withdraw(self, mock_arb_client, mock_settings):
+        """Test full withdrawal: sign + submit + poll Arbitrum credit."""
+        mock_signer = AsyncMock()
+        mock_signer.sign_user_action = AsyncMock(return_value=MagicMock(
+            action={"type": "withdraw3"},
+            signature={"r": "0x1", "s": "0x2", "v": 27},
+            nonce=1234567890,
+        ))
+
+        mock_client = AsyncMock()
+        mock_client.exchange = AsyncMock(return_value={"status": "ok"})
+
+        mock_trader = MagicMock()
+        mock_trader.get_deposited_balance = AsyncMock(return_value=1000.0)
+        mock_trader.signer = mock_signer
+        mock_trader.client = mock_client
+
+        # Arb balance goes from 100 → 100 → 600 (credit detected)
+        mock_arb_client.get_usdc_balance = AsyncMock(
+            side_effect=[Decimal("100"), Decimal("100"), Decimal("600")]
+        )
+
+        with patch(
+            "bot.venues.hyperliquid.depositor.get_settings",
+            return_value=mock_settings,
+        ):
+            dep = HyperliquidDepositor(
+                arb_client=mock_arb_client,
+                wallet_address="0xWallet",
+                hl_trader=mock_trader,
+            )
+
+        with patch("bot.venues.hyperliquid.depositor.POLL_INTERVAL_SECONDS", 0.01):
+            result = await dep.withdraw(500.0)
+
+        assert result.success is True
+        assert result.amount_usdc == Decimal("500")
+
+        # Verify the signer was called with withdraw3 action
+        mock_signer.sign_user_action.assert_called_once()
+        call_kwargs = mock_signer.sign_user_action.call_args
+        assert call_kwargs.kwargs["action"]["type"] == "withdraw3"
+        assert call_kwargs.kwargs["action"]["destination"] == "0xWallet"
+        assert call_kwargs.kwargs["primary_type"] == "HyperliquidTransaction:Withdraw"
+
+        # Verify exchange was called
+        mock_client.exchange.assert_called_once()
+
+
+class TestWithdrawInsufficientFunds:
+    """Tests for withdrawal with insufficient HL balance."""
+
+    @pytest.mark.asyncio
+    async def test_insufficient_hl_balance(self, mock_arb_client, mock_settings):
+        """Test failure when HL balance is too low for withdrawal."""
+        mock_trader = MagicMock()
+        mock_trader.get_deposited_balance = AsyncMock(return_value=100.0)
+        mock_trader.signer = AsyncMock()
+        mock_trader.client = AsyncMock()
+
+        with patch(
+            "bot.venues.hyperliquid.depositor.get_settings",
+            return_value=mock_settings,
+        ):
+            dep = HyperliquidDepositor(
+                arb_client=mock_arb_client,
+                wallet_address="0xWallet",
+                hl_trader=mock_trader,
+            )
+
+        result = await dep.withdraw(500.0)
+
+        assert result.success is False
+        assert "Insufficient HL balance" in result.error
+
+    @pytest.mark.asyncio
+    async def test_no_hl_trader_fails(self, mock_arb_client, mock_settings):
+        """Test failure when no HL trader is configured."""
+        with patch(
+            "bot.venues.hyperliquid.depositor.get_settings",
+            return_value=mock_settings,
+        ):
+            dep = HyperliquidDepositor(
+                arb_client=mock_arb_client,
+                wallet_address="0xWallet",
+                hl_trader=None,
+            )
+
+        result = await dep.withdraw(500.0)
+
+        assert result.success is False
+        assert "No HL trader" in result.error
+
+
+class TestWithdrawFailures:
+    """Tests for withdrawal submission failures."""
+
+    @pytest.mark.asyncio
+    async def test_exchange_submission_fails(self, mock_arb_client, mock_settings):
+        """Test failure when exchange endpoint rejects withdrawal."""
+        mock_signer = AsyncMock()
+        mock_signer.sign_user_action = AsyncMock(return_value=MagicMock(
+            action={"type": "withdraw3"},
+            signature={"r": "0x1", "s": "0x2", "v": 27},
+            nonce=1234567890,
+        ))
+
+        mock_client = AsyncMock()
+        mock_client.exchange = AsyncMock(side_effect=Exception("API error"))
+
+        mock_trader = MagicMock()
+        mock_trader.get_deposited_balance = AsyncMock(return_value=1000.0)
+        mock_trader.signer = mock_signer
+        mock_trader.client = mock_client
+
+        with patch(
+            "bot.venues.hyperliquid.depositor.get_settings",
+            return_value=mock_settings,
+        ):
+            dep = HyperliquidDepositor(
+                arb_client=mock_arb_client,
+                wallet_address="0xWallet",
+                hl_trader=mock_trader,
+            )
+
+        result = await dep.withdraw(500.0)
+
+        assert result.success is False
+        assert "submission failed" in result.error
+
+    @pytest.mark.asyncio
+    async def test_missing_signer_on_trader(self, mock_arb_client, mock_settings):
+        """Test failure when trader has no signer attribute."""
+        mock_trader = MagicMock(spec=[])  # Empty spec, no attributes
+        mock_trader.get_deposited_balance = AsyncMock(return_value=1000.0)
+
+        with patch(
+            "bot.venues.hyperliquid.depositor.get_settings",
+            return_value=mock_settings,
+        ):
+            dep = HyperliquidDepositor(
+                arb_client=mock_arb_client,
+                wallet_address="0xWallet",
+                hl_trader=mock_trader,
+            )
+
+        result = await dep.withdraw(500.0)
+
+        assert result.success is False
+        assert "missing signer" in result.error
+
+
+class TestWithdrawResult:
+    """Tests for WithdrawResult dataclass."""
+
+    def test_success_result(self):
+        result = WithdrawResult(
+            success=True,
+            amount_usdc=Decimal("500"),
+        )
+        assert result.success is True
+        assert result.error is None
+
+    def test_failure_result(self):
+        result = WithdrawResult(
+            success=False,
+            error="Insufficient balance",
+        )
+        assert result.success is False
+        assert result.amount_usdc is None

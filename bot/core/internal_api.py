@@ -33,25 +33,49 @@ def get_bot():
     return _bot_instance
 
 
-def verify_internal_token(credentials: HTTPAuthorizationCredentials):
-    """Verify the internal API token."""
+def _get_server_secret() -> str:
+    """Load server secret from file."""
     from shared.config.settings import SECRETS_DIR
-    
-    # Load token from server_secret.txt
     secret_path = SECRETS_DIR / "server_secret.txt"
     if not secret_path.exists():
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Server secret not configured"
         )
-    
-    expected_token = secret_path.read_text().strip()
-    if credentials.credentials != expected_token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid internal token"
-        )
-    return credentials.credentials
+    return secret_path.read_text().strip()
+
+
+def verify_internal_token(credentials: HTTPAuthorizationCredentials) -> str:
+    """Verify the internal API token.
+
+    Accepts either:
+    - JWT (HS256): extracts and returns user_id from ``sub`` claim
+    - Raw bearer token (legacy): returns empty string (no user scoping)
+
+    Returns:
+        user_id from JWT, or "" for legacy token auth.
+    """
+    secret = _get_server_secret()
+    token = credentials.credentials
+
+    # Try JWT first (has dots)
+    if "." in token:
+        try:
+            from shared.auth.internal_jwt import verify_internal_jwt
+            user_id = verify_internal_jwt(token, secret)
+            if user_id:
+                return user_id
+        except Exception:
+            pass
+
+    # Fallback: raw bearer token (legacy)
+    if token == secret:
+        return ""
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid internal token"
+    )
 
 
 @internal_app.get("/health")
@@ -77,6 +101,60 @@ def _get_bot_state() -> str:
     return "running"
 
 
+@internal_app.get("/health/wallets")
+async def health_wallets(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+):
+    """Per-user server wallet health: addresses, balances, signing metrics."""
+    verify_internal_token(credentials)
+
+    from shared.db.database import Database
+    from bot.venues.privy_signer import get_signing_metrics
+
+    db = Database()
+    try:
+        await db.connect()
+        rows = await db.fetchall(
+            """SELECT id, server_evm_address, server_solana_address,
+                      server_evm_wallet_id, server_solana_wallet_id
+               FROM users
+               WHERE server_evm_wallet_id IS NOT NULL
+                  OR server_solana_wallet_id IS NOT NULL"""
+        )
+    finally:
+        await db.close()
+
+    users = []
+    for row in rows:
+        users.append({
+            "user_id": row["id"],
+            "evm_address": row["server_evm_address"],
+            "solana_address": row["server_solana_address"],
+            "evm_wallet_id": row["server_evm_wallet_id"],
+            "solana_wallet_id": row["server_solana_wallet_id"],
+        })
+
+    metrics = get_signing_metrics()
+    return {
+        "users": users,
+        "signing_metrics": {
+            "total_last_hour": metrics.total_last_hour,
+            "policy_violations_24h": metrics.policy_violations_24h,
+            "breakdown_1h": metrics.get_summary(3600),
+            "breakdown_24h": metrics.get_summary(86400),
+        },
+        "circuit_breaker": {
+            "is_open": _get_circuit_breaker_status(),
+        },
+    }
+
+
+def _get_circuit_breaker_status() -> bool:
+    """Check if the signing circuit breaker is currently open."""
+    from bot.venues.privy_signer import _circuit_breaker
+    return _circuit_breaker.is_open
+
+
 @internal_app.get("/internal/stats", response_model=BotStats)
 async def get_stats(
     credentials: HTTPAuthorizationCredentials = Depends(security)
@@ -100,11 +178,19 @@ async def get_stats(
 async def get_positions(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
-    """Get all positions as dict."""
-    verify_internal_token(credentials)
+    """Get positions, scoped to the authenticated user if JWT is used."""
+    auth_user_id = verify_internal_token(credentials)
     bot = get_bot()
-    
+
     positions = bot.get_positions()
+
+    # N5: If authenticated via JWT, only return the requesting user's positions
+    if auth_user_id:
+        positions = {
+            pos_id: pos for pos_id, pos in positions.items()
+            if getattr(pos, "user_id", None) == auth_user_id
+        }
+
     return {
         pos_id: _position_to_summary(pos).model_dump(mode="json")
         for pos_id, pos in positions.items()
@@ -116,14 +202,18 @@ async def get_position_detail(
     position_id: str,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
-    """Get single position detail."""
-    verify_internal_token(credentials)
+    """Get single position detail, scoped to authenticated user."""
+    auth_user_id = verify_internal_token(credentials)
     bot = get_bot()
-    
+
     position = bot.get_positions().get(position_id)
     if not position:
         raise HTTPException(404, "Position not found")
-    
+
+    # N5: If authenticated via JWT, verify ownership
+    if auth_user_id and getattr(position, "user_id", None) != auth_user_id:
+        raise HTTPException(404, "Position not found")
+
     return _position_to_detail(position)
 
 
@@ -234,76 +324,86 @@ async def open_position_internal(
             # Auto-select best protocol
             protocol_result = await market_data.select_best_protocol(
                 asset=asset,
-                size_usd=size_usd,
-                leverage=leverage
+                size_usd=float(size_usd),
+                leverage=float(leverage),
             )
             selected_protocol = protocol_result.protocol
         
-        # Build opportunity
-        from shared.models.opportunity import ArbitrageOpportunity, ProtocolRate
+        # Build opportunity using actual models
+        from uuid import uuid4
+        from shared.models.opportunity import ArbitrageOpportunity, OpportunityScore
+        from shared.models.funding import FundingRate as ModelFundingRate, AsgardRates
+        from shared.config.assets import get_mint
         from bot.venues.hyperliquid.funding_oracle import HyperliquidFundingOracle
-        
+
         # Get Hyperliquid funding rate
         oracle = HyperliquidFundingOracle()
-        funding_rates = await oracle.get_current_funding_rates()
-        sol_funding = funding_rates.get("SOL")
-        
+        try:
+            funding_rates = await oracle.get_current_funding_rates()
+            sol_funding = funding_rates.get("SOL")
+        finally:
+            await oracle.client.close()
+
         if not sol_funding:
             return {
                 "success": False,
                 "error": "Failed to get Hyperliquid funding rate",
                 "stage": "market_data"
             }
-        
-        # Get Asgard rates for selected protocol
-        markets = await market_data.get_markets()
-        protocol_rate = None
-        
-        for strategy_name, strategy_data in markets.get("strategies", {}).items():
-            if asset.value in strategy_name:
-                for source in strategy_data.get("liquiditySources", []):
-                    if source.get("lendingProtocol") == selected_protocol.value:
-                        from shared.config.assets import ASSETS
-                        metadata = ASSETS[asset]
-                        
-                        lending_apy = source.get("tokenALendingApyRate", 0)
-                        borrowing_apy = source.get("tokenBBorrowingApyRate", 0)
-                        staking_apy = metadata.staking_apy if metadata.is_lst else 0
-                        
-                        net_carry_apy = (lending_apy + staking_apy - borrowing_apy * (leverage - 1))
-                        
-                        protocol_rate = ProtocolRate(
-                            protocol=selected_protocol,
-                            token_a_apy=lending_apy + staking_apy,
-                            token_b_apy=borrowing_apy,
-                            net_carry_apr=net_carry_apy,
-                            max_leverage=source.get("longMaxLeverage", 4.0),
-                            capacity_usd=float(source.get("tokenAMaxDepositCapacity", "1000000"))
-                        )
-                        break
-                if protocol_rate:
-                    break
-        
-        if not protocol_rate:
-            return {
-                "success": False,
-                "error": f"No valid rate found for {asset.value} on {selected_protocol.name}",
-                "stage": "market_data"
-            }
-        
+
+        # Build model FundingRate from oracle rate (oracle rate_8hr is hourly * 8)
+        current_funding = ModelFundingRate(
+            timestamp=datetime.utcnow(),
+            coin="SOL",
+            rate_8hr=Decimal(str(sol_funding.rate_8hr)),
+        )
+
+        # Build AsgardRates from protocol_result with real capacity
+        token_a_mint = get_mint(asset)
+        # Get actual borrow capacity from rates data
+        borrow_rates = await market_data.get_borrowing_rates(token_a_mint)
+        borrow_capacity = Decimal("0")
+        for rate in borrow_rates:
+            if rate.protocol == protocol_result.protocol:
+                borrow_capacity = Decimal(str(rate.max_borrow_capacity))
+                break
+        asgard_rates = AsgardRates(
+            protocol_id=protocol_result.protocol.value,
+            token_a_mint=token_a_mint,
+            token_b_mint="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
+            token_a_lending_apy=Decimal(str(protocol_result.lending_rate)),
+            token_b_borrowing_apy=Decimal(str(protocol_result.borrowing_rate)),
+            token_b_max_borrow_capacity=borrow_capacity,
+        )
+
+        # Calculate score components
+        funding_apy = abs(current_funding.rate_annual) * leverage
+        net_carry_apy = Decimal(str(protocol_result.net_carry_apy))
+
+        score = OpportunityScore(
+            funding_apy=funding_apy,
+            net_carry_apy=net_carry_apy,
+            lst_staking_apy=Decimal("0"),
+        )
+
+        position_size_usd = size_usd * leverage
+
         # Create opportunity
         opportunity = ArbitrageOpportunity(
+            id=str(uuid4()),
             asset=asset,
-            selected_protocol=selected_protocol,
-            asgard_rate=protocol_rate,
-            hyperliquid_rate=sol_funding,
+            selected_protocol=protocol_result.protocol,
+            asgard_rates=asgard_rates,
+            hyperliquid_coin="SOL",
+            current_funding=current_funding,
+            predicted_funding=None,
+            funding_volatility=Decimal("0"),  # Not checked for manual deploy
             leverage=leverage,
-            deployed_capital_usd=size_usd * 2,  # Total capital (both sides)
-            position_size_usd=size_usd,
-            hyperliquid_funding_premium_8hr=sol_funding.funding_rate,
-            expected_total_apr=0,  # Will be calculated
-            volatility_30d=0.1,  # Placeholder
-            preflight_checks_passed=False,  # Will run preflight
+            deployed_capital_usd=size_usd,
+            position_size_usd=position_size_usd,
+            score=score,
+            price_deviation=Decimal("0"),
+            preflight_checks_passed=False,
         )
         
         # Run preflight checks
@@ -331,8 +431,8 @@ async def open_position_internal(
                 "success": True,
                 "position_id": result.position.position_id,
                 "asgard_pda": result.position.asgard.position_pda if hasattr(result.position.asgard, 'position_pda') else None,
-                "selected_protocol": selected_protocol.name,
-                "hyperliquid_funding_rate": float(sol_funding.funding_rate)
+                "selected_protocol": protocol_result.protocol.name,
+                "hyperliquid_funding_rate": float(sol_funding.rate_8hr)
             }
         else:
             # Check if partial failure (Asgard opened but Hyperliquid failed)

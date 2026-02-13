@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useWallets, usePrivy } from '@privy-io/react-auth';
 import QRCode from 'react-qr-code';
 import { walletSetupApi } from '../../api/walletSetup';
-import { useBalances } from '../../hooks';
+import { fundingApi, FundingJobStatus } from '../../api/funding';
+import { useBalances, useServerWallets } from '../../hooks';
 
 interface DepositModalProps {
   isOpen: boolean;
@@ -16,10 +17,19 @@ export function DepositModal({ isOpen, onClose }: DepositModalProps) {
   const [message, setMessage] = useState<string>('');
   const [walletStatus, setWalletStatus] = useState<any>(null);
 
+  // Bridge deposit state
+  const [bridgeAmount, setBridgeAmount] = useState<string>('');
+  const [bridgeJobId, setBridgeJobId] = useState<string | null>(null);
+  const [bridgeStatus, setBridgeStatus] = useState<FundingJobStatus | null>(null);
+  const [bridgeError, setBridgeError] = useState<string | null>(null);
+  const [isBridging, setIsBridging] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   // Hooks must be called before any conditional returns
   const { wallets } = useWallets();
-  const { user } = usePrivy();
-  const { isLoading: balancesLoading, solBalance, solUsdc, ethBalance, arbUsdc, refetch: refetchBalances } = useBalances();
+  const { user, authenticated } = usePrivy();
+  const { isLoading: balancesLoading, solBalance, solUsdc, ethBalance, arbUsdc, hlBalance, refetch: refetchBalances } = useBalances();
+  const { wallets: serverWallets } = useServerWallets(authenticated ?? false);
 
   // Fetch wallet status and balances from backend
   useEffect(() => {
@@ -38,6 +48,72 @@ export function DepositModal({ isOpen, onClose }: DepositModalProps) {
     }
   };
 
+  // Poll bridge job status
+  const pollBridgeJob = useCallback(async (jobId: string) => {
+    try {
+      const status = await fundingApi.getJobStatus(jobId);
+      setBridgeStatus(status);
+      if (status.status === 'completed') {
+        setIsBridging(false);
+        setBridgeJobId(null);
+        setBridgeAmount('');
+        refetchBalances();
+      } else if (status.status === 'failed') {
+        setIsBridging(false);
+        setBridgeError(status.error || 'Bridge failed');
+        setBridgeJobId(null);
+      }
+    } catch {
+      // Keep polling on transient errors
+    }
+  }, [refetchBalances]);
+
+  // Start/stop polling when bridgeJobId changes
+  useEffect(() => {
+    if (bridgeJobId) {
+      pollRef.current = setInterval(() => pollBridgeJob(bridgeJobId), 3000);
+    }
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, [bridgeJobId, pollBridgeJob]);
+
+  // Reset bridge state when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      setBridgeAmount('');
+      setBridgeError(null);
+      if (!isBridging) {
+        setBridgeStatus(null);
+      }
+    }
+  }, [isOpen, isBridging]);
+
+  const handleBridgeDeposit = async () => {
+    const amount = parseFloat(bridgeAmount);
+    if (!amount || amount <= 0) {
+      setBridgeError('Enter a valid amount');
+      return;
+    }
+    if (amount > arbUsdc) {
+      setBridgeError(`Insufficient Arbitrum USDC (have $${arbUsdc.toFixed(2)})`);
+      return;
+    }
+    setBridgeError(null);
+    setIsBridging(true);
+    try {
+      const result = await fundingApi.deposit(amount);
+      setBridgeJobId(result.job_id);
+      setBridgeStatus({ job_id: result.job_id, direction: 'deposit', status: 'pending', amount_usdc: amount, error: null, approve_tx_hash: null, bridge_tx_hash: null, created_at: null, completed_at: null });
+    } catch (e: any) {
+      setIsBridging(false);
+      setBridgeError(e.response?.data?.detail || e.message || 'Failed to start deposit');
+    }
+  };
+
   // Find embedded EVM wallet (walletClientType === 'privy')
   const ethereumWallet = wallets.find((w) => w.walletClientType === 'privy');
 
@@ -51,10 +127,11 @@ export function DepositModal({ isOpen, onClose }: DepositModalProps) {
   const apiSolanaAddress = walletStatus?.wallets?.find((w: any) => w.chain_type === 'solana')?.address;
   const apiEthereumAddress = walletStatus?.wallets?.find((w: any) => w.chain_type === 'ethereum')?.address;
 
-  const hasSolana = walletStatus?.has_solana || !!apiSolanaAddress || !!solanaAddress;
-  const hasEthereum = walletStatus?.has_ethereum || !!apiEthereumAddress || !!ethereumWallet?.address;
-  const displaySolanaAddress = apiSolanaAddress || solanaAddress;
-  const displayEthereumAddress = apiEthereumAddress || ethereumWallet?.address;
+  // Prefer server wallet addresses (for automated trading) over embedded
+  const hasSolana = !!serverWallets?.solana_address || walletStatus?.has_solana || !!apiSolanaAddress || !!solanaAddress;
+  const hasEthereum = !!serverWallets?.evm_address || walletStatus?.has_ethereum || !!apiEthereumAddress || !!ethereumWallet?.address;
+  const displaySolanaAddress = serverWallets?.solana_address || apiSolanaAddress || solanaAddress;
+  const displayEthereumAddress = serverWallets?.evm_address || apiEthereumAddress || ethereumWallet?.address;
 
   if (!isOpen) return null;
 
@@ -113,8 +190,9 @@ export function DepositModal({ isOpen, onClose }: DepositModalProps) {
 
         {/* Description */}
         <p className="text-gray-400 text-sm mb-6">
-          Send funds to your wallet addresses below to start trading. 
-          You need SOL on Solana and USDC on Arbitrum.
+          {serverWallets?.ready
+            ? 'Deposit to your server wallets below. The bot will automatically manage bridging and trading.'
+            : 'Fund your wallets to start trading. Send SOL + USDC to Solana, USDC to Arbitrum, then bridge USDC to Hyperliquid.'}
         </p>
 
         {/* Solana Wallet */}
@@ -247,7 +325,7 @@ export function DepositModal({ isOpen, onClose }: DepositModalProps) {
                 </span>
               </div>
               <p className="text-xs text-gray-500 mt-1">
-                Send USDC for margin on Hyperliquid
+                Send USDC here, then bridge to Hyperliquid below
               </p>
             </div>
           ) : (
@@ -256,6 +334,89 @@ export function DepositModal({ isOpen, onClose }: DepositModalProps) {
             </div>
           )}
         </div>
+
+        {/* Step 3: Bridge to Hyperliquid */}
+        {hasEthereum && displayEthereumAddress && (
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Bridge to Hyperliquid
+            </label>
+            <div className="bg-gray-900 rounded-lg p-3 border border-gray-700">
+              <div className="flex items-center justify-between text-xs mb-3">
+                <span className="text-gray-500">HL Balance:</span>
+                <span className="font-mono text-purple-400">
+                  {balancesLoading ? '...' : `$${hlBalance.toFixed(2)} USDC`}
+                </span>
+              </div>
+
+              {/* Bridge in progress */}
+              {isBridging && bridgeStatus ? (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-sm">
+                    <svg className="animate-spin w-4 h-4 text-purple-400" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    <span className="text-purple-300">
+                      Bridging ${bridgeStatus.amount_usdc.toFixed(2)} USDC...
+                    </span>
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    Status: {bridgeStatus.status}
+                    {bridgeStatus.approve_tx_hash && (
+                      <span className="ml-2">Approve TX sent</span>
+                    )}
+                    {bridgeStatus.bridge_tx_hash && (
+                      <span className="ml-2">Bridge TX sent</span>
+                    )}
+                  </div>
+                </div>
+              ) : bridgeStatus?.status === 'completed' ? (
+                <div className="flex items-center gap-2 text-sm text-green-400">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Bridge complete! ${bridgeStatus.amount_usdc.toFixed(2)} USDC deposited.
+                </div>
+              ) : (
+                /* Amount input + bridge button */
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="number"
+                      min="1"
+                      step="any"
+                      placeholder="Amount"
+                      value={bridgeAmount}
+                      onChange={(e) => { setBridgeAmount(e.target.value); setBridgeError(null); }}
+                      className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                    />
+                    <button
+                      onClick={() => setBridgeAmount(arbUsdc > 0 ? arbUsdc.toFixed(2) : '')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-purple-400 hover:text-purple-300"
+                    >
+                      MAX
+                    </button>
+                  </div>
+                  <button
+                    onClick={handleBridgeDeposit}
+                    disabled={isBridging || !bridgeAmount}
+                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors whitespace-nowrap"
+                  >
+                    Bridge
+                  </button>
+                </div>
+              )}
+
+              {bridgeError && (
+                <p className="text-xs text-red-400 mt-2">{bridgeError}</p>
+              )}
+              <p className="text-xs text-gray-500 mt-2">
+                Bridges USDC from Arbitrum to Hyperliquid clearinghouse
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Status message */}
         {message && (
@@ -269,12 +430,16 @@ export function DepositModal({ isOpen, onClose }: DepositModalProps) {
           <h3 className="text-sm font-medium text-white mb-2">Required for trading:</h3>
           <ul className="text-sm text-gray-400 space-y-1">
             <li className="flex items-center gap-2">
-              <span className="text-green-500">✓</span>
+              <span className="text-green-500">1.</span>
               SOL on Solana (for gas + Asgard collateral)
             </li>
             <li className="flex items-center gap-2">
-              <span className="text-blue-500">✓</span>
-              USDC on Arbitrum (for Hyperliquid margin)
+              <span className="text-blue-500">2.</span>
+              USDC on Arbitrum (staging)
+            </li>
+            <li className="flex items-center gap-2">
+              <span className="text-purple-500">3.</span>
+              Bridge USDC to Hyperliquid (for margin)
             </li>
           </ul>
         </div>

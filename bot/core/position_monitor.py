@@ -28,6 +28,7 @@ from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
 from bot.core.risk_engine import RiskEngine, ExitDecision, ExitReason
+from bot.core.user_risk_manager import UserRiskManager
 from bot.venues.user_context import UserTradingContext
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,7 @@ class PositionMonitorService:
     def __init__(self, db, risk_engine: Optional[RiskEngine] = None):
         self.db = db
         self.risk_engine = risk_engine or RiskEngine()
+        self.user_risk_manager = UserRiskManager(db)
         self._running = False
         self._task: Optional[asyncio.Task] = None
         self._consecutive_errors = 0
@@ -146,8 +148,16 @@ class PositionMonitorService:
         Monitor all positions for a single user.
 
         Creates a UserTradingContext for the user, fetches live market data,
-        and checks each position against the risk engine.
+        and checks each position against the risk engine.  Loads per-user
+        strategy config for exit thresholds (7.2.4).
         """
+        # Load per-user strategy config for exit thresholds
+        strategy_config = await self.db.fetchone(
+            """SELECT stop_loss_pct, take_profit_pct, min_exit_carry_apy
+               FROM user_strategy_config WHERE user_id = $1""",
+            (user_id,),
+        )
+
         ctx = await UserTradingContext.from_user_id(user_id, self.db)
 
         async with ctx:
@@ -165,6 +175,7 @@ class PositionMonitorService:
                         ctx=ctx,
                         pos_info=pos_info,
                         funding_rates=funding_rates,
+                        strategy_config=strategy_config,
                     )
                 except Exception as e:
                     logger.error(
@@ -177,12 +188,14 @@ class PositionMonitorService:
         ctx: UserTradingContext,
         pos_info: Dict[str, Any],
         funding_rates: Dict,
+        strategy_config: Optional[Dict[str, Any]] = None,
     ):
         """
         Check a single position against risk conditions.
 
         Fetches live position data from Hyperliquid, runs risk engine,
-        and triggers exit if needed.
+        and triggers exit if needed.  Per-user exit thresholds from
+        strategy_config are checked after system-level risk checks.
         """
         position_id = pos_info["position_id"]
         data = pos_info["data"]
@@ -229,8 +242,14 @@ class PositionMonitorService:
                 (json.dumps(merged), position_id),
             )
 
-        # Run risk engine checks
+        # Run system-level risk engine checks first
         exit_decision = self._evaluate_exit(data, hl_position, asgard_health, current_funding)
+
+        # If no system-level exit, check per-user thresholds (7.2.4)
+        if (not exit_decision or not exit_decision.should_exit) and strategy_config:
+            exit_decision = self._check_user_exit_thresholds(
+                data, strategy_config, current_funding,
+            )
 
         if exit_decision and exit_decision.should_exit:
             logger.warning(
@@ -257,14 +276,14 @@ class PositionMonitorService:
         if asgard_health is not None and asgard_health <= 0.10:
             return ExitDecision(
                 should_exit=True,
-                reason=ExitReason.ASGARD_HEALTH_FACTOR,
+                reason=ExitReason.HEALTH_FACTOR,
                 details={"message": f"Health factor critical: {asgard_health:.2%}", "health_factor": asgard_health},
             )
 
         if hl_position and hl_position.margin_fraction < 0.10:
             return ExitDecision(
                 should_exit=True,
-                reason=ExitReason.HYPERLIQUID_MARGIN,
+                reason=ExitReason.MARGIN_FRACTION,
                 details={"message": f"Margin fraction critical: {hl_position.margin_fraction:.2%}", "margin_fraction": hl_position.margin_fraction},
             )
 
@@ -276,6 +295,80 @@ class PositionMonitorService:
                     reason=ExitReason.FUNDING_FLIP,
                     details={"message": f"Funding flipped positive: {float(funding_val):.6f}", "funding_rate": float(funding_val)},
                 )
+
+        return None
+
+    def _check_user_exit_thresholds(
+        self,
+        data: Dict,
+        strategy_config: Dict[str, Any],
+        current_funding,
+    ) -> Optional[ExitDecision]:
+        """Check per-user exit thresholds from strategy config (7.2.4).
+
+        Checks:
+        - stop_loss_pct: P&L loss exceeds user's stop-loss
+        - take_profit_pct: P&L gain exceeds user's take-profit target
+        - min_exit_carry_apy: current carry APY dropped below user's minimum
+        """
+        # Stop-loss check
+        stop_loss = strategy_config.get("stop_loss_pct")
+        if stop_loss is not None:
+            total_pnl = data.get("total_pnl", 0)
+            size_usd = data.get("size_usd") or data.get("deployed_capital_usd", 0)
+            if size_usd and float(size_usd) > 0:
+                pnl_pct = (float(total_pnl) / float(size_usd)) * 100
+                if pnl_pct <= -float(stop_loss):
+                    return ExitDecision(
+                        should_exit=True,
+                        reason=ExitReason.STOP_LOSS,
+                        details={
+                            "pnl_pct": round(pnl_pct, 2),
+                            "stop_loss_pct": float(stop_loss),
+                        },
+                    )
+
+        # Take-profit check
+        take_profit = strategy_config.get("take_profit_pct")
+        if take_profit is not None:
+            total_pnl = data.get("total_pnl", 0)
+            size_usd = data.get("size_usd") or data.get("deployed_capital_usd", 0)
+            if size_usd and float(size_usd) > 0:
+                pnl_pct = (float(total_pnl) / float(size_usd)) * 100
+                if pnl_pct >= float(take_profit):
+                    return ExitDecision(
+                        should_exit=True,
+                        reason=ExitReason.TARGET_PROFIT,
+                        details={
+                            "pnl_pct": round(pnl_pct, 2),
+                            "take_profit_pct": float(take_profit),
+                        },
+                    )
+
+        # Min exit carry APY check
+        min_exit_carry = strategy_config.get("min_exit_carry_apy")
+        if min_exit_carry is not None and current_funding is not None:
+            funding_val = (
+                current_funding.get("funding", 0)
+                if isinstance(current_funding, dict)
+                else current_funding
+            )
+            if funding_val:
+                # Estimate current carry: abs(funding_8hr) * 3 * 365 * leverage * 100
+                rate_8hr = float(funding_val)
+                leverage = data.get("leverage", 3.0)
+                current_carry_apy = abs(rate_8hr) * 3 * 365 * float(leverage) * 100
+
+                if rate_8hr >= 0 or current_carry_apy < float(min_exit_carry):
+                    return ExitDecision(
+                        should_exit=True,
+                        reason=ExitReason.NEGATIVE_APY,
+                        details={
+                            "current_carry_apy": round(current_carry_apy, 2),
+                            "min_exit_carry_apy": float(min_exit_carry),
+                            "funding_rate_8hr": rate_8hr,
+                        },
+                    )
 
         return None
 
@@ -346,6 +439,18 @@ class PositionMonitorService:
                     ),
                 )
 
+            # Update cooldown tracking (N6): record close time + current cooldown value
+            try:
+                await self.db.execute(
+                    """UPDATE user_strategy_config
+                       SET last_close_time = NOW(),
+                           cooldown_at_close = cooldown_minutes
+                       WHERE user_id = $1""",
+                    (ctx.user_id,),
+                )
+            except Exception:
+                pass  # Non-fatal — cooldown tracking is best-effort
+
             logger.info(
                 "Position %s auto-closed for user %s (reason: %s)",
                 position_id, ctx.user_id, exit_decision.reason.value,
@@ -356,3 +461,11 @@ class PositionMonitorService:
                 "Failed to auto-close position %s: %s",
                 position_id, e, exc_info=True,
             )
+
+            # Record failure for circuit breaker (7.3.3)
+            try:
+                await self.user_risk_manager.record_failure(
+                    ctx.user_id, f"exit_failed: {e}"
+                )
+            except Exception:
+                pass

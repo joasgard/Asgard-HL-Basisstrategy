@@ -1,10 +1,12 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { PrivyProvider } from '@privy-io/react-auth';
+import { createSolanaRpc, createSolanaRpcSubscriptions } from '@solana/kit';
 import { Layout } from './components/layout/Layout';
 import { Dashboard } from './components/dashboard/Dashboard';
 import { Settings } from './components/settings/Settings';
 import { Positions } from './components/positions/Positions';
+import { WithdrawPage } from './components/pages/WithdrawPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ToastContainer, GlobalLoading } from './components/ui';
 import { useSSE } from './hooks';
@@ -21,6 +23,10 @@ const queryClient = new QueryClient({
 });
 
 const privyAppId = import.meta.env.VITE_PRIVY_APP_ID || '';
+const solanaRpcUrl = import.meta.env.VITE_SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
+const solanaWssUrl = solanaRpcUrl.replace('https://', 'wss://');
+const solanaRpc = createSolanaRpc(solanaRpcUrl);
+const solanaRpcSubscriptions = createSolanaRpcSubscriptions(solanaWssUrl);
 
 // Debug: Log if app ID is missing
 if (!privyAppId) {
@@ -72,20 +78,35 @@ function App() {
               createOnLogin: 'all-users',
             },
           },
+          solana: {
+            rpcs: {
+              'solana:mainnet': {
+                rpc: solanaRpc as any,
+                rpcSubscriptions: solanaRpcSubscriptions as any,
+              },
+            },
+          },
         }}
       >
         <QueryClientProvider client={queryClient}>
           <BrowserRouter>
-            <SSEInitializer />
-            <Layout>
-              <Routes>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/positions" element={<Positions />} />
-                <Route path="/settings" element={<Settings />} />
-              </Routes>
-            </Layout>
-            <ToastContainer />
-            <GlobalLoading />
+            <Routes>
+              <Route path="/withdraw" element={<WithdrawPage />} />
+              <Route path="*" element={
+                <>
+                  <SSEInitializer />
+                  <Layout>
+                    <Routes>
+                      <Route path="/" element={<Dashboard />} />
+                      <Route path="/positions" element={<Positions />} />
+                      <Route path="/settings" element={<Settings />} />
+                    </Routes>
+                  </Layout>
+                  <ToastContainer />
+                  <GlobalLoading />
+                </>
+              } />
+            </Routes>
           </BrowserRouter>
         </QueryClientProvider>
       </PrivyProvider>

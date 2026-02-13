@@ -79,7 +79,7 @@ class TestVerifyInternalToken:
 
             result = verify_internal_token(credentials)
 
-            assert result == "valid_token"
+            assert result == ""
 
     def test_verify_invalid_token(self, tmp_path):
         """Test verifying invalid token raises 401."""
@@ -249,12 +249,12 @@ class TestGetPositions:
         mock_bot.get_positions.return_value = {"pos1": mock_position}
         set_bot_instance(mock_bot)
         
-        with patch('bot.core.internal_api.verify_internal_token'):
+        with patch('bot.core.internal_api.verify_internal_token', return_value=""):
             credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="token")
             result = await get_positions(credentials)
-        
+
         assert "pos1" in result
-        
+
         set_bot_instance(None)
 
 
@@ -302,22 +302,22 @@ class TestGetPositionDetail:
         mock_bot.get_positions.return_value = {"pos1": mock_position}
         set_bot_instance(mock_bot)
         
-        with patch('bot.core.internal_api.verify_internal_token'):
+        with patch('bot.core.internal_api.verify_internal_token', return_value=""):
             credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="token")
             result = await get_position_detail("pos1", credentials)
-        
+
         assert result.position_id == "pos1"
-        
+
         set_bot_instance(None)
-    
+
     @pytest.mark.asyncio
     async def test_get_position_detail_not_found(self):
         """Test getting non-existent position."""
         mock_bot = MagicMock()
         mock_bot.get_positions.return_value = {}
         set_bot_instance(mock_bot)
-        
-        with patch('bot.core.internal_api.verify_internal_token'):
+
+        with patch('bot.core.internal_api.verify_internal_token', return_value=""):
             credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="token")
             
             with pytest.raises(HTTPException) as exc_info:

@@ -21,9 +21,9 @@ class TestListPositions:
     """Tests for GET /positions endpoint."""
 
     @pytest.mark.asyncio
-    @patch('backend.dashboard.api.positions.require_bot_bridge')
-    async def test_list_positions_success(self, mock_require_bridge):
-        """Test listing positions successfully."""
+    @patch('backend.dashboard.dependencies.get_bot_bridge')
+    async def test_list_positions_success(self, mock_get_bridge):
+        """Test listing positions successfully via bot bridge."""
         from backend.dashboard.api.positions import list_positions
         from shared.common.schemas import PositionSummary
 
@@ -49,50 +49,54 @@ class TestListPositions:
         )
 
         mock_bridge.get_positions.return_value = {"pos1": pos1}
-        mock_require_bridge.return_value = mock_bridge
+        mock_get_bridge.return_value = mock_bridge
 
-        result = await list_positions(user=_mock_user())
+        mock_db = AsyncMock()
+        result = await list_positions(user=_mock_user(), db=mock_db)
 
         assert len(result) == 1
         assert result[0].position_id == "pos1"
         assert result[0].asset == "SOL"
 
     @pytest.mark.asyncio
-    @patch('backend.dashboard.api.positions.require_bot_bridge')
-    async def test_list_positions_empty(self, mock_require_bridge):
+    @patch('backend.dashboard.dependencies.get_bot_bridge')
+    async def test_list_positions_empty(self, mock_get_bridge):
         """Test listing positions when none exist."""
         from backend.dashboard.api.positions import list_positions
 
         mock_bridge = AsyncMock()
         mock_bridge.get_positions.return_value = {}
-        mock_require_bridge.return_value = mock_bridge
+        mock_get_bridge.return_value = mock_bridge
 
-        result = await list_positions(user=_mock_user())
+        mock_db = AsyncMock()
+        result = await list_positions(user=_mock_user(), db=mock_db)
 
         assert result == []
-    
+
     @pytest.mark.asyncio
-    @patch('backend.dashboard.api.positions.require_bot_bridge')
-    async def test_list_positions_exception(self, mock_require_bridge):
-        """Test handling exception when listing positions."""
+    @patch('backend.dashboard.dependencies.get_bot_bridge')
+    async def test_list_positions_bot_unavailable_falls_back_to_db(self, mock_get_bridge):
+        """Test that bot unavailable falls back to DB query."""
         from backend.dashboard.api.positions import list_positions
 
-        mock_bridge = AsyncMock()
-        mock_bridge.get_positions.side_effect = Exception("Connection error")
-        mock_require_bridge.return_value = mock_bridge
+        # Bot bridge returns None (unavailable)
+        mock_get_bridge.return_value = None
 
-        with pytest.raises(HTTPException) as exc_info:
-            await list_positions(user=_mock_user())
+        mock_db = AsyncMock()
+        mock_db.fetchall.return_value = []
 
-        assert exc_info.value.status_code == 503
+        result = await list_positions(user=_mock_user(), db=mock_db)
+
+        assert result == []
+        mock_db.fetchall.assert_called_once()
 
 
 class TestGetPosition:
     """Tests for GET /positions/{position_id} endpoint."""
-    
+
     @pytest.mark.asyncio
-    @patch('backend.dashboard.api.positions.require_bot_bridge')
-    async def test_get_position_success(self, mock_require_bridge):
+    @patch('backend.dashboard.dependencies.get_bot_bridge')
+    async def test_get_position_success(self, mock_get_bridge):
         """Test getting position detail successfully."""
         from backend.dashboard.api.positions import get_position
         from shared.common.schemas import PositionDetail
@@ -122,48 +126,48 @@ class TestGetPosition:
             risk={}
         )
 
-        # get_position checks ownership via get_positions first
         mock_bridge.get_positions.return_value = {"pos1": MagicMock()}
         mock_bridge.get_position_detail.return_value = pos
-        mock_require_bridge.return_value = mock_bridge
+        mock_get_bridge.return_value = mock_bridge
 
-        result = await get_position("pos1", user=_mock_user())
+        mock_db = AsyncMock()
+        result = await get_position("pos1", user=_mock_user(), db=mock_db)
 
         assert result.position_id == "pos1"
         assert result.asset == "SOL"
-    
+
     @pytest.mark.asyncio
-    @patch('backend.dashboard.api.positions.require_bot_bridge')
-    async def test_get_position_not_found(self, mock_require_bridge):
+    @patch('backend.dashboard.dependencies.get_bot_bridge')
+    async def test_get_position_not_found(self, mock_get_bridge):
         """Test handling position not found."""
         from backend.dashboard.api.positions import get_position
 
         mock_bridge = AsyncMock()
-        # Position not in user's positions → 404 from ownership check
         mock_bridge.get_positions.return_value = {}
-        mock_require_bridge.return_value = mock_bridge
+        mock_get_bridge.return_value = mock_bridge
 
+        mock_db = AsyncMock()
         with pytest.raises(HTTPException) as exc_info:
-            await get_position("nonexistent", user=_mock_user())
+            await get_position("nonexistent", user=_mock_user(), db=mock_db)
 
         assert exc_info.value.status_code == 404
-    
+
     @pytest.mark.asyncio
-    @patch('backend.dashboard.api.positions.require_bot_bridge')
-    async def test_get_position_exception(self, mock_require_bridge):
-        """Test handling other exceptions."""
+    @patch('backend.dashboard.dependencies.get_bot_bridge')
+    async def test_get_position_bot_unavailable_falls_back_to_db(self, mock_get_bridge):
+        """Test that bot unavailable falls back to DB query."""
         from backend.dashboard.api.positions import get_position
 
-        mock_bridge = AsyncMock()
-        # Ownership check passes, then detail fetch fails
-        mock_bridge.get_positions.return_value = {"pos1": MagicMock()}
-        mock_bridge.get_position_detail.side_effect = Exception("Connection error")
-        mock_require_bridge.return_value = mock_bridge
+        mock_get_bridge.return_value = None  # Bot unavailable
+
+        mock_db = AsyncMock()
+        mock_db.fetchone.return_value = None  # Position not found in DB
 
         with pytest.raises(HTTPException) as exc_info:
-            await get_position("pos1", user=_mock_user())
+            await get_position("pos1", user=_mock_user(), db=mock_db)
 
-        assert exc_info.value.status_code == 503
+        assert exc_info.value.status_code == 404
+        mock_db.fetchone.assert_called_once()
 
 
 class TestOpenPosition:

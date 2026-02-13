@@ -22,6 +22,14 @@ vi.mock('../../../stores', () => ({
   useUIStore: () => ({
     setGlobalLoading: mockSetGlobalLoading,
   }),
+  useSettingsStore: (selector?: (state: Record<string, unknown>) => unknown) => {
+    const store = {
+      minPositionSize: 100,
+      maxPositionSize: 50000,
+      defaultLeverage: 3.0,
+    };
+    return selector ? selector(store) : store;
+  },
 }));
 
 describe('OpenPositionModal', () => {
@@ -33,16 +41,15 @@ describe('OpenPositionModal', () => {
 
   it('should render modal with title', () => {
     render(<OpenPositionModal onClose={onClose} />);
-    
-    expect(screen.getByText('Open Position')).toBeInTheDocument();
+
+    expect(screen.getByText('Open SOL Position')).toBeInTheDocument();
   });
 
-  it('should render asset selector', () => {
+  it('should render asset label in title', () => {
     render(<OpenPositionModal onClose={onClose} />);
-    
-    // Check for select element with assets
-    const selects = screen.getAllByRole('combobox');
-    expect(selects.length).toBeGreaterThan(0);
+
+    // Asset is hardcoded as SOL, shown in the title
+    expect(screen.getByText(/SOL/)).toBeInTheDocument();
   });
 
   it('should render leverage slider', () => {

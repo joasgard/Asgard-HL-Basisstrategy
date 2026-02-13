@@ -38,25 +38,25 @@ class TestValidationResult:
 
 class TestFundingStatus:
     """Tests for FundingStatus dataclass."""
-    
+
     def test_funding_status_creation(self):
         """Test creating a funding status."""
         balances = {
-            "evm_usdc": Decimal("500"),
             "solana_sol": Decimal("1.5"),
-            "solana_usdc": Decimal("200")
+            "solana_usdc": Decimal("200"),
+            "hl_usdc": Decimal("500"),
         }
-        
+
         status = FundingStatus(
-            evm_funded=True,
             solana_sol_funded=True,
             solana_usdc_funded=True,
-            balances=balances
+            hl_funded=True,
+            balances=balances,
         )
-        
-        assert status.evm_funded is True
+
         assert status.solana_sol_funded is True
         assert status.solana_usdc_funded is True
+        assert status.hl_funded is True
         assert status.balances == balances
 
 
@@ -66,30 +66,34 @@ class TestSetupValidatorInitialization:
     def test_init_with_defaults(self):
         """Test initialization with default clients."""
         validator = SetupValidator()
-        
+
         assert validator.privy is None
         assert validator.solana is None
         assert validator.arbitrum is None
         assert validator.asgard is None
-    
+        assert validator.hl_trader is None
+
     def test_init_with_clients(self):
         """Test initialization with custom clients."""
         mock_privy = MagicMock()
         mock_solana = MagicMock()
         mock_arbitrum = MagicMock()
         mock_asgard = MagicMock()
-        
+        mock_hl_trader = MagicMock()
+
         validator = SetupValidator(
             privy_client=mock_privy,
             solana_client=mock_solana,
             arbitrum_client=mock_arbitrum,
-            asgard_client=mock_asgard
+            asgard_client=mock_asgard,
+            hl_trader=mock_hl_trader,
         )
-        
+
         assert validator.privy is mock_privy
         assert validator.solana is mock_solana
         assert validator.arbitrum is mock_arbitrum
         assert validator.asgard is mock_asgard
+        assert validator.hl_trader is mock_hl_trader
 
 
 class TestValidatePassword:
@@ -232,114 +236,125 @@ class TestValidatePrivyCredentials:
 
 class TestValidateWalletFunding:
     """Tests for validate_wallet_funding method."""
-    
+
     @pytest.mark.asyncio
     async def test_no_clients_returns_empty_balances(self):
         """Test without clients returns empty balances and fails validation."""
         validator = SetupValidator()
         result = await validator.validate_wallet_funding("0x1234", "sol567")
-        
-        # Returns False because balances are all 0 (insufficient)
+
         assert result.valid is False
         assert "Insufficient funding" in result.error
-    
+
     @pytest.mark.asyncio
-    async def test_evm_funded(self):
-        """Test with funded EVM wallet but missing Solana still fails."""
-        mock_arbitrum = AsyncMock()
-        mock_arbitrum.get_usdc_balance = AsyncMock(return_value=Decimal("500"))
-        
-        validator = SetupValidator(arbitrum_client=mock_arbitrum)
-        result = await validator.validate_wallet_funding("0x1234", None)
-        
-        # EVM is funded but Solana is missing, so overall fails
-        assert result.valid is False
-        assert result.details["funding_status"].evm_funded is True
-    
-    @pytest.mark.asyncio
-    async def test_evm_not_funded(self):
-        """Test with unfunded EVM wallet."""
-        mock_arbitrum = AsyncMock()
-        mock_arbitrum.get_usdc_balance = AsyncMock(return_value=Decimal("10"))
-        
-        validator = SetupValidator(arbitrum_client=mock_arbitrum)
-        result = await validator.validate_wallet_funding("0x1234", None)
-        
-        assert result.valid is False
-        assert result.details["funding_status"].evm_funded is False
-    
-    @pytest.mark.asyncio
-    async def test_solana_funded(self):
-        """Test with funded Solana wallet but missing EVM still fails."""
+    async def test_all_funded(self):
+        """Test when Solana and HL are both funded."""
         mock_solana = AsyncMock()
         mock_solana.get_sol_balance = AsyncMock(return_value=Decimal("1.5"))
         mock_solana.get_usdc_balance = AsyncMock(return_value=Decimal("200"))
-        
+
+        mock_hl_trader = AsyncMock()
+        mock_hl_trader.get_deposited_balance = AsyncMock(return_value=500.0)
+
+        validator = SetupValidator(solana_client=mock_solana, hl_trader=mock_hl_trader)
+        result = await validator.validate_wallet_funding("0x1234", "sol567")
+
+        assert result.valid is True
+        assert result.details["funding_status"].solana_sol_funded is True
+        assert result.details["funding_status"].solana_usdc_funded is True
+        assert result.details["funding_status"].hl_funded is True
+
+    @pytest.mark.asyncio
+    async def test_hl_not_funded(self):
+        """Test with funded Solana but insufficient HL balance."""
+        mock_solana = AsyncMock()
+        mock_solana.get_sol_balance = AsyncMock(return_value=Decimal("1.5"))
+        mock_solana.get_usdc_balance = AsyncMock(return_value=Decimal("200"))
+
+        mock_hl_trader = AsyncMock()
+        mock_hl_trader.get_deposited_balance = AsyncMock(return_value=10.0)  # Too low
+
+        validator = SetupValidator(solana_client=mock_solana, hl_trader=mock_hl_trader)
+        result = await validator.validate_wallet_funding("0x1234", "sol567")
+
+        assert result.valid is False
+        assert result.details["funding_status"].hl_funded is False
+        assert "Hyperliquid" in result.error
+        assert "Deposit" in result.error
+
+    @pytest.mark.asyncio
+    async def test_solana_funded_hl_missing(self):
+        """Test with funded Solana but no HL trader still fails."""
+        mock_solana = AsyncMock()
+        mock_solana.get_sol_balance = AsyncMock(return_value=Decimal("1.5"))
+        mock_solana.get_usdc_balance = AsyncMock(return_value=Decimal("200"))
+
         validator = SetupValidator(solana_client=mock_solana)
         result = await validator.validate_wallet_funding(None, "sol567")
-        
-        # Solana is funded but EVM is missing, so overall fails
+
+        # HL not configured → hl_usdc stays 0 → fails
         assert result.valid is False
         assert result.details["funding_status"].solana_sol_funded is True
         assert result.details["funding_status"].solana_usdc_funded is True
-    
+        assert result.details["funding_status"].hl_funded is False
+
     @pytest.mark.asyncio
     async def test_solana_not_funded(self):
         """Test with unfunded Solana wallet."""
         mock_solana = AsyncMock()
         mock_solana.get_sol_balance = AsyncMock(return_value=Decimal("0.01"))
         mock_solana.get_usdc_balance = AsyncMock(return_value=Decimal("10"))
-        
+
         validator = SetupValidator(solana_client=mock_solana)
         result = await validator.validate_wallet_funding(None, "sol567")
-        
+
         assert result.valid is False
         assert result.details["funding_status"].solana_sol_funded is False
         assert result.details["funding_status"].solana_usdc_funded is False
-    
-    @pytest.mark.asyncio
-    async def test_arbitrum_error(self):
-        """Test Arbitrum balance check error."""
-        mock_arbitrum = AsyncMock()
-        mock_arbitrum.get_usdc_balance = AsyncMock(side_effect=Exception("RPC error"))
-        
-        validator = SetupValidator(arbitrum_client=mock_arbitrum)
-        result = await validator.validate_wallet_funding("0x1234", None)
-        
-        assert result.valid is False
-        assert "Failed to check EVM balance" in result.error
-    
+
     @pytest.mark.asyncio
     async def test_solana_error(self):
         """Test Solana balance check error."""
         mock_solana = AsyncMock()
         mock_solana.get_sol_balance = AsyncMock(side_effect=Exception("RPC error"))
-        
+
         validator = SetupValidator(solana_client=mock_solana)
         result = await validator.validate_wallet_funding(None, "sol567")
-        
+
         assert result.valid is False
         assert "Failed to check Solana balance" in result.error
-    
+
+    @pytest.mark.asyncio
+    async def test_hl_error(self):
+        """Test Hyperliquid balance check error."""
+        mock_hl_trader = AsyncMock()
+        mock_hl_trader.get_deposited_balance = AsyncMock(side_effect=Exception("API error"))
+
+        validator = SetupValidator(hl_trader=mock_hl_trader)
+        result = await validator.validate_wallet_funding("0x1234", None)
+
+        assert result.valid is False
+        assert "Failed to check Hyperliquid balance" in result.error
+
     @pytest.mark.asyncio
     async def test_partial_funding_message(self):
         """Test error message with partial funding."""
-        mock_arbitrum = AsyncMock()
-        mock_arbitrum.get_usdc_balance = AsyncMock(return_value=Decimal("50"))
-        
         mock_solana = AsyncMock()
         mock_solana.get_sol_balance = AsyncMock(return_value=Decimal("0.05"))
         mock_solana.get_usdc_balance = AsyncMock(return_value=Decimal("50"))
-        
+
+        mock_hl_trader = AsyncMock()
+        mock_hl_trader.get_deposited_balance = AsyncMock(return_value=10.0)
+
         validator = SetupValidator(
-            arbitrum_client=mock_arbitrum,
-            solana_client=mock_solana
+            solana_client=mock_solana,
+            hl_trader=mock_hl_trader,
         )
         result = await validator.validate_wallet_funding("0x1234", "sol567")
-        
+
         assert result.valid is False
-        assert "EVM" in result.error
         assert "Solana SOL" in result.error
+        assert "Hyperliquid" in result.error
 
 
 class TestValidateAsgardApiKey:

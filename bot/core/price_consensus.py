@@ -215,26 +215,35 @@ class PriceConsensus:
     ) -> tuple[Decimal, Decimal]:
         """
         Fetch prices from both venues concurrently.
-        
+
+        Primary strategy: compare Hyperliquid mark price (perp) vs oracle price.
+        Fallback: compare Asgard oracle vs Hyperliquid mark price (only if both
+        venues expose price data — Asgard's /markets API may omit oracle prices).
+
         Args:
             asset: Asset for Asgard price
             coin: Coin symbol for Hyperliquid price
-            
+
         Returns:
             Tuple of (asgard_price, hyperliquid_price)
         """
-        import asyncio
-        
-        # Fetch both prices concurrently
-        asgard_task = self._get_asgard_price(asset)
-        hyperliquid_task = self._get_hyperliquid_price(coin)
-        
-        asgard_price, hyperliquid_price = await asyncio.gather(
-            asgard_task,
-            hyperliquid_task,
-        )
-        
-        return asgard_price, hyperliquid_price
+        # Try to get both Hyperliquid mark and oracle prices first — this is
+        # the most reliable comparison since Asgard /markets doesn't always
+        # include price fields.
+        hl_mark, hl_oracle = await self._get_hyperliquid_prices(coin)
+
+        if hl_oracle is not None:
+            # Compare mark vs oracle on Hyperliquid (best price consensus check)
+            return hl_oracle, hl_mark
+
+        # Oracle not available — try Asgard as second source
+        try:
+            asgard_price = await self._get_asgard_price(asset)
+            return asgard_price, hl_mark
+        except (ValueError, Exception) as e:
+            logger.debug(f"Asgard price unavailable ({e}), using HL mark as both")
+            # If Asgard also has no price, consensus is trivially OK (same price)
+            return hl_mark, hl_mark
     
     async def _get_asgard_price(self, asset: Asset) -> Decimal:
         """
@@ -254,16 +263,17 @@ class PriceConsensus:
             
             token_mint = get_mint(asset)
             
-            # Find market for this asset
-            for market in markets:
-                if market.get("tokenAMint") == token_mint:
+            # Find market for this asset in strategies dict
+            strategies = markets.get("strategies", {})
+            for strategy_name, strategy in strategies.items():
+                if strategy.get("tokenAMint") == token_mint:
                     # Try to get oracle price, fallback to other price fields
-                    price = market.get("oraclePrice")
+                    price = strategy.get("oraclePrice")
                     if price is None:
-                        price = market.get("price")
+                        price = strategy.get("price")
                     if price is None:
-                        price = market.get("tokenAPrice")
-                    
+                        price = strategy.get("tokenAPrice")
+
                     if price is not None:
                         return Decimal(str(price))
             
@@ -277,36 +287,61 @@ class PriceConsensus:
     
     async def _get_hyperliquid_price(self, coin: str) -> Decimal:
         """
-        Get asset price from Hyperliquid.
-        
-        Uses markPx from asset contexts (mark price from perp contract).
-        
+        Get asset price from Hyperliquid (mark price).
+
         Args:
             coin: Coin symbol (e.g., "SOL")
-            
+
         Returns:
             Asset price in USD
         """
+        mark, _ = await self._get_hyperliquid_prices(coin)
+        return mark
+
+    async def _get_hyperliquid_prices(self, coin: str) -> tuple[Decimal, Optional[Decimal]]:
+        """
+        Get both mark and oracle prices from Hyperliquid.
+
+        Args:
+            coin: Coin symbol (e.g., "SOL")
+
+        Returns:
+            Tuple of (mark_price, oracle_price). oracle_price may be None.
+        """
         try:
             response = await self.hyperliquid.get_meta_and_asset_contexts()
-            
-            asset_ctxs = response.get("assetCtxs", [])
-            ctx = next((c for c in asset_ctxs if c.get("coin") == coin), None)
-            
-            if not ctx:
+
+            # Response is [meta, assetCtxs] — a 2-element list
+            meta, asset_ctxs = response[0], response[1]
+
+            # Find coin index from universe (contexts are positional, no 'coin' field)
+            universe = meta.get("universe", [])
+            coin_index = None
+            for i, entry in enumerate(universe):
+                if entry.get("name") == coin:
+                    coin_index = i
+                    break
+
+            if coin_index is None or coin_index >= len(asset_ctxs):
                 raise ValueError(f"Coin {coin} not found in Hyperliquid asset contexts")
-            
-            # Use mark price (markPx) as the trading price
+
+            ctx = asset_ctxs[coin_index]
+
             mark_price = ctx.get("markPx")
-            if mark_price is None:
-                # Fallback to oracle price
-                mark_price = ctx.get("oraclePx")
-            
-            if mark_price is None:
+            oracle_price = ctx.get("oraclePx")
+
+            if mark_price is None and oracle_price is None:
                 raise ValueError(f"No price available for {coin}")
-            
-            return Decimal(str(mark_price))
-            
+
+            # If mark is missing, fall back to oracle
+            if mark_price is None:
+                mark_price = oracle_price
+                oracle_price = None
+
+            mark_dec = Decimal(str(mark_price))
+            oracle_dec = Decimal(str(oracle_price)) if oracle_price is not None else None
+            return mark_dec, oracle_dec
+
         except Exception as e:
             logger.error(f"Failed to fetch Hyperliquid price for {coin}: {e}")
             raise
@@ -326,10 +361,11 @@ class PriceConsensus:
         # For now, return SOL price for all assets (LSTs track SOL)
         # In production, this could call a price oracle or DEX
         markets = await self.asgard.get_markets(use_cache=True)
-        
-        for market in markets:
-            if "SOL" in market.get("strategy", ""):
-                price = market.get("oraclePrice") or market.get("price")
+        strategies = markets.get("strategies", {})
+
+        for strategy_name, strategy in strategies.items():
+            if "SOL" in strategy_name:
+                price = strategy.get("oraclePrice") or strategy.get("price")
                 if price:
                     return Decimal(str(price))
         

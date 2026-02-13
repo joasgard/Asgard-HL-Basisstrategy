@@ -319,26 +319,72 @@ class IntentScanner:
         """Execute the position for an intent that passed all criteria."""
         intent_id = row["id"]
         user_id = row["user_id"]
-        asset = row["asset"]
+        asset_str = row["asset"]
         leverage = row["leverage"]
         size_usd = row["size_usd"]
 
         try:
+            from decimal import Decimal
+            from shared.config.assets import Asset
+            from shared.models.common import Protocol
+            from shared.models.funding import FundingRate, AsgardRates
+            from shared.models.opportunity import ArbitrageOpportunity, OpportunityScore
+
+            asset = Asset(asset_str)
+            deployed_capital = Decimal(str(size_usd))
+            leverage_dec = Decimal(str(leverage))
+            position_size = deployed_capital * leverage_dec
+
+            # Extract funding rate from criteria snapshot
+            funding_check = criteria.get("checks", {}).get("funding_rate", {})
+            current_rate = funding_check.get("current_rate", -0.001)
+
+            current_funding = FundingRate(
+                timestamp=datetime.utcnow(),
+                coin=asset_str,
+                rate_8hr=Decimal(str(current_rate)),
+            )
+
+            # Build minimal AsgardRates (PositionManager selects the best
+            # protocol during pre-flight; these defaults let it proceed)
+            asgard_rates = AsgardRates(
+                protocol_id=Protocol.MARGINFI.value,
+                token_a_mint="",
+                token_b_mint="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+                token_a_lending_apy=Decimal("0.05"),
+                token_b_borrowing_apy=Decimal("0.08"),
+                token_b_max_borrow_capacity=position_size * 2,
+            )
+
+            opportunity = ArbitrageOpportunity(
+                id=f"intent-{intent_id}",
+                asset=asset,
+                selected_protocol=Protocol.MARGINFI,
+                asgard_rates=asgard_rates,
+                current_funding=current_funding,
+                funding_volatility=Decimal("0.3"),
+                leverage=leverage_dec,
+                deployed_capital_usd=deployed_capital,
+                position_size_usd=position_size,
+                score=OpportunityScore(
+                    funding_apy=abs(current_funding.rate_annual),
+                    net_carry_apy=Decimal("0"),
+                ),
+                price_deviation=Decimal("0"),
+                preflight_checks_passed=True,
+            )
+
             ctx = await UserTradingContext.from_user_id(user_id, self.db)
             async with ctx:
                 pm = PositionManager.from_user_context(ctx)
                 await pm.__aenter__()
                 try:
-                    result = await pm.open_position(
-                        asset=asset,
-                        size_usd=size_usd,
-                        leverage=leverage,
-                    )
+                    result = await pm.open_position(opportunity=opportunity)
                 finally:
                     await pm.__aexit__(None, None, None)
 
-            if result and result.get("success"):
-                position_id = result.get("position_id", str(uuid.uuid4()))
+            if result.success and result.position:
+                position_id = result.position.position_id
 
                 # Persist position and mark intent as executed in a transaction
                 async with self.db.transaction() as tx:
@@ -349,12 +395,11 @@ class IntentScanner:
                             position_id,
                             user_id,
                             json.dumps({
-                                "asset": asset,
+                                "asset": asset_str,
                                 "leverage": leverage,
                                 "size_usd": size_usd,
                                 "intent_id": intent_id,
                                 "created_at": datetime.utcnow().isoformat(),
-                                **{k: v for k, v in result.items() if k != "success"},
                             }),
                         ),
                     )
@@ -373,7 +418,7 @@ class IntentScanner:
                     intent_id, position_id, user_id,
                 )
             else:
-                error = result.get("error", "Unknown error") if result else "No result returned"
+                error = result.error or "Unknown error"
                 await self._fail_intent(intent_id, error)
 
         except Exception as e:

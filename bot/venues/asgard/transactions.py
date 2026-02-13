@@ -68,38 +68,39 @@ class AsgardTransactionBuilder:
         state_machine: Optional[TransactionStateMachine] = None,
         wallet_address: Optional[str] = None,
         user_id: Optional[str] = None,
+        wallet_id: Optional[str] = None,
     ):
-        """
-        Initialize transaction builder.
+        """Initialize transaction builder.
 
         Args:
-            client: AsgardClient instance
-            state_machine: TransactionStateMachine for persistence
+            client: AsgardClient instance.
+            state_machine: TransactionStateMachine for persistence.
             wallet_address: Solana wallet address. If None, falls back to settings.
             user_id: User ID for multi-tenant logging.
+            wallet_id: Privy wallet ID (from server wallets DB).
         """
         self.client = client or AsgardClient()
         self.state_machine = state_machine or TransactionStateMachine()
         self.user_id = user_id
+        self.wallet_id = wallet_id
 
         settings = get_settings()
         self.wallet_address = wallet_address or settings.solana_wallet_address
 
-        # Initialize Privy config for lazy loading (allows mocking in tests)
-        self._privy = None
-        self._privy_config = {
-            'app_id': settings.privy_app_id,
-            'app_secret': settings.privy_app_secret,
-            'authorization_private_key_path': settings.privy_auth_key_path
-        }
-        
+        # Lazy-init Privy wallet signer
+        self._privy_signer = None
+
     @property
-    def privy(self):
-        """Lazy load Privy client for testing compatibility."""
-        if self._privy is None:
-            from privy import PrivyClient
-            self._privy = PrivyClient(**self._privy_config)
-        return self._privy
+    def privy_signer(self):
+        """Lazy load Privy wallet signer for testing compatibility."""
+        if self._privy_signer is None:
+            from bot.venues.privy_signer import PrivyWalletSigner
+            self._privy_signer = PrivyWalletSigner(
+                wallet_id=self.wallet_id,
+                wallet_address=self.wallet_address,
+                user_id=self.user_id,
+            )
+        return self._privy_signer
     
     async def build_create_position(
         self,
@@ -209,18 +210,21 @@ class AsgardTransactionBuilder:
         self.state_machine.transition(intent_id, TransactionState.SIGNING)
         
         try:
-            # Sign via Privy instead of local keypair
-            signed_tx = await self.privy.wallet.sign_solana_transaction(
-                wallet_address=self.wallet_address,
-                transaction=unsigned_tx
+            # Sign via Privy — send base64-encoded unsigned transaction
+            import base64 as b64
+            unsigned_tx_b64 = b64.b64encode(unsigned_tx).decode("utf-8")
+
+            signed_response_b64 = self.privy_signer.sign_solana_transaction(
+                unsigned_tx_b64
             )
-            
-            # Get signature (first signature in transaction)
-            signature = str(signed_tx.signatures[0])
-            
+
+            # Response contains the signed transaction (base64-encoded)
+            signed_tx_bytes = b64.b64decode(signed_response_b64)
+            signature = intent_id  # Use intent_id as reference; real sig is in the tx
+
             result = SignResult(
                 intent_id=intent_id,
-                signed_tx=bytes(signed_tx),
+                signed_tx=signed_tx_bytes,
                 signature=signature,
             )
             

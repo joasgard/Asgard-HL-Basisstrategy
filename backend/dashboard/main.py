@@ -42,6 +42,10 @@ from backend.dashboard.api import status, positions, control, rates, settings as
 from backend.dashboard.api import auth as auth_api, balances as balances_api, events as events_api
 from backend.dashboard.api import wallet_setup as wallet_setup_api
 from backend.dashboard.api import intents as intents_api
+from backend.dashboard.api import funding as funding_api
+from backend.dashboard.api import wallets as wallets_api
+from backend.dashboard.api import strategy as strategy_api
+from backend.dashboard.api import admin as admin_api
 
 logger = logging.getLogger(__name__)
 
@@ -396,6 +400,10 @@ def create_app() -> FastAPI:
     app.include_router(events_api.router, prefix="/api/v1")
     app.include_router(wallet_setup_api.router, prefix="/api/v1")
     app.include_router(intents_api.router, prefix="/api/v1")
+    app.include_router(funding_api.router, prefix="/api/v1")
+    app.include_router(wallets_api.router, prefix="/api/v1")
+    app.include_router(strategy_api.router, prefix="/api/v1")
+    app.include_router(admin_api.router, prefix="/api/v1")
 
     # ------------------------------------------------------------------
     # Health check endpoints

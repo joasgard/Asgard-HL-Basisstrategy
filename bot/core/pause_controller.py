@@ -497,6 +497,62 @@ class PauseController:
         """Add callback for resume events."""
         self._resume_callbacks.append(callback)
     
+    async def check_user_paused(self, user_id: str, db) -> bool:
+        """Check if a specific user is paused (global OR per-user).
+
+        Args:
+            user_id: Privy user ID.
+            db: Database instance.
+
+        Returns:
+            True if the user (or global) is paused.
+        """
+        # Global pause takes precedence
+        if self._paused:
+            return True
+
+        # Per-user pause from DB
+        row = await db.fetchone(
+            "SELECT paused_at FROM users WHERE id = $1",
+            (user_id,),
+        )
+        return row is not None and row.get("paused_at") is not None
+
+    async def pause_user(self, user_id: str, reason: str, db) -> bool:
+        """Pause a specific user.
+
+        Args:
+            user_id: Privy user ID.
+            reason: Reason for pause.
+            db: Database instance.
+
+        Returns:
+            True if paused successfully.
+        """
+        await db.execute(
+            "UPDATE users SET paused_at = NOW(), paused_reason = $1 WHERE id = $2",
+            (reason, user_id),
+        )
+        logger.warning("user_paused", user_id=user_id, reason=reason)
+        return True
+
+    async def resume_user(self, user_id: str, db) -> bool:
+        """Resume a specific user.
+
+        Args:
+            user_id: Privy user ID.
+            db: Database instance.
+
+        Returns:
+            True if resumed successfully.
+        """
+        await db.execute(
+            "UPDATE users SET paused_at = NULL, paused_reason = NULL WHERE id = $1",
+            (user_id,),
+        )
+        logger.info("user_resumed", user_id=user_id)
+        return True
+
     def is_high_gas(self, current_gas_sol: Decimal) -> bool:
         """Check if gas price is above threshold."""
         return current_gas_sol > self.HIGH_GAS_THRESHOLD_SOL

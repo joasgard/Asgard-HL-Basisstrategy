@@ -38,9 +38,12 @@ logger = logging.getLogger(__name__)
 
 
 class UserTradingContext:
-    """
-    Per-user trading context that holds wallet addresses and lazily
-    creates trading components configured for that user.
+    """Per-user trading context that holds wallet addresses and IDs.
+
+    Lazily creates trading components configured for that user.
+    Server wallet IDs (from Phase 2 provisioning) are passed through
+    to the signing layer so that ``wallets.rpc()`` can be called
+    without address→ID resolution.
     """
 
     def __init__(
@@ -48,10 +51,14 @@ class UserTradingContext:
         user_id: str,
         solana_address: Optional[str] = None,
         evm_address: Optional[str] = None,
+        evm_wallet_id: Optional[str] = None,
+        solana_wallet_id: Optional[str] = None,
     ):
         self.user_id = user_id
         self.solana_address = solana_address
         self.evm_address = evm_address
+        self.evm_wallet_id = evm_wallet_id
+        self.solana_wallet_id = solana_wallet_id
 
         # Lazily created instances
         self._hl_client: Optional[HyperliquidClient] = None
@@ -62,28 +69,37 @@ class UserTradingContext:
 
     @classmethod
     async def from_user_id(cls, user_id: str, db) -> "UserTradingContext":
-        """
-        Create a UserTradingContext by loading wallet addresses from the database.
+        """Create a UserTradingContext by loading wallet info from the database.
+
+        Prefers server wallet addresses/IDs (from Phase 2 provisioning).
+        Falls back to embedded wallet addresses if server wallets are not
+        yet provisioned.
 
         Args:
-            user_id: Privy user ID (matches users.id in DB)
-            db: Database instance with fetchone()
+            user_id: Privy user ID (matches users.id in DB).
+            db: Database instance with fetchone().
 
         Returns:
-            UserTradingContext with resolved wallet addresses
+            UserTradingContext with resolved wallet addresses.
 
         Raises:
-            ValueError: If user not found or has no wallets
+            ValueError: If user not found or has no wallets.
         """
         user = await db.fetchone(
-            "SELECT solana_address, evm_address FROM users WHERE id = ?",
-            (user_id,)
+            """SELECT solana_address, evm_address,
+                      server_evm_wallet_id, server_evm_address,
+                      server_solana_wallet_id, server_solana_address
+               FROM users WHERE id = $1""",
+            (user_id,),
         )
         if not user:
             raise ValueError(f"User not found: {user_id}")
 
-        solana_address = user.get("solana_address") or user.get("solana_address")
-        evm_address = user.get("evm_address") or user.get("evm_address")
+        # Prefer server wallet addresses (Phase 2); fall back to embedded
+        evm_wallet_id = user.get("server_evm_wallet_id")
+        solana_wallet_id = user.get("server_solana_wallet_id")
+        evm_address = user.get("server_evm_address") or user.get("evm_address")
+        solana_address = user.get("server_solana_address") or user.get("solana_address")
 
         if not solana_address and not evm_address:
             raise ValueError(f"User {user_id} has no wallet addresses configured")
@@ -92,6 +108,8 @@ class UserTradingContext:
             user_id=user_id,
             solana_address=solana_address,
             evm_address=evm_address,
+            evm_wallet_id=evm_wallet_id,
+            solana_wallet_id=solana_wallet_id,
         )
 
     def get_hl_client(self) -> HyperliquidClient:
@@ -101,11 +119,10 @@ class UserTradingContext:
         return self._hl_client
 
     def get_hl_trader(self) -> HyperliquidTrader:
-        """
-        Get a HyperliquidTrader configured for this user's EVM wallet.
+        """Get a HyperliquidTrader configured for this user's EVM wallet.
 
         The trader's signer will sign transactions using this user's
-        embedded EVM wallet via Privy.
+        server EVM wallet via Privy.
         """
         if self._hl_trader is None:
             client = self.get_hl_client()
@@ -115,20 +132,21 @@ class UserTradingContext:
                 oracle=oracle,
                 wallet_address=self.evm_address,
                 user_id=self.user_id,
+                wallet_id=self.evm_wallet_id,
             )
         return self._hl_trader
 
     def get_asgard_manager(self) -> AsgardPositionManager:
-        """
-        Get an AsgardPositionManager configured for this user's Solana wallet.
+        """Get an AsgardPositionManager configured for this user's Solana wallet.
 
         The manager's transaction builder will sign transactions using this
-        user's embedded Solana wallet via Privy.
+        user's server Solana wallet via Privy.
         """
         if self._asgard_manager is None:
             self._asgard_manager = AsgardPositionManager(
                 solana_wallet_address=self.solana_address,
                 user_id=self.user_id,
+                solana_wallet_id=self.solana_wallet_id,
             )
         return self._asgard_manager
 
@@ -139,8 +157,7 @@ class UserTradingContext:
         return self._arb_client
 
     def get_hl_depositor(self) -> HyperliquidDepositor:
-        """
-        Get a HyperliquidDepositor configured for this user's EVM wallet.
+        """Get a HyperliquidDepositor configured for this user's EVM wallet.
 
         Bridges USDC from Arbitrum into HL clearinghouse.
         """
@@ -150,6 +167,7 @@ class UserTradingContext:
                 wallet_address=self.evm_address,
                 user_id=self.user_id,
                 hl_trader=self.get_hl_trader(),
+                wallet_id=self.evm_wallet_id,
             )
         return self._hl_depositor
 

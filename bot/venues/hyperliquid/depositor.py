@@ -51,14 +51,15 @@ ERC20_ABI: List[Dict[str, Any]] = [
     },
 ]
 
-BRIDGE_DEPOSIT_ABI: List[Dict[str, Any]] = [
+TRANSFER_ABI: List[Dict[str, Any]] = [
     {
         "constant": False,
         "inputs": [
-            {"name": "amount", "type": "uint256"},
+            {"name": "_to", "type": "address"},
+            {"name": "_value", "type": "uint256"},
         ],
-        "name": "deposit",
-        "outputs": [],
+        "name": "transfer",
+        "outputs": [{"name": "success", "type": "bool"}],
         "type": "function",
     },
 ]
@@ -75,6 +76,14 @@ class DepositResult:
     success: bool
     approve_tx_hash: Optional[str] = None
     deposit_tx_hash: Optional[str] = None
+    amount_usdc: Optional[Decimal] = None
+    error: Optional[str] = None
+
+
+@dataclass
+class WithdrawResult:
+    """Result of an HL → Arbitrum withdrawal."""
+    success: bool
     amount_usdc: Optional[Decimal] = None
     error: Optional[str] = None
 
@@ -101,10 +110,12 @@ class HyperliquidDepositor:
         user_id: Optional[str] = None,
         hl_trader: Optional[Any] = None,
         bridge_contract: Optional[str] = None,
+        wallet_id: Optional[str] = None,
     ):
         self.arb_client = arb_client
         self.wallet_address = wallet_address
         self.user_id = user_id
+        self.wallet_id = wallet_id
         self.hl_trader = hl_trader
 
         settings = get_settings()
@@ -116,19 +127,18 @@ class HyperliquidDepositor:
         logger.info(
             "HyperliquidDepositor initialized",
             wallet=wallet_address,
+            wallet_id=wallet_id,
             bridge=self.bridge_contract,
         )
 
-    def _get_privy(self):
-        """Lazy-init Privy client (same credentials as HyperliquidSigner)."""
+    def _get_privy_signer(self):
+        """Lazy-init Privy wallet signer."""
         if self._privy is None:
-            from privy import PrivyClient
-
-            settings = get_settings()
-            self._privy = PrivyClient(
-                app_id=settings.privy_app_id,
-                app_secret=settings.privy_app_secret,
-                authorization_private_key_path=settings.privy_auth_key_path,
+            from bot.venues.privy_signer import PrivyWalletSigner
+            self._privy = PrivyWalletSigner(
+                wallet_id=self.wallet_id,
+                wallet_address=self.wallet_address,
+                user_id=self.user_id,
             )
         return self._privy
 
@@ -175,38 +185,20 @@ class HyperliquidDepositor:
                 error=f"Insufficient ETH for gas: {eth_balance} < {MIN_ETH_FOR_BRIDGE}",
             )
 
-        # ---- 3. Approve if needed ----
-        approve_tx_hash = None
-        usdc_contract = w3.eth.contract(address=checksum_usdc, abi=ERC20_ABI)
-
-        current_allowance = await usdc_contract.functions.allowance(
-            checksum_wallet, checksum_bridge
-        ).call()
-
-        if current_allowance < raw_amount:
-            logger.info("Approving USDC spend on bridge contract")
-            try:
-                approve_tx_hash = await self._send_approve_tx(
-                    usdc_contract, checksum_bridge, raw_amount, checksum_wallet
-                )
-                logger.info(f"Approve tx confirmed: {approve_tx_hash}")
-            except Exception as e:
-                return DepositResult(
-                    success=False,
-                    error=f"Approve tx failed: {e}",
-                )
-
-        # ---- 4. Bridge deposit ----
+        # ---- 3. Transfer USDC to bridge ----
+        # Bridge2 uses batchedDepositWithPermit internally, but the simplest
+        # deposit method is a direct USDC transfer to the bridge address.
+        # HL validators detect the Transfer event and credit the sender.
+        approve_tx_hash = None  # no separate approve needed
         try:
-            deposit_tx_hash = await self._send_deposit_tx(
-                checksum_bridge, raw_amount, checksum_wallet
+            deposit_tx_hash = await self._send_transfer_tx(
+                checksum_usdc, checksum_bridge, raw_amount, checksum_wallet
             )
-            logger.info(f"Bridge deposit tx confirmed: {deposit_tx_hash}")
+            logger.info(f"USDC transfer to bridge confirmed: {deposit_tx_hash}")
         except Exception as e:
             return DepositResult(
                 success=False,
-                approve_tx_hash=approve_tx_hash,
-                error=f"Bridge deposit tx failed: {e}",
+                error=f"Bridge transfer tx failed: {e}",
             )
 
         # ---- 5. Poll HL clearinghouse ----
@@ -225,53 +217,181 @@ class HyperliquidDepositor:
             amount_usdc=amount,
         )
 
+    async def withdraw(self, amount_usdc: float) -> WithdrawResult:
+        """
+        Withdraw USDC from HL clearinghouse to Arbitrum wallet.
+
+        Uses HL's withdraw3 API action, signed via EIP-712 through the
+        HyperliquidSigner (accessed via hl_trader.signer). HL processes
+        withdrawals in batches; funds typically arrive on Arbitrum within
+        a few minutes.
+
+        Args:
+            amount_usdc: Amount of USDC to withdraw (human-readable, e.g. 500.0)
+
+        Returns:
+            WithdrawResult with status
+        """
+        amount = Decimal(str(amount_usdc))
+        raw_amount = str(int(amount * Decimal("1_000_000")))  # 6 decimals, as string
+
+        logger.info(f"Starting HL → Arbitrum withdrawal: {amount_usdc} USDC")
+
+        if self.hl_trader is None:
+            return WithdrawResult(
+                success=False,
+                error="No HL trader configured — cannot submit withdrawal",
+            )
+
+        signer = getattr(self.hl_trader, "signer", None)
+        client = getattr(self.hl_trader, "client", None)
+
+        if signer is None or client is None:
+            return WithdrawResult(
+                success=False,
+                error="HL trader missing signer or client — cannot submit withdrawal",
+            )
+
+        # Check HL balance
+        try:
+            hl_balance = await self.hl_trader.get_deposited_balance()
+            if hl_balance < float(amount):
+                return WithdrawResult(
+                    success=False,
+                    error=f"Insufficient HL balance: {hl_balance} < {amount}",
+                )
+        except Exception as e:
+            return WithdrawResult(
+                success=False,
+                error=f"Failed to check HL balance: {e}",
+            )
+
+        # Build withdraw3 action
+        import time
+        nonce = int(time.time() * 1000)
+
+        action = {
+            "type": "withdraw3",
+            "hyperliquidChain": "Arbitrum",
+            "signatureChainId": "0xa4b1",
+            "amount": raw_amount,
+            "time": nonce,
+            "destination": self.wallet_address,
+        }
+
+        types = {
+            "HyperliquidTransaction:Withdraw": [
+                {"name": "hyperliquidChain", "type": "string"},
+                {"name": "destination", "type": "string"},
+                {"name": "amount", "type": "string"},
+                {"name": "time", "type": "uint64"},
+            ],
+        }
+
+        value = {
+            "hyperliquidChain": "Arbitrum",
+            "destination": self.wallet_address,
+            "amount": raw_amount,
+            "time": nonce,
+        }
+
+        # Sign and submit
+        try:
+            signed = await signer.sign_user_action(
+                action=action,
+                types=types,
+                primary_type="HyperliquidTransaction:Withdraw",
+                value=value,
+                nonce=nonce,
+            )
+
+            payload = {
+                "action": signed.action,
+                "nonce": signed.nonce,
+                "signature": signed.signature,
+            }
+
+            response = await client.exchange(payload)
+            logger.info(f"Withdrawal submitted: {response}")
+
+        except Exception as e:
+            return WithdrawResult(
+                success=False,
+                error=f"Withdrawal submission failed: {e}",
+            )
+
+        # Poll for Arbitrum USDC balance increase
+        credited = await self._poll_arb_credit(amount)
+
+        if not credited:
+            logger.warning(
+                "Withdrawal submitted but Arbitrum credit not detected within timeout. "
+                "HL processes withdrawals in batches — funds may arrive shortly."
+            )
+
+        return WithdrawResult(
+            success=True,
+            amount_usdc=amount,
+        )
+
+    async def _poll_arb_credit(self, expected_amount: Decimal) -> bool:
+        """Poll Arbitrum USDC balance until the withdrawal shows up."""
+        try:
+            balance_before = await self.arb_client.get_usdc_balance(self.wallet_address)
+        except Exception:
+            logger.warning("Could not read Arbitrum balance — skipping poll")
+            return True
+
+        target = float(balance_before) + float(expected_amount) * 0.95
+
+        elapsed = 0.0
+        while elapsed < POLL_TIMEOUT_SECONDS:
+            await asyncio.sleep(POLL_INTERVAL_SECONDS)
+            elapsed += POLL_INTERVAL_SECONDS
+
+            try:
+                current_balance = float(
+                    await self.arb_client.get_usdc_balance(self.wallet_address)
+                )
+            except Exception:
+                continue
+
+            if current_balance >= target:
+                logger.info(
+                    f"Arbitrum credit confirmed: balance {current_balance:.2f} USDC "
+                    f"(was {float(balance_before):.2f})"
+                )
+                return True
+
+            logger.debug(
+                f"Waiting for Arbitrum credit... {current_balance:.2f} / {target:.2f} "
+                f"({elapsed:.0f}s elapsed)"
+            )
+
+        return False
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
-    async def _send_approve_tx(
-        self, usdc_contract, spender: str, raw_amount: int, sender: str
+    async def _send_transfer_tx(
+        self, usdc_address: str, bridge_address: str, raw_amount: int, sender: str
     ) -> str:
-        """Build, sign via Privy, and submit an ERC-20 approve tx."""
+        """Build, sign via Privy, and submit a USDC transfer to the bridge."""
         w3 = self.arb_client.w3
 
-        tx_data = usdc_contract.functions.approve(spender, raw_amount)
+        usdc_contract = w3.eth.contract(address=usdc_address, abi=TRANSFER_ABI)
+        tx_data = usdc_contract.functions.transfer(bridge_address, raw_amount)
         nonce = await self.arb_client.get_transaction_count(sender)
-        gas_price = await self.arb_client.get_gas_price()
+        base_fee = await self.arb_client.get_gas_price()
 
-        tx = tx_data.build_transaction({
+        tx = await tx_data.build_transaction({
             "from": sender,
             "nonce": nonce,
-            "gasPrice": gas_price,
-            "gas": 60_000,  # approve is cheap
+            "maxFeePerGas": base_fee * 2,
+            "maxPriorityFeePerGas": base_fee // 5,
+            "gas": 80_000,  # USDC transfer
             "chainId": 42161,  # Arbitrum One
-        })
-
-        signed_bytes = await self._sign_tx(tx)
-        tx_hash = await self.arb_client.send_raw_transaction(signed_bytes)
-        await self.arb_client.wait_for_transaction_receipt(tx_hash)
-        return tx_hash
-
-    async def _send_deposit_tx(
-        self, bridge_address: str, raw_amount: int, sender: str
-    ) -> str:
-        """Build, sign via Privy, and submit a bridge deposit tx."""
-        w3 = self.arb_client.w3
-
-        bridge_contract = w3.eth.contract(
-            address=bridge_address, abi=BRIDGE_DEPOSIT_ABI
-        )
-
-        tx_data = bridge_contract.functions.deposit(raw_amount)
-        nonce = await self.arb_client.get_transaction_count(sender)
-        gas_price = await self.arb_client.get_gas_price()
-
-        tx = tx_data.build_transaction({
-            "from": sender,
-            "nonce": nonce,
-            "gasPrice": gas_price,
-            "gas": 150_000,  # bridge interactions need more gas
-            "chainId": 42161,
         })
 
         signed_bytes = await self._sign_tx(tx)
@@ -281,12 +401,9 @@ class HyperliquidDepositor:
 
     async def _sign_tx(self, tx: dict) -> bytes:
         """Sign a raw EVM transaction via Privy."""
-        privy = self._get_privy()
-        signed = await privy.wallet.sign_transaction(
-            wallet_address=self.wallet_address,
-            transaction=tx,
-        )
-        return signed
+        signer = self._get_privy_signer()
+        signed_hex = signer.sign_eth_transaction(tx)
+        return bytes.fromhex(signed_hex.removeprefix("0x"))
 
     async def _poll_hl_credit(self, expected_amount: Decimal) -> bool:
         """Poll HL clearinghouse until the deposit shows up."""

@@ -35,7 +35,7 @@ export const usePositionsStore = create<PositionsState>((set, get) => ({
   openPositionsCount: 0,
 
   setPositions: (positions) => {
-    set({ positions });
+    set({ positions: Array.isArray(positions) ? positions : [] });
     get().calculateStats();
   },
 

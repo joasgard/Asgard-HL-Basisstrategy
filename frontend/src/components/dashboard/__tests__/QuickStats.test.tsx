@@ -13,6 +13,16 @@ vi.mock('../../../hooks', () => ({
   usePositions: () => ({
     fetchPositions: vi.fn(),
   }),
+  useBalances: () => ({
+    balances: null,
+    isLoading: false,
+    solBalance: 0,
+    solUsdc: 0,
+    ethBalance: 0,
+    arbUsdc: 0,
+    hlBalance: 0,
+    refetch: vi.fn(),
+  }),
 }));
 
 vi.mock('../../../stores', () => ({

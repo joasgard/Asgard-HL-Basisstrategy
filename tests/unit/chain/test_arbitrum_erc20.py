@@ -196,10 +196,10 @@ class TestGetErc20Balance:
                     decimals=6,
                 )
 
-                # Should use the wallet_address from settings
-                mock_functions.balanceOf.assert_called_once_with(
-                    mock_settings.wallet_address
-                )
+                # Should use the wallet_address from settings (not a custom address)
+                mock_functions.balanceOf.assert_called_once()
+                actual_addr = mock_functions.balanceOf.call_args[0][0]
+                assert actual_addr == client.wallet_address
 
 
 class TestGetUsdcBalance:

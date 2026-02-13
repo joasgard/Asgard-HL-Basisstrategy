@@ -1,8 +1,10 @@
-import { useEffect } from 'react';
-import { useSettings } from '../../hooks';
-import { useSettingsStore } from '../../stores';
+import { useEffect, useState } from 'react';
+import { useExportWallet } from '@privy-io/react-auth';
+import { useSettings, useServerWallets } from '../../hooks';
+import { useSettingsStore, useAuthStore } from '../../stores';
 import type { PresetType } from '../../stores';
 import { LoadingSpinner, LabelWithTooltip } from '../ui';
+import { StrategyConfig } from './StrategyConfig';
 
 const PRESET_CONFIG: Record<PresetType, { name: string; description: string; tooltip: string }> = {
   conservative: {
@@ -45,6 +47,11 @@ export function Settings() {
     loadSettings,
     resetSettings,
   } = useSettings();
+  const { exportWallet } = useExportWallet();
+  const storeUser = useAuthStore((s) => s.user);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const { wallets: serverWallets, loading: serverWalletsLoading } = useServerWallets(isAuthenticated);
+  const [exportingWallet, setExportingWallet] = useState<string | null>(null);
 
   // Subscribe to store state directly
   const defaultLeverage = useSettingsStore((state) => state.defaultLeverage);
@@ -118,6 +125,9 @@ export function Settings() {
           <span className="text-sm text-yellow-400">Unsaved changes</span>
         )}
       </div>
+
+      {/* Autonomous Strategy Config (per-user, Phase 7) */}
+      <StrategyConfig />
 
       {/* Presets */}
       <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
@@ -392,6 +402,139 @@ export function Settings() {
               />
             </button>
           </div>
+        </div>
+      </div>
+
+      {/* Server Wallets */}
+      <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-lg font-medium">Server Wallets</h2>
+            <p className="text-sm text-gray-400">
+              Automated trading wallets managed by the bot. Deposit funds here to start trading.
+            </p>
+          </div>
+          {serverWalletsLoading ? (
+            <LoadingSpinner size="sm" />
+          ) : serverWallets?.ready ? (
+            <span className="px-2.5 py-1 bg-green-900/50 text-green-400 text-xs font-medium rounded-full border border-green-800">
+              Ready
+            </span>
+          ) : (
+            <span className="px-2.5 py-1 bg-yellow-900/50 text-yellow-400 text-xs font-medium rounded-full border border-yellow-800">
+              Provisioning...
+            </span>
+          )}
+        </div>
+
+        {serverWallets?.ready ? (
+          <div className="space-y-3">
+            {serverWallets.evm_address && (
+              <div className="bg-gray-900 rounded-lg p-3 border border-gray-700">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs text-blue-400 font-medium">EVM (Arbitrum)</span>
+                  <button
+                    onClick={() => navigator.clipboard.writeText(serverWallets.evm_address!)}
+                    className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+                  >
+                    Copy
+                  </button>
+                </div>
+                <code className="block text-xs text-gray-300 font-mono break-all">
+                  {serverWallets.evm_address}
+                </code>
+                <p className="text-xs text-gray-500 mt-1">
+                  Send USDC (Arbitrum) to this address for auto-bridging to Hyperliquid
+                </p>
+              </div>
+            )}
+            {serverWallets.solana_address && (
+              <div className="bg-gray-900 rounded-lg p-3 border border-gray-700">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs text-green-400 font-medium">Solana</span>
+                  <button
+                    onClick={() => navigator.clipboard.writeText(serverWallets.solana_address!)}
+                    className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+                  >
+                    Copy
+                  </button>
+                </div>
+                <code className="block text-xs text-gray-300 font-mono break-all">
+                  {serverWallets.solana_address}
+                </code>
+                <p className="text-xs text-gray-500 mt-1">
+                  Send SOL or LST collateral to this address for Asgard positions
+                </p>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="text-sm text-gray-500">
+            {serverWalletsLoading
+              ? 'Loading wallet status...'
+              : 'Server wallets are being provisioned. This usually takes a few seconds.'}
+          </div>
+        )}
+      </div>
+
+      {/* Export Wallets */}
+      <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
+        <h2 className="text-lg font-medium mb-2">Export Wallet Keys</h2>
+        <p className="text-sm text-gray-400 mb-4">
+          Export your embedded wallet private keys to import into MetaMask, Phantom, or another wallet.
+        </p>
+        <div className="space-y-3">
+          {storeUser?.wallets?.filter(w => w.type === 'embedded' && w.chainType === 'ethereum').map(w => (
+            <div key={w.address} className="flex items-center justify-between bg-gray-900 rounded-lg p-3 border border-gray-700">
+              <div>
+                <span className="text-xs text-blue-400 font-medium">EVM (Arbitrum)</span>
+                <code className="block text-xs text-gray-400 font-mono mt-0.5">{w.address}</code>
+              </div>
+              <button
+                onClick={async () => {
+                  setExportingWallet(w.address);
+                  try {
+                    await exportWallet({ address: w.address });
+                  } catch (e) {
+                    console.error('Export failed:', e);
+                  } finally {
+                    setExportingWallet(null);
+                  }
+                }}
+                disabled={exportingWallet === w.address}
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white text-xs font-medium rounded-lg transition-colors"
+              >
+                {exportingWallet === w.address ? 'Exporting...' : 'Export Key'}
+              </button>
+            </div>
+          ))}
+          {storeUser?.wallets?.filter(w => w.type === 'embedded' && w.chainType === 'solana').map(w => (
+            <div key={w.address} className="flex items-center justify-between bg-gray-900 rounded-lg p-3 border border-gray-700">
+              <div>
+                <span className="text-xs text-green-400 font-medium">Solana</span>
+                <code className="block text-xs text-gray-400 font-mono mt-0.5">{w.address}</code>
+              </div>
+              <button
+                onClick={async () => {
+                  setExportingWallet(w.address);
+                  try {
+                    await exportWallet({ address: w.address });
+                  } catch (e) {
+                    console.error('Export failed:', e);
+                  } finally {
+                    setExportingWallet(null);
+                  }
+                }}
+                disabled={exportingWallet === w.address}
+                className="px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white text-xs font-medium rounded-lg transition-colors"
+              >
+                {exportingWallet === w.address ? 'Exporting...' : 'Export Key'}
+              </button>
+            </div>
+          ))}
+          {(!storeUser?.wallets || storeUser.wallets.filter((w: { type: string }) => w.type === 'embedded').length === 0) && (
+            <p className="text-sm text-gray-500">No embedded wallets found</p>
+          )}
         </div>
       </div>
 

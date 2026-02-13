@@ -1,0 +1,12 @@
+{
+  "evm_policy_verified": "PASS",
+  "solana_policy_verified": "PASS",
+  "evm_allow_bridge_deposit": "PASS",
+  "evm_allow_hl_exchange": "PASS",
+  "evm_allow_hl_user_action": "PASS",
+  "evm_deny_random_address": "PASS",
+  "evm_deny_eth_value": "PASS",
+  "evm_deny_export_key": "INFO: Error code: 400 - {'error': '[Input error] `method`: Invalid discriminator value. Expected \\'eth_sig",
+  "solana_allow_system_transfer": "SKIP: requires valid serialized tx",
+  "solana_deny_export_key": "INFO: Error code: 400 - {'error': '[Input error] `method`: Invalid discriminator value. Expected \\'eth_sig"
+}
