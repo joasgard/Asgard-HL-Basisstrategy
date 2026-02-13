@@ -9,6 +9,7 @@ API Documentation:
 - Exchange: POST https://api.hyperliquid.xyz/exchange
 - All exchange actions require EIP-712 signatures
 """
+import json
 from typing import Any, Dict, Optional
 from urllib.parse import urljoin
 
@@ -196,8 +197,14 @@ class HyperliquidClient:
         
         try:
             async with self._session.post(url, json=payload) as response:
-                data = await response.json()
-                
+                # HL sometimes returns text/plain or empty bodies for errors;
+                # read raw text first, then try to parse as JSON.
+                raw_text = await response.text()
+                try:
+                    data = json.loads(raw_text) if raw_text.strip() else raw_text
+                except (ValueError, json.JSONDecodeError):
+                    data = raw_text
+
                 if response.status >= 400:
                     self._handle_error(response.status, data)
                 

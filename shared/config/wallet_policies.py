@@ -9,6 +9,7 @@ See docs/implementation-plan.md Phase 1 for policy rule tables.
 """
 import os
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import List
 
 
@@ -62,6 +63,12 @@ MAX_USDC_PER_TX = int(os.getenv("MAX_USDC_PER_TX", "10000")) * 10**6  # $10,000
 
 # EVM: 24-hour rolling USDC approve cap (for stateful aggregation)
 MAX_USDC_DAILY = int(os.getenv("MAX_USDC_DAILY", "50000")) * 10**6  # $50,000
+
+# EVM: Per-transaction native ETH cap (in wei). Only used for gas recovery
+# withdrawals — not for routine operation. Default 0.1 ETH.
+MAX_ETH_PER_TX_WEI = int(
+    Decimal(os.getenv("MAX_ETH_PER_TX", "0.1")) * Decimal("1000000000000000000")
+)
 
 # Solana: Per-transaction SOL cap in lamports (1 SOL = 1e9 lamports)
 MAX_SOL_PER_TX = int(os.getenv("MAX_SOL_PER_TX", "100")) * 10**9  # 100 SOL
@@ -136,6 +143,7 @@ class EVMPolicyConfig:
     hl_exchange_domain_chain_id: int = HL_EXCHANGE_DOMAIN_CHAIN_ID
     hl_user_action_domain_name: str = HL_USER_ACTION_DOMAIN_NAME
     hl_user_action_domain_chain_id: int = HL_USER_ACTION_DOMAIN_CHAIN_ID
+    max_eth_per_tx_wei: int = MAX_ETH_PER_TX_WEI
 
 
 @dataclass(frozen=True)
@@ -184,9 +192,10 @@ def build_evm_policy_rules(config: EVMPolicyConfig = EVMPolicyConfig()) -> list:
                 },
             ],
         },
-        # Rule 2: Allow USDC transfer to HL bridge (with per-tx cap)
+        # Rule 2: Allow USDC transfer (with per-tx cap)
+        # Covers both bridge deposits and user wallet withdrawals.
         {
-            "name": "allow_usdc_transfer_to_bridge",
+            "name": "allow_usdc_transfer",
             "action": "ALLOW",
             "method": "eth_signTransaction",
             "conditions": [
@@ -195,13 +204,6 @@ def build_evm_policy_rules(config: EVMPolicyConfig = EVMPolicyConfig()) -> list:
                     "field": "to",
                     "operator": "eq",
                     "value": config.usdc_contract,
-                },
-                {
-                    "field_source": "ethereum_calldata",
-                    "abi": ERC20_TRANSFER_ABI,
-                    "field": "transfer.to",
-                    "operator": "eq",
-                    "value": config.bridge_contract,
                 },
                 {
                     "field_source": "ethereum_calldata",
@@ -240,20 +242,20 @@ def build_evm_policy_rules(config: EVMPolicyConfig = EVMPolicyConfig()) -> list:
                 },
             ],
         },
-        # Rule 5: Deny native ETH value transfers (prevent ETH drain).
-        # This is a guardrail — overrides ALLOWs when value > 0.
-        # ETH gas funding flows INTO the server wallet (signed by the
-        # funder's key, not this wallet), so this rule cannot block it.
+        # Rule 5: Allow capped native ETH transfers (gas recovery withdrawals).
+        # Replaces the former blanket DENY — allows sending ETH up to a per-tx
+        # cap so users can withdraw gas ETH. Larger amounts are implicitly
+        # denied (no matching ALLOW rule).
         {
-            "name": "deny_native_eth_transfers",
-            "action": "DENY",
+            "name": "allow_capped_eth_transfer",
+            "action": "ALLOW",
             "method": "eth_signTransaction",
             "conditions": [
                 {
                     "field_source": "ethereum_transaction",
                     "field": "value",
-                    "operator": "gt",
-                    "value": "0",
+                    "operator": "lte",
+                    "value": str(config.max_eth_per_tx_wei),
                 },
             ],
         },

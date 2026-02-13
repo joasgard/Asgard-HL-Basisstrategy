@@ -32,7 +32,9 @@ from bot.venues.hyperliquid.depositor import HyperliquidDepositor
 from bot.venues.hyperliquid.funding_oracle import HyperliquidFundingOracle
 from bot.venues.hyperliquid.signer import HyperliquidSigner
 from bot.venues.hyperliquid.trader import HyperliquidTrader
+from bot.venues.solana_transferor import SolanaTransferor
 from shared.chain.arbitrum import ArbitrumClient
+from shared.chain.solana import SolanaClient
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +68,8 @@ class UserTradingContext:
         self._asgard_manager: Optional[AsgardPositionManager] = None
         self._arb_client: Optional[ArbitrumClient] = None
         self._hl_depositor: Optional[HyperliquidDepositor] = None
+        self._sol_transferor: Optional[SolanaTransferor] = None
+        self._sol_client: Optional[SolanaClient] = None
 
     @classmethod
     async def from_user_id(cls, user_id: str, db) -> "UserTradingContext":
@@ -171,6 +175,26 @@ class UserTradingContext:
             )
         return self._hl_depositor
 
+    def get_sol_client(self) -> SolanaClient:
+        """Get a shared SolanaClient for RPC reads."""
+        if self._sol_client is None:
+            self._sol_client = SolanaClient()
+        return self._sol_client
+
+    def get_solana_transferor(self) -> SolanaTransferor:
+        """Get a SolanaTransferor configured for this user's Solana wallet.
+
+        Sends SOL or SPL tokens from the server Solana wallet.
+        """
+        if self._sol_transferor is None:
+            self._sol_transferor = SolanaTransferor(
+                sol_client=self.get_sol_client(),
+                wallet_address=self.solana_address,
+                wallet_id=self.solana_wallet_id,
+                user_id=self.user_id,
+            )
+        return self._sol_transferor
+
     async def close(self):
         """Clean up HTTP sessions."""
         if self._hl_trader is not None:
@@ -186,6 +210,11 @@ class UserTradingContext:
         if self._arb_client is not None:
             try:
                 await self._arb_client.close()
+            except Exception:
+                pass
+        if self._sol_client is not None:
+            try:
+                await self._sol_client.close()
             except Exception:
                 pass
 

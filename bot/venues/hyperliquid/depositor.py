@@ -81,6 +81,15 @@ class DepositResult:
 
 
 @dataclass
+class TransferResult:
+    """Result of a USDC wallet-to-wallet transfer on Arbitrum."""
+    success: bool
+    tx_hash: Optional[str] = None
+    amount_usdc: Optional[Decimal] = None
+    error: Optional[str] = None
+
+
+@dataclass
 class WithdrawResult:
     """Result of an HL → Arbitrum withdrawal."""
     success: bool
@@ -233,7 +242,8 @@ class HyperliquidDepositor:
             WithdrawResult with status
         """
         amount = Decimal(str(amount_usdc))
-        raw_amount = str(int(amount * Decimal("1_000_000")))  # 6 decimals, as string
+        # HL withdraw3 expects human-readable amount string (e.g. "500.0")
+        amount_str = str(amount)
 
         logger.info(f"Starting HL → Arbitrum withdrawal: {amount_usdc} USDC")
 
@@ -272,9 +282,9 @@ class HyperliquidDepositor:
 
         action = {
             "type": "withdraw3",
-            "hyperliquidChain": "Arbitrum",
+            "hyperliquidChain": "Mainnet",
             "signatureChainId": "0xa4b1",
-            "amount": raw_amount,
+            "amount": amount_str,
             "time": nonce,
             "destination": self.wallet_address,
         }
@@ -289,9 +299,9 @@ class HyperliquidDepositor:
         }
 
         value = {
-            "hyperliquidChain": "Arbitrum",
+            "hyperliquidChain": "Mainnet",
             "destination": self.wallet_address,
-            "amount": raw_amount,
+            "amount": amount_str,
             "time": nonce,
         }
 
@@ -332,6 +342,122 @@ class HyperliquidDepositor:
         return WithdrawResult(
             success=True,
             amount_usdc=amount,
+        )
+
+    async def transfer_usdc_to(self, destination: str, amount_usdc: float) -> TransferResult:
+        """
+        Transfer USDC from the server wallet to an arbitrary destination on Arbitrum.
+
+        Used for user-initiated wallet withdrawals (funds live on the server
+        wallet, not the embedded wallet).
+
+        Args:
+            destination: EVM address to send USDC to.
+            amount_usdc: Amount of USDC (human-readable, e.g. 500.0).
+
+        Returns:
+            TransferResult with tx hash and status.
+        """
+        amount = Decimal(str(amount_usdc))
+        raw_amount = int(amount * Decimal("1_000_000"))  # 6 decimals
+
+        logger.info(f"Starting USDC transfer: {amount_usdc} USDC → {destination}")
+
+        w3 = self.arb_client.w3
+        checksum_wallet = w3.to_checksum_address(self.wallet_address)
+        checksum_usdc = w3.to_checksum_address(NATIVE_USDC_ARBITRUM)
+        checksum_dest = w3.to_checksum_address(destination)
+
+        # Check USDC balance
+        usdc_balance = await self.arb_client.get_usdc_balance(self.wallet_address)
+        if usdc_balance < amount:
+            return TransferResult(
+                success=False,
+                error=f"Insufficient USDC on Arbitrum: {usdc_balance} < {amount}",
+            )
+
+        # Check ETH for gas (only need 1 tx)
+        eth_balance = await self.arb_client.get_balance(self.wallet_address)
+        if eth_balance < MIN_ETH_FOR_BRIDGE:
+            return TransferResult(
+                success=False,
+                error=f"Insufficient ETH for gas: {eth_balance} < {MIN_ETH_FOR_BRIDGE}",
+            )
+
+        try:
+            tx_hash = await self._send_transfer_tx(
+                checksum_usdc, checksum_dest, raw_amount, checksum_wallet
+            )
+            logger.info(f"USDC transfer confirmed: {tx_hash}")
+        except Exception as e:
+            return TransferResult(
+                success=False,
+                error=f"USDC transfer failed: {e}",
+            )
+
+        return TransferResult(
+            success=True,
+            tx_hash=tx_hash,
+            amount_usdc=amount,
+        )
+
+    async def transfer_eth_to(self, destination: str, amount_eth: float) -> TransferResult:
+        """
+        Transfer native ETH from the server wallet to a destination on Arbitrum.
+
+        Args:
+            destination: EVM address to send ETH to.
+            amount_eth: Amount of ETH (human-readable, e.g. 0.005).
+
+        Returns:
+            TransferResult with tx hash and status.
+        """
+        amount = Decimal(str(amount_eth))
+        wei_amount = int(amount * Decimal("1000000000000000000"))
+
+        logger.info(f"Starting ETH transfer: {amount_eth} ETH → {destination}")
+
+        w3 = self.arb_client.w3
+        checksum_wallet = w3.to_checksum_address(self.wallet_address)
+        checksum_dest = w3.to_checksum_address(destination)
+
+        # Check ETH balance (need amount + gas)
+        eth_balance = await self.arb_client.get_balance(self.wallet_address)
+        if eth_balance < amount + MIN_ETH_FOR_BRIDGE:
+            return TransferResult(
+                success=False,
+                error=f"Insufficient ETH: {eth_balance} (need {amount} + gas)",
+            )
+
+        try:
+            nonce = await self.arb_client.get_transaction_count(checksum_wallet)
+            base_fee = await self.arb_client.get_gas_price()
+
+            tx = {
+                "from": checksum_wallet,
+                "to": checksum_dest,
+                "value": wei_amount,
+                "nonce": nonce,
+                "maxFeePerGas": base_fee * 2,
+                "maxPriorityFeePerGas": base_fee // 5,
+                "gas": 21_000,  # Standard ETH transfer
+                "chainId": 42161,
+            }
+
+            signed_bytes = await self._sign_tx(tx)
+            tx_hash = await self.arb_client.send_raw_transaction(signed_bytes)
+            await self.arb_client.wait_for_transaction_receipt(tx_hash)
+            logger.info(f"ETH transfer confirmed: {tx_hash}")
+        except Exception as e:
+            return TransferResult(
+                success=False,
+                error=f"ETH transfer failed: {e}",
+            )
+
+        return TransferResult(
+            success=True,
+            tx_hash=tx_hash,
+            amount_usdc=amount,  # reusing field — holds ETH amount here
         )
 
     async def _poll_arb_credit(self, expected_amount: Decimal) -> bool:

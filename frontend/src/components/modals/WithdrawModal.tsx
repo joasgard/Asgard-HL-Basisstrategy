@@ -1,44 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useSendTransaction } from '@privy-io/react-auth';
-import {
-  useWallets as useSolanaWallets,
-  useSignAndSendTransaction,
-} from '@privy-io/react-auth/solana';
-import { isAddress, encodeFunctionData, parseEther, parseUnits } from 'viem';
-import {
-  Connection,
-  PublicKey,
-  SystemProgram,
-  Transaction,
-  LAMPORTS_PER_SOL,
-} from '@solana/web3.js';
-import {
-  getAssociatedTokenAddressSync,
-  createAssociatedTokenAccountInstruction,
-  createTransferInstruction,
-} from '@solana/spl-token';
+import { isAddress } from 'viem';
+import { PublicKey } from '@solana/web3.js';
 import { fundingApi, FundingJobStatus } from '../../api/funding';
 import { useBalances } from '../../hooks';
-
-const USDC_ARB = '0xaf88d065e77c8cC2239327C5EDb3A432268e5831' as const;
-const USDC_SOL_MINT = new PublicKey(
-  'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
-);
-const SOLANA_RPC =
-  import.meta.env.VITE_SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
-
-const ERC20_TRANSFER_ABI = [
-  {
-    type: 'function',
-    name: 'transfer',
-    inputs: [
-      { name: 'to', type: 'address' },
-      { name: 'amount', type: 'uint256' },
-    ],
-    outputs: [{ name: '', type: 'bool' }],
-    stateMutability: 'nonpayable',
-  },
-] as const;
 
 type WithdrawTab = 'hyperliquid' | 'wallet';
 type Chain = 'arbitrum' | 'solana';
@@ -60,6 +24,9 @@ export function WithdrawModal({ isOpen, onClose }: WithdrawModalProps) {
   const [walletError, setWalletError] = useState<string | null>(null);
   const [walletSuccess, setWalletSuccess] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
+  const [walletJobId, setWalletJobId] = useState<string | null>(null);
+  const [walletJobStatus, setWalletJobStatus] = useState<FundingJobStatus | null>(null);
+  const walletPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // --- HL withdrawal state (existing) ---
   const [amount, setAmount] = useState<string>('');
@@ -79,9 +46,6 @@ export function WithdrawModal({ isOpen, onClose }: WithdrawModalProps) {
     ethBalance,
     refetch: refetchBalances,
   } = useBalances();
-  const { sendTransaction } = useSendTransaction();
-  const { signAndSendTransaction } = useSignAndSendTransaction();
-  const { wallets: solanaWallets } = useSolanaWallets();
 
   // --- HL job polling (existing) ---
   const pollJob = useCallback(
@@ -118,6 +82,44 @@ export function WithdrawModal({ isOpen, onClose }: WithdrawModalProps) {
     };
   }, [jobId, pollJob]);
 
+  // --- Wallet transfer job polling ---
+  const pollWalletJob = useCallback(
+    async (id: string) => {
+      try {
+        const status = await fundingApi.getJobStatus(id);
+        setWalletJobStatus(status);
+        if (status.status === 'completed') {
+          setIsSending(false);
+          setWalletJobId(null);
+          setWalletAmount('');
+          setWalletSuccess(
+            `Sent! TX: ${status.bridge_tx_hash?.slice(0, 18) ?? ''}...`,
+          );
+          refetchBalances();
+        } else if (status.status === 'failed') {
+          setIsSending(false);
+          setWalletError(status.error || 'Transfer failed');
+          setWalletJobId(null);
+        }
+      } catch {
+        // Keep polling on transient errors
+      }
+    },
+    [refetchBalances],
+  );
+
+  useEffect(() => {
+    if (walletJobId) {
+      walletPollRef.current = setInterval(() => pollWalletJob(walletJobId), 3000);
+    }
+    return () => {
+      if (walletPollRef.current) {
+        clearInterval(walletPollRef.current);
+        walletPollRef.current = null;
+      }
+    };
+  }, [walletJobId, pollWalletJob]);
+
   // Reset state when modal closes
   useEffect(() => {
     if (!isOpen) {
@@ -128,8 +130,12 @@ export function WithdrawModal({ isOpen, onClose }: WithdrawModalProps) {
       setWalletSuccess(null);
       setDestAddress('');
       if (!isSubmitting) setJobStatus(null);
+      if (!isSending) {
+        setWalletJobStatus(null);
+        setWalletJobId(null);
+      }
     }
-  }, [isOpen, isSubmitting]);
+  }, [isOpen, isSubmitting, isSending]);
 
   // Reset token/form when chain changes
   useEffect(() => {
@@ -231,100 +237,46 @@ export function WithdrawModal({ isOpen, onClose }: WithdrawModalProps) {
         await handleSolSend(numAmount);
       }
     } catch (e: any) {
-      setWalletError(e.message || 'Transaction failed');
-    } finally {
+      const msg = e.response?.data?.detail || e.message || 'Transaction failed';
+      setWalletError(msg);
       setIsSending(false);
     }
   };
 
   const handleArbSend = async (numAmount: number) => {
-    if (token === 'ETH') {
-      const { hash } = await sendTransaction({
-        to: destAddress as `0x${string}`,
-        value: parseEther(numAmount.toString()),
-        chainId: 42161,
-      });
-      setWalletSuccess(`Sent! TX: ${hash.slice(0, 18)}...`);
-    } else {
-      const data = encodeFunctionData({
-        abi: ERC20_TRANSFER_ABI,
-        functionName: 'transfer',
-        args: [destAddress as `0x${string}`, parseUnits(numAmount.toString(), 6)],
-      });
-      const { hash } = await sendTransaction({
-        to: USDC_ARB,
-        data,
-        chainId: 42161,
-      });
-      setWalletSuccess(`Sent! TX: ${hash.slice(0, 18)}...`);
-    }
-    refetchBalances();
+    // Both ETH and USDC go through the backend (funds are on server wallet)
+    const result = await fundingApi.walletTransfer(numAmount, destAddress, token, 'arbitrum');
+    setWalletJobId(result.job_id);
+    setWalletJobStatus({
+      job_id: result.job_id,
+      direction: 'wallet_transfer',
+      status: 'pending',
+      amount_usdc: numAmount,
+      error: null,
+      approve_tx_hash: null,
+      bridge_tx_hash: null,
+      created_at: null,
+      completed_at: null,
+    });
+    // isSending stays true; cleared by pollWalletJob on completion/failure
   };
 
   const handleSolSend = async (numAmount: number) => {
-    const wallet = solanaWallets[0];
-    if (!wallet) {
-      throw new Error('Solana wallet not available');
-    }
-
-    const senderPubkey = new PublicKey(wallet.address);
-    const connection = new Connection(SOLANA_RPC);
-    const { blockhash } = await connection.getLatestBlockhash();
-
-    const tx = new Transaction();
-    tx.recentBlockhash = blockhash;
-    tx.feePayer = senderPubkey;
-
-    if (token === 'SOL') {
-      tx.add(
-        SystemProgram.transfer({
-          fromPubkey: senderPubkey,
-          toPubkey: new PublicKey(destAddress),
-          lamports: Math.round(numAmount * LAMPORTS_PER_SOL),
-        }),
-      );
-    } else {
-      const destPubkey = new PublicKey(destAddress);
-      const senderAta = getAssociatedTokenAddressSync(USDC_SOL_MINT, senderPubkey);
-      const destAta = getAssociatedTokenAddressSync(USDC_SOL_MINT, destPubkey);
-
-      // Create destination ATA if it doesn't exist
-      const destAtaInfo = await connection.getAccountInfo(destAta);
-      if (!destAtaInfo) {
-        tx.add(
-          createAssociatedTokenAccountInstruction(
-            senderPubkey,
-            destAta,
-            destPubkey,
-            USDC_SOL_MINT,
-          ),
-        );
-      }
-
-      tx.add(
-        createTransferInstruction(
-          senderAta,
-          destAta,
-          senderPubkey,
-          Math.round(numAmount * 1e6),
-        ),
-      );
-    }
-
-    const serialized = tx.serialize({
-      requireAllSignatures: false,
-      verifySignatures: false,
+    // Both SOL and USDC go through the backend (funds are on server wallet)
+    const result = await fundingApi.walletTransfer(numAmount, destAddress, token, 'solana');
+    setWalletJobId(result.job_id);
+    setWalletJobStatus({
+      job_id: result.job_id,
+      direction: 'wallet_transfer',
+      status: 'pending',
+      amount_usdc: numAmount,
+      error: null,
+      approve_tx_hash: null,
+      bridge_tx_hash: null,
+      created_at: null,
+      completed_at: null,
     });
-    const { signature } = await signAndSendTransaction({
-      transaction: new Uint8Array(serialized),
-      wallet,
-    });
-
-    const sigHex = Array.from(signature)
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('');
-    setWalletSuccess(`Sent! Signature: ${sigHex.slice(0, 16)}...`);
-    refetchBalances();
+    // isSending stays true; cleared by pollWalletJob on completion/failure
   };
 
   if (!isOpen) return null;
@@ -479,7 +431,7 @@ export function WithdrawModal({ isOpen, onClose }: WithdrawModalProps) {
                   />
                   <button
                     onClick={() =>
-                      setAmount(hlBalance > 0 ? hlBalance.toFixed(2) : '')
+                      setAmount(hlBalance > 0 ? (Math.floor(hlBalance * 100) / 100).toFixed(2) : '')
                     }
                     className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-purple-400 hover:text-purple-300"
                   >
@@ -614,9 +566,10 @@ export function WithdrawModal({ isOpen, onClose }: WithdrawModalProps) {
                   onClick={() => {
                     const bal = getSelectedBalance();
                     if (bal > 0) {
-                      if (token === 'ETH') setWalletAmount(bal.toFixed(6));
-                      else if (token === 'SOL') setWalletAmount(bal.toFixed(4));
-                      else setWalletAmount(bal.toFixed(2));
+                      // Floor (not round) to avoid exceeding on-chain balance
+                      if (token === 'ETH') setWalletAmount((Math.floor(bal * 1e6) / 1e6).toFixed(6));
+                      else if (token === 'SOL') setWalletAmount((Math.floor(bal * 1e4) / 1e4).toFixed(4));
+                      else setWalletAmount((Math.floor(bal * 100) / 100).toFixed(2));
                     }
                   }}
                   className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-purple-400 hover:text-purple-300"
@@ -633,6 +586,39 @@ export function WithdrawModal({ isOpen, onClose }: WithdrawModalProps) {
               </button>
             </div>
 
+            {/* Wallet transfer job status (USDC via backend) */}
+            {walletJobStatus && isSending && (
+              <div className="bg-gray-900 rounded-lg p-4 border border-gray-700 mb-4">
+                <div className="flex items-center gap-2 text-sm">
+                  <svg
+                    className="animate-spin w-4 h-4 text-purple-400"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                    />
+                  </svg>
+                  <span className="text-purple-300">
+                    Transferring ${walletJobStatus.amount_usdc.toFixed(2)} USDC...
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  Status: {walletJobStatus.status}
+                </p>
+              </div>
+            )}
+
             {walletError && (
               <div className="rounded-lg p-3 mb-4 text-sm bg-red-900/30 text-red-400">
                 {walletError}
@@ -648,8 +634,8 @@ export function WithdrawModal({ isOpen, onClose }: WithdrawModalProps) {
             <div className="bg-gray-900/50 rounded-lg p-4 border border-gray-700/50">
               <p className="text-xs text-gray-500">
                 {chain === 'arbitrum'
-                  ? 'Sends tokens directly from your Arbitrum wallet. ETH transfers are native; USDC is an ERC-20 transfer.'
-                  : 'Sends tokens directly from your Solana wallet. For USDC, creates the recipient token account if needed.'}
+                  ? 'Sends tokens from your account via the server. Typically confirms within a few seconds.'
+                  : 'Sends tokens from your account via the server. For USDC, creates the recipient token account if needed.'}
               </p>
             </div>
           </>

@@ -8,7 +8,7 @@ export interface FundingJobResponse {
 
 export interface FundingJobStatus {
   job_id: string;
-  direction: 'deposit' | 'withdraw';
+  direction: 'deposit' | 'withdraw' | 'wallet_transfer';
   status: 'pending' | 'running' | 'completed' | 'failed';
   amount_usdc: number;
   error: string | null;
@@ -28,6 +28,17 @@ export const fundingApi = {
   /** Withdraw USDC from Hyperliquid to Arbitrum. */
   withdraw: async (amountUsdc: number): Promise<FundingJobResponse> => {
     const { data } = await apiClient.post('/funding/withdraw', { amount_usdc: amountUsdc });
+    return data;
+  },
+
+  /** Transfer tokens from server wallet to an external address. */
+  walletTransfer: async (amount: number, destination: string, token = 'USDC', chain = 'arbitrum'): Promise<FundingJobResponse> => {
+    const { data } = await apiClient.post('/funding/wallet-transfer', {
+      amount,
+      destination,
+      token,
+      chain,
+    });
     return data;
   },
 

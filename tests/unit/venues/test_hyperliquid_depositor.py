@@ -20,6 +20,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from bot.venues.hyperliquid.depositor import (
     HyperliquidDepositor,
     DepositResult,
+    TransferResult,
     WithdrawResult,
     MIN_ETH_FOR_BRIDGE,
 )
@@ -405,4 +406,134 @@ class TestWithdrawResult:
             error="Insufficient balance",
         )
         assert result.success is False
+        assert result.amount_usdc is None
+
+
+class TestTransferUsdcTo:
+    """Tests for USDC wallet-to-wallet transfer on Arbitrum."""
+
+    @pytest.mark.asyncio
+    async def test_successful_transfer(self, depositor, mock_arb_client):
+        """Test full transfer: check balances, send USDC transfer tx."""
+        usdc_contract = _mock_usdc_contract()
+        mock_arb_client.w3.eth.contract.return_value = usdc_contract
+
+        result = await depositor.transfer_usdc_to("0xDestination", 250.0)
+
+        assert result.success is True
+        assert result.tx_hash == "0xtxhash"
+        assert result.amount_usdc == Decimal("250")
+        assert result.error is None
+
+    @pytest.mark.asyncio
+    async def test_transfer_calls_correct_destination(self, depositor, mock_arb_client):
+        """Test that transfer sends to the given destination, not the bridge."""
+        usdc_contract = _mock_usdc_contract()
+        mock_arb_client.w3.eth.contract.return_value = usdc_contract
+
+        await depositor.transfer_usdc_to("0xDestination", 100.0)
+
+        # Verify transfer was called with destination (not bridge) and raw amount
+        usdc_contract.functions.transfer.assert_called_once_with(
+            "0xDestination", 100_000_000
+        )
+
+    @pytest.mark.asyncio
+    async def test_insufficient_usdc(self, depositor, mock_arb_client):
+        """Test failure when USDC balance is too low."""
+        mock_arb_client.get_usdc_balance = AsyncMock(return_value=Decimal("50"))
+
+        result = await depositor.transfer_usdc_to("0xDestination", 100.0)
+
+        assert result.success is False
+        assert "Insufficient USDC" in result.error
+
+    @pytest.mark.asyncio
+    async def test_insufficient_eth_for_gas(self, depositor, mock_arb_client):
+        """Test failure when ETH is too low for gas."""
+        mock_arb_client.get_balance = AsyncMock(return_value=Decimal("0.0001"))
+
+        result = await depositor.transfer_usdc_to("0xDestination", 100.0)
+
+        assert result.success is False
+        assert "Insufficient ETH" in result.error
+
+    @pytest.mark.asyncio
+    async def test_transfer_tx_failure(self, depositor, mock_arb_client):
+        """Test failure when the transfer tx reverts."""
+        usdc_contract = _mock_usdc_contract()
+        mock_arb_client.w3.eth.contract.return_value = usdc_contract
+        mock_arb_client.send_raw_transaction = AsyncMock(
+            side_effect=Exception("tx reverted")
+        )
+
+        result = await depositor.transfer_usdc_to("0xDestination", 100.0)
+
+        assert result.success is False
+        assert "USDC transfer failed" in result.error
+
+
+class TestTransferEthTo:
+    """Tests for native ETH wallet-to-wallet transfer on Arbitrum."""
+
+    @pytest.mark.asyncio
+    async def test_successful_eth_transfer(self, depositor, mock_arb_client):
+        """Test full ETH transfer: check balance, send native tx."""
+        # Need enough ETH for amount + gas reserve
+        mock_arb_client.get_balance = AsyncMock(return_value=Decimal("0.05"))
+        mock_arb_client.get_transaction_count = AsyncMock(return_value=0)
+        mock_arb_client.get_gas_price = AsyncMock(return_value=100_000_000)  # 0.1 gwei
+
+        result = await depositor.transfer_eth_to("0xDestination", 0.01)
+
+        assert result.success is True
+        assert result.tx_hash == "0xtxhash"
+        assert result.error is None
+
+    @pytest.mark.asyncio
+    async def test_insufficient_eth(self, depositor, mock_arb_client):
+        """Test failure when ETH balance too low (need amount + gas)."""
+        mock_arb_client.get_balance = AsyncMock(return_value=Decimal("0.001"))
+
+        result = await depositor.transfer_eth_to("0xDestination", 0.01)
+
+        assert result.success is False
+        assert "Insufficient ETH" in result.error
+
+    @pytest.mark.asyncio
+    async def test_eth_transfer_tx_failure(self, depositor, mock_arb_client):
+        """Test failure when the ETH tx reverts."""
+        mock_arb_client.get_balance = AsyncMock(return_value=Decimal("0.05"))
+        mock_arb_client.get_transaction_count = AsyncMock(return_value=0)
+        mock_arb_client.get_gas_price = AsyncMock(return_value=100_000_000)
+        mock_arb_client.send_raw_transaction = AsyncMock(
+            side_effect=Exception("tx reverted")
+        )
+
+        result = await depositor.transfer_eth_to("0xDestination", 0.01)
+
+        assert result.success is False
+        assert "ETH transfer failed" in result.error
+
+
+class TestTransferResult:
+    """Tests for TransferResult dataclass."""
+
+    def test_success_result(self):
+        result = TransferResult(
+            success=True,
+            tx_hash="0xabc123",
+            amount_usdc=Decimal("500"),
+        )
+        assert result.success is True
+        assert result.tx_hash == "0xabc123"
+        assert result.error is None
+
+    def test_failure_result(self):
+        result = TransferResult(
+            success=False,
+            error="Insufficient USDC",
+        )
+        assert result.success is False
+        assert result.tx_hash is None
         assert result.amount_usdc is None

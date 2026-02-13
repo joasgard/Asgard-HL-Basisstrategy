@@ -47,10 +47,18 @@ class FundingJobResponse(BaseModel):
     message: str
 
 
+class WalletTransferRequest(BaseModel):
+    """Request to transfer tokens from server wallet to an external address."""
+    amount: float = Field(..., gt=0, description="Amount to transfer")
+    destination: str = Field(..., description="Destination EVM address")
+    token: str = Field(default="USDC", description="Token to transfer: 'USDC' or 'ETH'")
+    chain: str = Field(default="arbitrum", description="Chain for transfer (only arbitrum supported)")
+
+
 class FundingJobStatus(BaseModel):
     """Status of a funding job."""
     job_id: str
-    direction: str  # 'deposit' or 'withdraw'
+    direction: str  # 'deposit' | 'withdraw' | 'wallet_transfer'
     status: str  # pending / running / completed / failed
     amount_usdc: float
     error: Optional[str] = None
@@ -58,9 +66,6 @@ class FundingJobStatus(BaseModel):
     bridge_tx_hash: Optional[str] = None
     created_at: Optional[str] = None
     completed_at: Optional[str] = None
-
-
-from typing import Optional
 
 
 # ---------------------------------------------------------------------------
@@ -201,6 +206,112 @@ async def withdraw_from_hl(
         job_id=job_id,
         status="pending",
         message="Withdrawal initiated. Poll /funding/jobs/{job_id} for status.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /funding/wallet-transfer — send USDC from server wallet to external addr
+# ---------------------------------------------------------------------------
+
+@router.post("/wallet-transfer", response_model=FundingJobResponse)
+async def wallet_transfer(
+    request: WalletTransferRequest,
+    user: User = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """
+    Transfer tokens from the server wallet to an external address.
+
+    Supports Arbitrum (USDC, ETH) and Solana (USDC, SOL).
+    Creates a background job. Poll GET /funding/jobs/{job_id} for status.
+    """
+    if request.chain not in ("arbitrum", "solana"):
+        raise HTTPException(400, "Supported chains: arbitrum, solana")
+
+    # Validate token for chain
+    valid_tokens = {"arbitrum": ("USDC", "ETH"), "solana": ("USDC", "SOL")}
+    if request.token not in valid_tokens[request.chain]:
+        raise HTTPException(
+            400,
+            f"Token '{request.token}' not supported on {request.chain}. "
+            f"Use: {', '.join(valid_tokens[request.chain])}",
+        )
+
+    # Validate destination address format
+    dest = request.destination.strip()
+    if request.chain == "arbitrum":
+        if not dest.startswith("0x") or len(dest) != 42:
+            raise HTTPException(400, "Invalid EVM destination address")
+        try:
+            int(dest, 16)
+        except ValueError:
+            raise HTTPException(400, "Invalid EVM destination address")
+    else:
+        # Solana: base58 public key, typically 32-44 chars
+        if len(dest) < 32 or len(dest) > 44:
+            raise HTTPException(400, "Invalid Solana destination address")
+
+    # Amount caps
+    if request.token == "USDC" and request.amount > MAX_AUTO_BRIDGE_USDC:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Maximum transfer is ${MAX_AUTO_BRIDGE_USDC:,.0f} USDC per operation. "
+                f"Requested: ${request.amount:,.0f}. Split into multiple transfers."
+            ),
+        )
+
+    if request.token == "ETH" and request.amount > 0.1:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Maximum ETH transfer is 0.1 ETH per operation. Requested: {request.amount}.",
+        )
+
+    if request.token == "SOL" and request.amount > 100:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Maximum SOL transfer is 100 SOL per operation. Requested: {request.amount}.",
+        )
+
+    job_id = str(uuid.uuid4())
+
+    redis = await get_redis()
+    lock_key = f"funding_lock:{user.user_id}"
+    acquired = await redis.set(lock_key, job_id, nx=True, ex=600)
+    if not acquired:
+        raise HTTPException(
+            status_code=409,
+            detail="A funding operation is already in progress. Please wait.",
+        )
+
+    try:
+        await db.execute(
+            """INSERT INTO deposit_history
+            (id, user_id, direction, amount_usdc, status, created_at)
+            VALUES ($1, $2, 'wallet_transfer', $3, 'pending', NOW())""",
+            (job_id, user.user_id, request.amount),
+        )
+    except Exception as e:
+        await redis.delete(lock_key)
+        logger.error(f"Failed to create wallet transfer job: {e}")
+        raise HTTPException(500, "Failed to create wallet transfer job")
+
+    asyncio.create_task(
+        _execute_wallet_transfer_job(
+            job_id, request.amount, dest, request.token, request.chain,
+            user.user_id, db, lock_key,
+        )
+    )
+
+    logger.info(
+        f"Created wallet transfer job {job_id}: {request.amount} {request.token} "
+        f"({request.chain}) → {dest} for user {user.user_id}"
+    )
+
+    return FundingJobResponse(
+        job_id=job_id,
+        status="pending",
+        message="Wallet transfer initiated. Poll /funding/jobs/{job_id} for status.",
     )
 
 
@@ -386,6 +497,79 @@ async def _execute_withdraw_job(
 
     except Exception as e:
         logger.error(f"Withdraw job {job_id} crashed: {e}", exc_info=True)
+        try:
+            await db.execute(
+                """UPDATE deposit_history
+                SET status = 'failed', error = $1, completed_at = NOW()
+                WHERE id = $2""",
+                (str(e), job_id),
+            )
+        except Exception:
+            pass
+    finally:
+        try:
+            redis = await get_redis()
+            await redis.delete(lock_key)
+        except Exception:
+            pass
+
+
+async def _execute_wallet_transfer_job(
+    job_id: str,
+    amount: float,
+    destination: str,
+    token: str,
+    chain: str,
+    user_id: str,
+    db: Database,
+    lock_key: str,
+):
+    """Execute a wallet transfer (USDC, ETH, or SOL) in the background."""
+    try:
+        await db.execute(
+            "UPDATE deposit_history SET status = 'running' WHERE id = $1",
+            (job_id,),
+        )
+
+        from bot.venues.user_context import UserTradingContext
+
+        async with await UserTradingContext.from_user_id(user_id, db) as ctx:
+            if chain == "solana":
+                transferor = ctx.get_solana_transferor()
+                if token == "SOL":
+                    result = await transferor.transfer_sol_to(destination, amount)
+                else:
+                    result = await transferor.transfer_usdc_to(destination, amount)
+                tx_ref = result.signature
+            else:
+                depositor = ctx.get_hl_depositor()
+                if token == "ETH":
+                    result = await depositor.transfer_eth_to(destination, amount)
+                else:
+                    result = await depositor.transfer_usdc_to(destination, amount)
+                tx_ref = result.tx_hash
+
+        if result.success:
+            await db.execute(
+                """UPDATE deposit_history
+                SET status = 'completed',
+                    bridge_tx_hash = $1,
+                    completed_at = NOW()
+                WHERE id = $2""",
+                (tx_ref, job_id),
+            )
+            logger.info(f"Wallet transfer job {job_id} completed: {amount} {token} ({chain}) → {destination}")
+        else:
+            await db.execute(
+                """UPDATE deposit_history
+                SET status = 'failed', error = $1, completed_at = NOW()
+                WHERE id = $2""",
+                (result.error, job_id),
+            )
+            logger.error(f"Wallet transfer job {job_id} failed: {result.error}")
+
+    except Exception as e:
+        logger.error(f"Wallet transfer job {job_id} crashed: {e}", exc_info=True)
         try:
             await db.execute(
                 """UPDATE deposit_history
